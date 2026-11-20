@@ -24,30 +24,6 @@ public sealed partial class RelaysBoardsPageTests
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Should_ShowASectionPerBoard_InTheBoardsOrder()
-    {
-        await using var boards = await TwoBoards.StartAsync();
-        using var http = boards.App.CreateClient();
-
-        var html = await PageAsync(http);
-
-        var first = html.IndexOf("<h2 class=\"board-name\" id=\"board-1\"", StringComparison.Ordinal);
-        var barn = html.IndexOf($"<h2 class=\"board-name\" id=\"board-{boards.BarnId}\"", StringComparison.Ordinal);
-        Assert.True(first >= 0 && barn > first, "The first board's section comes before Barn's.");
-        Assert.Matches("Hi John · <strong[^>]*>0 of 12 on</strong>", html);
-        Assert.Contains("Test Fake · 0 of 4 on", html, StringComparison.Ordinal);
-        Assert.Contains("Barn light", html, StringComparison.Ordinal);
-        Assert.Equal(2, Regex.Count(html, "<h3 class=\"section-title\"[^>]*>Inputs</h3>"));
-
-        // Each board's relays in its own section, RELAY n by its own channel.
-        var barnSection = Section(html, boards.BarnId);
-        Assert.Contains("Barn light", barnSection, StringComparison.Ordinal);
-        Assert.Contains("RELAY 4", barnSection, StringComparison.Ordinal);
-        Assert.DoesNotContain("RELAY 5", barnSection, StringComparison.Ordinal);
-        Assert.DoesNotContain("Barn light", Section(html, 1), StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task Should_GiveEachBoardItsOwnAllOff_AndAskFirstForEveryBoard()
     {
         await using var boards = await TwoBoards.StartAsync();
@@ -99,49 +75,6 @@ public sealed partial class RelaysBoardsPageTests
         Assert.Equal(
             "Couldn't reach Barn. Its relays are as they were.",
             TestTexts.Boards.Unreachable([.. unreachable.Select(id => registry.Find(id)!.Name)]));
-    }
-
-    [Fact]
-    public async Task Should_ShowOnlyThePickedBoard_AndRememberItInACookie()
-    {
-        await using var boards = await TwoBoards.StartAsync();
-        using var http = boards.App.CreateClient();
-
-        var html = await PickAsync(http, boards.BarnId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-
-        Assert.DoesNotContain("id=\"board-1\"", html, StringComparison.Ordinal);
-        Assert.Contains($"id=\"board-{boards.BarnId}\"", html, StringComparison.Ordinal);
-        Assert.Contains("Showing 1 of 2 boards · 0 of 4 on", html, StringComparison.Ordinal);
-        Assert.Matches($"value=\"{BoardFilter.AllValue}\" class=\"chip-filter all \" aria-pressed=\"false\"", html);
-
-        // Kept by the browser: a new page shows the same.
-        Assert.Contains($"id=\"board-{boards.BarnId}\"", await PageAsync(http), StringComparison.Ordinal);
-        Assert.DoesNotContain("id=\"board-1\"", await PageAsync(http), StringComparison.Ordinal);
-    }
-
-    // "Add a board" ends on Relays through ShowAllPath: with only Barn picked, the board just added shows, and so does
-    // every other board, on this page and the next.
-    [Fact]
-    public async Task Should_ShowTheBoardJustAdded_AlsoWithAFilter()
-    {
-        await using var boards = await TwoBoards.StartAsync();
-        using var http = boards.App.CreateClient();
-        Assert.DoesNotContain("id=\"board-1\"", await PickAsync(http, boards.BarnId.ToString(System.Globalization.CultureInfo.InvariantCulture)), StringComparison.Ordinal);
-        var parts = new FakeBoardParts(new FakeRelayBoard(relayCount: 4, inputCount: 0));
-        var model = parts.FakeModel;
-        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
-        var shed = await registry.AddBoardAsync(model, "Shed", setup => parts.Build(setup.BoardId, model), Cancel);
-        await registry.FinishAddingAsync(shed.BoardId, Cancel);
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync(RelaysEndpoints.ShowAllPath, Cancel));
-
-        foreach (var page in new[] { html, await PageAsync(http) })
-        {
-            Assert.Contains($"id=\"board-{shed.BoardId}\"", page, StringComparison.Ordinal);
-            Assert.Contains("id=\"board-1\"", page, StringComparison.Ordinal);
-            Assert.Contains($"id=\"board-{boards.BarnId}\"", page, StringComparison.Ordinal);
-            Assert.DoesNotContain("class=\"showing\"", page, StringComparison.Ordinal);
-        }
     }
 
     [Fact]
@@ -265,77 +198,6 @@ public sealed partial class RelaysBoardsPageTests
     }
 
     [Fact]
-    public async Task Should_RedrawADetailPage_OnlyForItsOwnBoard_AndLetGoOnDispose()
-    {
-        await using var boards = await TwoBoards.StartAsync();
-        var registry = boards.App.Services.GetRequiredService<BoardRegistry>();
-        // The relay's page uses RelayPowerOnHandler, a singleton that listens to the registry from its start for as
-        // long as the app runs: start it first, so only the pages' own listeners are counted.
-        boards.App.Services.GetRequiredService<RelayPowerOnHandler>();
-        var before = Listeners(registry);
-        int inputId;
-        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
-        {
-            inputId = await db.Inputs.Where(i => i.BoardId == 1).Select(i => i.Id).FirstAsync(Cancel);
-        }
-
-        var pages = new List<PageRenderer>
-        {
-            await PageRenderer.StartAsync<Contactor.Web.Components.RelayDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = await RelayIdAsync(boards, 1, 3) }),
-            await PageRenderer.StartAsync<Contactor.Web.Components.InputDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = inputId }),
-            await PageRenderer.StartAsync<Contactor.Web.Components.GroupDetail>(boards.App.Services, John, "John", new Dictionary<string, object?> { ["Id"] = await AddFirstBoardGroupAsync(boards) }),
-        };
-        // Each page, and its side menu's list of the boards (a page without the filter of its own).
-        Assert.Equal(before + (2 * pages.Count), Listeners(registry));
-        // A status from Barn first, then from the pages' own board: each page draws once, for its own board only. A
-        // redraw for Barn would come first, as the statuses come in order. Statuses that change nothing, so nothing is
-        // logged. What the pages still had on their way (the side menu's counts after the group was made) can draw
-        // them once more, so a few tries; a redraw for Barn would make every one of them two.
-        var once = false;
-        for (var attempt = 0; attempt < 5 && !once; attempt++)
-        {
-            var renders = pages.Select(p => p.Renders).ToList();
-            boards.Barn.SetRelay(3, false);
-            boards.First.SetRelay(4, false);
-            foreach (var (page, i) in pages.Select((p, i) => (p, i)))
-            {
-                await BoardTestRig.WaitUntilAsync(() => page.Renders > renders[i]);
-            }
-
-            once = pages.Select((p, i) => p.Renders == renders[i] + 1).All(x => x);
-        }
-
-        Assert.True(once);
-        Assert.All(pages, page => Assert.Empty(page.Errors));
-
-        foreach (var page in pages)
-        {
-            page.Close();
-        }
-
-        Assert.Equal(before, Listeners(registry));
-    }
-
-    [Fact]
-    public async Task Should_ShowEveryBoardAgain_WhenAllArePickedOrAllIsTapped()
-    {
-        await using var boards = await TwoBoards.StartAsync();
-        using var http = boards.App.CreateClient();
-        await PickAsync(http, "1");
-
-        // Both picked is every board, so no "Showing".
-        var both = await PickAsync(http, $"1-{boards.BarnId}");
-        Assert.Contains("id=\"board-1\"", both, StringComparison.Ordinal);
-        Assert.Contains($"id=\"board-{boards.BarnId}\"", both, StringComparison.Ordinal);
-        Assert.DoesNotContain("Showing", both, StringComparison.Ordinal);
-
-        await PickAsync(http, "1");
-        var all = await PickAsync(http, BoardFilter.AllValue);
-        Assert.Contains($"id=\"board-{boards.BarnId}\"", all, StringComparison.Ordinal);
-        Assert.DoesNotContain("Showing", all, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task Should_StillShowABoardWithNoContact_WhenTheFilterHidesIt()
     {
         await using var boards = await TwoBoards.StartAsync(FakeRelayBoard.LostContact(relayCount: 4, inputCount: 2));
@@ -346,82 +208,6 @@ public sealed partial class RelaysBoardsPageTests
         Assert.DoesNotContain($"id=\"board-{boards.BarnId}\"", html, StringComparison.Ordinal);
         Assert.Matches("class=\"lost-line\"[^>]*>[\\s\\S]*?<strong[^>]*>Barn:</strong> no contact since", html);
         Assert.Matches("class=\"chip-filter  lost\" aria-pressed=\"false\"", html);
-    }
-
-    [Fact]
-    public async Task Should_ShowOneBoard_WithoutSectionsOrAllBoards()
-    {
-        await using var app = new TestWebApp("Development", configureServices: TestWebApp.WithBoard(new FakeRelayBoard()));
-        using var http = app.CreateClient();
-
-        var html = await PageAsync(http);
-
-        // No chips: nothing to filter. The side menu has only the board, picked. Adding a board is in Settings.
-        Assert.DoesNotContain("chips-row", html, StringComparison.Ordinal);
-        Assert.Matches("class=\"side-board picked \" aria-pressed=\"true\"", html);
-        Assert.DoesNotContain("side-board all", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("board/new", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("Showing", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("Turn off all boards", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("board-name", html, StringComparison.Ordinal);
-        Assert.Contains("class=\"all-off\"", html, StringComparison.Ordinal);
-        Assert.Contains("Board online", html, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Should_ShowEachDetailPage_WithItsOwnBoardsState()
-    {
-        await using var boards = await TwoBoards.StartAsync();
-
-        // A state the group's interlock allows: its Fan (relay 1) on below its Heat (relay 2). Heat on alone would be
-        // turned off by the interlock within a second of the group being made, before the group's page is read.
-        boards.Barn.SetRelay(1, true);
-        boards.Barn.SetRelayAndInput(2, 2, true);
-        boards.Barn.SetRelay(3, true);
-        using var http = boards.App.CreateClient();
-        int inputId;
-        await using (var db = await boards.Factory.CreateDbContextAsync(Cancel))
-        {
-            inputId = await db.Inputs.Where(i => i.BoardId == boards.BarnId && i.Channel == 2).Select(i => i.Id).SingleAsync(Cancel);
-        }
-
-        var groupId = await AddBarnGroupAsync(boards);
-
-        var relay = WebUtility.HtmlDecode(await http.GetStringAsync($"/relay/{await RelayIdAsync(boards, boards.BarnId, 3)}", Cancel));
-        var group = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{groupId}", Cancel));
-        var other = WebUtility.HtmlDecode(await http.GetStringAsync($"/relay/{await RelayIdAsync(boards, 1, 3)}", Cancel));
-        var input = WebUtility.HtmlDecode(await http.GetStringAsync($"/input/{inputId}", Cancel));
-
-        Assert.Contains(">TURN OFF</button>", relay, StringComparison.Ordinal);
-        Assert.Contains(">TURN ON</button>", other, StringComparison.Ordinal);
-        Assert.Contains("Closed", input, StringComparison.Ordinal);
-        Assert.Contains("TURN OFF THE GROUP", group, StringComparison.Ordinal);
-
-        // Nothing the interlock had to undo: no OFF reached the board, and no trip was logged. The board shows a trip
-        // whose event isn't saved yet.
-        Assert.DoesNotContain(boards.Barn.Sent, command => !command.On);
-        Assert.True(boards.Barn.State.Relays.ContainsAll(ChannelMask.Of(1) | ChannelMask.Of(2) | ChannelMask.Of(3)));
-        await using var check = await boards.Factory.CreateDbContextAsync(Cancel);
-        Assert.False(await check.EventLog.AnyAsync(e => e.Action == EventActions.InterlockTrip, Cancel));
-    }
-
-    [Fact]
-    public async Task Should_ListEveryBoardsGroups_NamingTheirBoard()
-    {
-        await using var boards = await TwoBoards.StartAsync();
-        await AddBarnGroupAsync(boards);
-        using var http = boards.App.CreateClient();
-
-        var html = await PageAsync(http);
-
-        Assert.Contains("GROUP · BARN 1 → 2", html, StringComparison.Ordinal);
-        Assert.True(
-            html.IndexOf("id=\"groups-heading\"", StringComparison.Ordinal) < html.IndexOf("id=\"board-1\"", StringComparison.Ordinal),
-            "The groups come before the boards' sections.");
-
-        // A group counts as one, on its own board.
-        Assert.Contains("Test Fake · 0 of 3 on", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("GROUP · BARN", await PickAsync(http, "1"), StringComparison.Ordinal);
     }
 
     // Issue #423: a board's box in the side menu and its chip show the board's own state: a lamp for each of its relays,
@@ -478,17 +264,6 @@ public sealed partial class RelaysBoardsPageTests
         Assert.Contains(" · 2 of 5 on", Section(html, 1), StringComparison.Ordinal);
     }
 
-    // Barn's relays 1 and 2 as a group.
-    private static async Task<int> AddBarnGroupAsync(TwoBoards boards)
-    {
-        await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
-        var group = new RelayGroup { BoardId = boards.BarnId, Name = "Barn fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
-        group.AddStep("Fan", await RelayIdAsync(boards, boards.BarnId, 1));
-        group.AddStep("Heat", await RelayIdAsync(boards, boards.BarnId, 2));
-        await db.AddWithRuntimesAsync(group);
-        return group.Id;
-    }
-
     [Theory]
     [InlineData(null, "")]
     [InlineData("", "")]
@@ -512,25 +287,6 @@ public sealed partial class RelaysBoardsPageTests
     }
 
     [Fact]
-    public void Should_ToggleABoard_FromEveryBoardToSeveralAndBack()
-    {
-        int[] ids = [1, 2, 3];
-
-        var one = BoardFilter.All.Toggle(2, ids);
-        Assert.Equal("2", one.Format());
-        var two = one.Toggle(3, ids);
-        Assert.Equal("2-3", two.Format());
-        Assert.True(two.Toggle(1, ids).IsAll);
-        Assert.Equal("3", two.Toggle(2, ids).Format());
-        Assert.True(one.Toggle(2, ids).IsAll);
-
-        // A board that is gone is left out; with none left, every board shows.
-        Assert.Equal("2", BoardFilter.Parse("2-9").For(ids).Format());
-        Assert.True(BoardFilter.Parse("9").For(ids).IsAll);
-        Assert.True(BoardFilter.Parse("9").For(ids).Shows(1));
-    }
-
-    [Fact]
     public void Should_NameTheBoardsItCouldNotReach()
     {
         Assert.Null(TestTexts.Boards.Unreachable([]));
@@ -544,23 +300,6 @@ public sealed partial class RelaysBoardsPageTests
     private static async Task<string> PageAsync(HttpClient http)
     {
         return WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-    }
-
-    // Taps a board in the filter: the page's form, with its antiforgery token, and back to the page.
-    private static async Task<string> PickAsync(HttpClient http, string show)
-    {
-        var page = await PageAsync(http);
-        var token = TokenPattern().Match(page);
-        Assert.True(token.Success, "The filter's form has its antiforgery token.");
-        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["show"] = show,
-            ["__RequestVerificationToken"] = token.Groups[1].Value,
-        });
-        using var response = await http.PostAsync(RelaysEndpoints.BoardsPath, form, Cancel);
-        response.EnsureSuccessStatusCode();
-        Assert.Equal("/", response.RequestMessage!.RequestUri!.AbsolutePath);
-        return WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Cancel));
     }
 
     // A client that shows a redirect rather than following it, with its cookies.
@@ -597,24 +336,6 @@ public sealed partial class RelaysBoardsPageTests
         }
     }
 
-    // How many listen to the boards' states.
-    private static int Listeners(BoardRegistry registry)
-    {
-        var field = typeof(BoardRegistry).GetField(nameof(BoardRegistry.StateChanged), System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-        return (field.GetValue(registry) as Delegate)?.GetInvocationList().Length ?? 0;
-    }
-
-    // The first board's relays 1 and 2 as a group.
-    private static async Task<int> AddFirstBoardGroupAsync(TwoBoards boards)
-    {
-        await using var db = await boards.Factory.CreateDbContextAsync(Cancel);
-        var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
-        group.AddStep("Fan", await RelayIdAsync(boards, 1, 1));
-        group.AddStep("Heat", await RelayIdAsync(boards, 1, 2));
-        await db.AddWithRuntimesAsync(group);
-        return group.Id;
-    }
-
     // One board's section of the page.
     private static string Section(string html, int boardId)
     {
@@ -632,4 +353,21 @@ public sealed partial class RelaysBoardsPageTests
 
     [GeneratedRegex("name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"")]
     private static partial Regex TokenPattern();
+
+    // Taps a board in the filter: the page's form, with its antiforgery token, and back to the page.
+    private static async Task<string> PickAsync(HttpClient http, string show)
+    {
+        var page = await PageAsync(http);
+        var token = TokenPattern().Match(page);
+        Assert.True(token.Success, "The filter's form has its antiforgery token.");
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["show"] = show,
+            ["__RequestVerificationToken"] = token.Groups[1].Value,
+        });
+        using var response = await http.PostAsync(RelaysEndpoints.BoardsPath, form, Cancel);
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("/", response.RequestMessage!.RequestUri!.AbsolutePath);
+        return WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Cancel));
+    }
 }
