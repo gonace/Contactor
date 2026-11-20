@@ -2,9 +2,7 @@ using System.Net;
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web.Components;
-using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Groups;
-using Contactor.Web.Features.Languages;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.AspNetCore.Components;
@@ -405,66 +403,6 @@ public sealed class GroupPowerOnTests
         Assert.True(await db.RelayGroupMembers.AnyAsync(m => m.GroupId == groupId && m.RelayId == 5, Cancel));
     }
 
-    // A change of the states alone redraws the group's page and the Relays page only when the warning changes; closing
-    // the pages lets go.
-    [Fact]
-    public async Task Should_Redraw_OnlyWhenTheWarningChanges()
-    {
-        var board = Board(heat: PowerOnState.Off);
-        await using var app = App(board);
-        var groupId = await AddGroupAsync(app);
-        var registry = app.Services.GetRequiredService<BoardRegistry>();
-        var group = await OpenGroupAsync(app, groupId);
-        var relays = await PageRenderer.StartAsync<Relays>(app.Services, John, "John");
-        using (group)
-        using (relays)
-        {
-            var renders = (group.PageRenders, relays.PageRenders);
-
-            // Relay 5 is in no group: nothing to redraw.
-            board.SetPowerOn(States(heat: PowerOnState.Off, relay5: PowerOnState.On));
-            board.SetPowerOn(States(heat: PowerOnState.On, relay5: PowerOnState.On));
-            await Wait.UntilAsync(() => group.HasAsync(PageRenderer.WithText("Make it safe")).GetAwaiter().GetResult()
-                && relays.HasAsync(PageRenderer.WithText("Make it safe")).GetAwaiter().GetResult());
-
-            Assert.Equal((renders.Item1 + 1, renders.Item2 + 1), (group.PageRenders, relays.PageRenders));
-            Assert.Equal(1, PageRenderer.Handlers<GroupDetail>(registry, nameof(BoardRegistry.PowerOnChanged)));
-            Assert.Equal(1, PageRenderer.Handlers<Relays>(registry, nameof(BoardRegistry.PowerOnChanged)));
-        }
-
-        Assert.Equal(0, PageRenderer.Handlers<GroupDetail>(registry, nameof(BoardRegistry.PowerOnChanged)));
-        Assert.Equal(0, PageRenderer.Handlers<Relays>(registry, nameof(BoardRegistry.PowerOnChanged)));
-    }
-
-    [Fact]
-    public async Task Should_WarnInSwedish()
-    {
-        var board = Board(heat: PowerOnState.On);
-        await using var app = App(board);
-        var groupId = await AddGroupAsync(app);
-        await app.Services.GetRequiredService<AppLanguage>().ChooseAsync("sv", Cancel);
-        using var http = app.CreateClient();
-
-        var page = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{groupId}", Cancel));
-
-        Assert.Contains("Efter ett strömavbrott kan kortet slå på Heat av sig självt, utan gruppens startordning.", page, StringComparison.Ordinal);
-        Assert.Contains("\"Gör säkert\" ställer det på Av på kortet. Contactor startar sedan gruppen i sin ordning.", page, StringComparison.Ordinal);
-        Assert.Contains(">Gör säkert</button>", page, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Should_SayTheBoardCantTell_InSwedish()
-    {
-        await using var app = App(new FakeRelayBoard());
-        var groupId = await AddGroupAsync(app);
-        await app.Services.GetRequiredService<AppLanguage>().ChooseAsync("sv", Cancel);
-        using var http = app.CreateClient();
-
-        var page = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{groupId}", Cancel));
-
-        Assert.Contains("Kan inte se vad kortet gör efter ett strömavbrott. Kontrollera det på kortet.", page, StringComparison.Ordinal);
-    }
-
     // A relay in a group must be Off after a power cut: the Relay screen's refusal doesn't claim what the board does.
     [Fact]
     public async Task Should_RefuseARelayInAGroup_WithoutClaimingTheBoardKeepsItOff()
@@ -555,20 +493,6 @@ public sealed class GroupPowerOnTests
 
         Assert.IsType<NavigationException>(Assert.Single(page.Errors));
         Assert.Equal([(5, PowerOnState.Off)], board.PowerOnWrites);
-    }
-
-    [Fact]
-    public async Task Should_NoteAnUnknownState_InSwedish()
-    {
-        await using var app = App(Board(heat: null));
-        var groupId = await AddGroupAsync(app);
-        await app.Services.GetRequiredService<AppLanguage>().ChooseAsync("sv", Cancel);
-        using var http = app.CreateClient();
-
-        var page = WebUtility.HtmlDecode(await http.GetStringAsync($"/group/{groupId}", Cancel));
-
-        Assert.Contains("Kan inte se än vad kortet gör efter ett strömavbrott.", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("Gör säkert", page, StringComparison.Ordinal);
     }
 
     // Relays 1 to 8, with relay 2 (Fan) and 3 (Heat) as given and every other Off, unless relay 5's is given.

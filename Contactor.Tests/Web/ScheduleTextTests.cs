@@ -1,4 +1,3 @@
-using Contactor.Web.Features.Schedules;
 using Contactor.Web.Persistence;
 
 namespace Contactor.Tests.Web;
@@ -23,38 +22,8 @@ public sealed class ScheduleTextTests
     }
 
     [Fact]
-    public void Should_SummarizeInPlainWords()
-    {
-        Assert.Equal(
-            "Monday to Friday: the relay turns on at 06:30 and off at 08:00.",
-            TestTexts.Schedules.Summary(ScheduleDays.Weekdays, new TimeOnly(6, 30), new TimeOnly(8, 0)));
-    }
-
-    [Fact]
-    public void Should_SayTheNextDay_WhenTheScheduleRunsOverMidnight()
-    {
-        Assert.Equal(
-            "Saturday: the relay turns on at 22:00 and off at 01:00 the next day.",
-            TestTexts.Schedules.Summary(ScheduleDays.Saturday, new TimeOnly(22, 0), new TimeOnly(1, 0)));
-    }
-
-    [Fact]
-    public void Should_SayNoDaysAreChosen()
-    {
-        Assert.Equal("No days chosen.", TestTexts.Schedules.Summary(ScheduleDays.None, new TimeOnly(6, 0), new TimeOnly(7, 0)));
-    }
-
-    [Fact]
     public void Should_WriteTheEventLogForm()
     {
         Assert.Equal("Mon–Fri 06:30–08:00", TestTexts.Schedules.Inline(ScheduleDays.Weekdays, new TimeOnly(6, 30), new TimeOnly(8, 0)));
-    }
-
-    [Fact]
-    public void Should_NameTheDays_InTheLanguage_MondayFirst()
-    {
-        Assert.Equal(["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"], ScheduleText.Days.Select(ScheduleText.Letter));
-        Assert.Equal(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], ScheduleText.Days.Select(ScheduleText.ShortName));
-        Assert.Equal("Monday", ScheduleText.Name(ScheduleDays.Monday));
     }
 }

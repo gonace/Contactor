@@ -127,7 +127,9 @@ public sealed class PagesClosedWhileLoadingTests
     }
 
     // A list update already on its way when the tab bar closes: it waits for the page's thread, and finds the page closed.
-    // Only the counts' first query after the close counts, so the app's other reads and a load from before can't.
+    // Every read of the groups' members after the close counts, as the counts' load starts with one. A load from before
+    // the close can't count. With a board that has lost contact, nothing else in the app reads that table, so a read
+    // after the close is the tab bar's.
     [Fact]
     public async Task Should_LoadNoCounts_WhenTheTabBarClosesWithAnUpdateOnItsWay()
     {
