@@ -321,7 +321,7 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
     // marked so: it happened at a time nobody knows.
     private void RecordInputChanges(ContactorDbContext db, BoardChannels channels, int boardId, ChannelMask before, ChannelMask after, DateTime now, bool noticed)
     {
-        for (var channel = 1; channel <= _board.Capabilities.InputCount; channel++)
+        for (var channel = 1; channel <= InputChannels(before | after); channel++)
         {
             if (before.Contains(channel) != after.Contains(channel) && channels.InputAt(channel) is { } inputId)
             {
@@ -344,6 +344,14 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
         }
     }
 
+    // How many inputs to look at: the board's, or more while a status in hand has an input above them on. A board that
+    // says its count at each connection (a Shelly) may have had more when that status came, e.g. one handled again
+    // after a reconnect with fewer: a change it holds is still logged, and still acts when it was seen live.
+    private int InputChannels(ChannelMask inputs)
+    {
+        return Math.Max(_board.Capabilities.InputCount, 64 - System.Numerics.BitOperations.LeadingZeroCount(inputs.Bits));
+    }
+
     // The inputs as the event log last left them, by channel; an input never logged counts as matching the status in hand.
     private async Task<ChannelMask> LastLoggedInputsAsync(ContactorDbContext db, BoardChannels channels, ChannelMask current, CancellationToken cancellationToken)
     {
@@ -357,7 +365,7 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
             .ToListAsync(cancellationToken);
         var logged = last.ToDictionary(e => e.InputId, e => EventText.InputOn(e.Details));
         var inputs = ChannelMask.None;
-        for (var channel = 1; channel <= _board.Capabilities.InputCount; channel++)
+        for (var channel = 1; channel <= InputChannels(current); channel++)
         {
             var on = (channels.InputAt(channel) is { } inputId ? logged.GetValueOrDefault(inputId) : null) ?? current.Contains(channel);
             if (on)

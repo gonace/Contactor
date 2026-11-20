@@ -113,9 +113,11 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     private DateTimeOffset _schedulesReadUtc;
 
     // Only used under the poller's lock: how many inputs the device has for the current connection, from the connect's
-    // status, and the inputs as last read. ConnectAsync starts them afresh.
+    // status, the inputs as last read, and the inputs that read no state since the connect, held until the next one.
+    // ConnectAsync starts them afresh.
     private int _inputCount;
     private byte _inputs;
+    private byte _held;
 
     // The reading last reported, to tell which part of it changed when the poller's comparer sees no change.
     private ShellyStatus? _lastReported;
@@ -440,8 +442,11 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
         // The inputs the device has, for this whole connection: a change of its settings while connected (an input made
         // a button, or turned off) must never look like an input that changed, which would run its actions.
+        // The connect's own status is the first reading, so an input that loses its state before the first poll keeps
+        // what it read here.
         _inputCount = switches.InputCount;
-        _inputs = 0;
+        _inputs = (byte)(switches.InputsOn & ((1 << _inputCount) - 1));
+        _held = 0;
         var stopped = await ReadPowerOnAsync(target, switches.ConfigRevision, cancellationToken).ConfigureAwait(false);
         await ReadSchedulesAsync(target, switches.ScheduleRevision, skip: stopped, cancellationToken).ConfigureAwait(false);
     }
@@ -633,13 +638,15 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         return status;
     }
 
-    // Under the poller's lock: the inputs of the connection's count. One that has no state now (made a button or turned
-    // off at the device since the connect) keeps its last state until the next connection, and one that has a state
-    // only now isn't read until then: a change of the device's settings never shows as an input that changed.
+    // Under the poller's lock: the inputs of the connection's count. One that reads no state (made a button or turned
+    // off at the device since the connect) keeps its last state until the next connection, also once it has a state
+    // again, and one beyond the count isn't read until then: a change of the device's settings never shows as an input
+    // that changed, which would run its actions.
     private byte ReadInputs(ShellySwitches switches)
     {
         var counted = (byte)((1 << _inputCount) - 1);
-        var read = (byte)(switches.Inputs & counted);
+        _held |= (byte)(counted & ~switches.Inputs);
+        var read = (byte)(switches.Inputs & counted & ~_held);
         _inputs = (byte)((switches.InputsOn & read) | (_inputs & counted & ~read));
         return _inputs;
     }

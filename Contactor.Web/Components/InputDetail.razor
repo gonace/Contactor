@@ -290,7 +290,13 @@
         {
             await InvokeAsync(async () =>
             {
-                if (reload && _input is not null && await Inputs.GetAsync(Id, CancellationToken.None) is { } fresh)
+                if (reload && _input is null)
+                {
+                    // Missing so far, e.g. opened before a Shelly said how many inputs it has (InputCountWatch): load it
+                    // as when the page opened.
+                    await OnParametersSetAsync();
+                }
+                else if (reload && _input is not null && await Inputs.GetAsync(Id, CancellationToken.None) is { } fresh)
                 {
                     _input = fresh;
                     _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];

@@ -163,6 +163,41 @@ public sealed class BoardEventRecorderTests
         }
     }
 
+    // A status handled after the board said it has fewer inputs, e.g. a Shelly's from before a reconnect: an input above
+    // the count that changed in it is still logged, not lost.
+    [Fact]
+    public async Task Should_LogAnInputAboveTheCount_ThatChangedInTheStatus()
+    {
+        var board = new FakeRelayBoard(relayCount: 4, inputCount: 1);
+        await using var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
+            services.AddBoards(configuration);
+            services.AddEvents(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+            services.AddOwnRules(configuration);
+        });
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 2, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
+        var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
+        await recorder.StartAsync(Cancel);
+        try
+        {
+            board.SetRelay(1, on: true);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count(e => e.RelayId == 1) == 1);
+
+            board.SetInput(2, on: true);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Any(e => e.Action == EventActions.InputChanged));
+            Assert.Single(Events(database), e => e.Action == EventActions.InputChanged && e.Details == "{\"on\":true}");
+        }
+        finally
+        {
+            await recorder.StopAsync(CancellationToken.None);
+        }
+    }
+
     // Why a board refuses the connection comes as states of their own, before its first answer and after a loss. They
     // change nothing that is recorded: the new board's first status is still taken as at start, and a change made
     // while contact was lost is still logged when it comes back.

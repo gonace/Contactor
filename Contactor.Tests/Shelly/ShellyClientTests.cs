@@ -41,6 +41,35 @@ public sealed class ShellyClientTests
     }
 
     [Fact]
+    public async Task Should_KeepTheConnectsInputs_WhenOneLosesItsStateBeforeTheFirstPoll()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay);
+        await simulator.SetInputAsync(1, true);
+        simulator.SilentConfigRelays = 0b1;
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, pollSeconds: 30);
+
+        // The connect read the status, and waits for the settings: input 1 is made a button and opened now.
+        await Wait.UntilAsync(() => simulator.Received.Contains(ShellyApi.SwitchGetConfig) && run.Time.WaitsOnly(ShellyClient.RequestTimeout));
+        simulator.SetInputType(1, ShellySimulator.ButtonInput);
+        await simulator.SetInputAsync(1, false);
+
+        // The new type grows cfg_rev, so the first poll reads the settings again: answered this time.
+        simulator.SilentConfigRelays = 0;
+        run.Time.Advance(ShellyClient.RequestTimeout);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        // The first poll keeps what the connect read: closed.
+        Assert.Equal(1, run.Client.State.InputCount);
+        Assert.Equal(0b1, run.Client.State.Inputs);
+
+        // A switch again, still open: held until the next connection, so no change shows.
+        simulator.SetInputType(1, ShellySimulator.SwitchInput);
+        await run.PollAsync();
+        Assert.Equal(0b1, run.Client.State.Inputs);
+        Assert.All(run.Changes.Where(c => c.IsConnected), c => Assert.Equal(0b1, c.Inputs));
+    }
+
+    [Fact]
     public async Task Should_ReadTheInputs_TheConnectionStartedWith()
     {
         await using var simulator = Start(ShellyModels.TwoRelays);
@@ -67,7 +96,16 @@ public sealed class ShellyClientTests
         Assert.Equal(0b01, run.Client.State.Inputs);
         Assert.Equal(2, run.Client.State.InputCount);
 
+        // A switch again, its terminal open now: still held until the next connection, so it never shows as opened,
+        // which would run its actions.
+        var changes = run.Changes.Count;
+        simulator.SetInputType(1, ShellySimulator.SwitchInput);
+        await run.PollAsync();
+        Assert.Equal(0b01, run.Client.State.Inputs);
+        Assert.Equal(changes, run.Changes.Count);
+
         // The next connection reads which inputs the device has: none from input:0, as input:0 is a button.
+        simulator.SetInputType(1, ShellySimulator.ButtonInput);
         run.Client.SetPassword("other");
         await Wait.UntilAsync(() => run.Client.State is { IsConnected: true, InputCount: 0 });
         Assert.Equal(0, run.Client.State.Inputs);

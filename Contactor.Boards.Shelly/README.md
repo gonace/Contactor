@@ -98,7 +98,8 @@ The app reads the inputs from the same `Shelly.GetStatus` it polls, with no othe
   - a `button`: its `state` is null;
   - a disabled input: its `state` is null;
   - an `analog` input (`percent`) and a `count` input (`counts`);
-  - `input:4` and higher: 4 is the app's own limit, as many as the Pro 4PM has;
+  - `input:4` and higher: 4 is the app's own limit, as many as the Pro 4PM has. So the inputs of an add-on, such as
+    the Plus Add-on's `input:100` and up, are left out too;
   - an input the app can't read: another key (`input:01`), an `id` that isn't the key's, a `state` of another kind,
     or the same key twice.
 - An input never fails the poll. The inputs only decide what the app shows.
@@ -106,8 +107,10 @@ The app reads the inputs from the same `Shelly.GetStatus` it polls, with no othe
   that count, from `input:0` without a gap. An input after a gap isn't shown, so an input keeps its number. Before
   the device answered, the board has no inputs. While disconnected, the last count is kept.
 - During a connection the count stays as it was:
-  - An input that no longer has a state, for example made a button at the device, keeps its last state until the
-    next connection.
+  - An input that reads no state in a poll, for example made a button at the device, keeps its last state until the
+    next connection, also when it has a state again before then.
+  - The connect's own status is the first reading: an input that loses its state before the first poll keeps the
+    state the connect read.
   - An input that only now has a state isn't read until the next connection.
   - So a change of the device's settings never looks like an input that changed, and no input action runs for it.
   - At the next connection, the app logs what changed as noticed, which runs no action.
@@ -323,8 +326,8 @@ The `Shelly` section applies to all four entries:
   out of the status.
 - It has as many inputs as switches, as the devices the docs list: `input:0` on a 1-relay device up to `input:3` on a
   4-relay device, each of type `switch` and open at start. `SetInputAsync` closes or opens one, and the simulator's
-  page has a checkbox per input. `SetInputType` makes one a `button` (`state` null) or `analog` (`percent` 0 or 100)
-  "at the device", which grows `cfg_rev`.
+  page has a checkbox per input. `SetInputType`, for the tests only (the page has no control for it), makes one a
+  `button` (`state` null) or `analog` (`percent` 0 or 100) "at the device", which grows `cfg_rev`.
 - Any other method gets the error 404 "No handler for …", which isn't from the docs: the app sends no
   other method.
 - With a password it asks for the digest, in the way of the firmware it is set to (`Firmware`, "2.0.0" by default):
