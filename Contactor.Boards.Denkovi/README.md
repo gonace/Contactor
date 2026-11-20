@@ -329,6 +329,15 @@ pin, so it never writes a whole port: a change at the board in between is never 
 `SetRequest` of a port's byte (tables 9.4 and 9.5), and the HTTP API writes whole ports (section 8). The app uses
 neither.
 
+**Not JSON.** Firmware 1.25 added `current_state.xml` and `current_state.json`, with a "Command for setting single
+output: P31...P38=0/1/2 и P51...P58=0/1/2" (Denkovi's firmware notes,
+https://denkovi.com/Firmware/DAEnetIP2v2/Firmware-version.txt, v1.25 of 19 November 2022). That is all Denkovi
+publishes about it: no URL, method, login or answer format. The manual (21 April 2020) is older and shows it only in the
+caption of figure 6.7. No widely used, maintained integration shows it working on a DAEnetIP2 v2 either (checked
+2026-11-20: Domoticz writes whole ports over HTTP; the Home Assistant integrations cover the smartDEN and the DAEnetIP4).
+Building on it would mean guessing its format, so the app uses SNMP, which the manual documents, switches one output
+and works on every firmware (Issue #371). Denkovi's own Node-RED and PHP examples also switch one pin over SNMP.
+
 A refused request gets a `GetResponse` with an error-status: 1 too big, 2 no such name, 3 a value it doesn't take, 4
 read-only, 5 it failed. `DaenetIp2RefusedException` has it.
 
