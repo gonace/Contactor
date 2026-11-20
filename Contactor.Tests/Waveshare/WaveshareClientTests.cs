@@ -819,8 +819,8 @@ public sealed class WaveshareClientTests
     }
 
     // Issue #567: a read of the modes that fails says nothing about them, so the relays the last good read showed in
-    // linkage mode stay unavailable, also across a new connection, and never more than that read showed. Only a read
-    // that works changes them.
+    // linkage mode stay unavailable, also while the board is lost and on the connection after it, and never more than
+    // that read showed. Only a read that works changes them.
     [Fact]
     public async Task Should_KeepTheLinkageRelaysUnavailable_WhileTheModesCantBeRead()
     {
@@ -838,12 +838,26 @@ public sealed class WaveshareClientTests
         Assert.Null(state.OwnRules);
         Assert.Equal(ChannelMask.Of(3), state.Unavailable);
 
-        // A new connection whose read fails too.
-        simulator.DropConnections();
-        await Wait.UntilAsync(() => simulator.ConnectionCount == 0);
-        await run.PollAsync();
-        await run.PollAsync();
-        Assert.True(run.Client.State.IsConnected);
+        // The board is lost, and the read on the new connection fails too.
+        simulator.NoAnswer = true;
+        for (var poll = 1; poll <= BoardPoller<WaveshareStatus>.DefaultFailuresBeforeLost; poll++)
+        {
+            var failures = poll;
+            await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval) && simulator.UnansweredCount == failures - 1);
+            run.Time.Advance(run.PollInterval);
+            await Wait.UntilAsync(() => simulator.UnansweredCount == failures && run.Time.WaitsOnly(WaveshareClient.RequestTimeout));
+            run.Time.Advance(WaveshareClient.RequestTimeout);
+        }
+
+        await Wait.UntilAsync(() => !run.Client.State.IsConnected);
+        Assert.Equal(ChannelMask.Of(3), WaveshareBoard.ToBoardState(run.Client.State).Unavailable);
+        var connects = run.Traces.Count(t => t.Text.StartsWith("Connecting to ", StringComparison.Ordinal));
+        simulator.NoAnswer = false;
+        await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        run.Time.Advance(TimeSpan.FromSeconds(1));
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.True(run.Traces.Count(t => t.Text.StartsWith("Connecting to ", StringComparison.Ordinal)) > connects);
+        Assert.Null(run.Client.State.Modes);
         Assert.Equal(ChannelMask.Of(3), WaveshareBoard.ToBoardState(run.Client.State).Unavailable);
 
         // A read that works: relay 3 is back to normal, and relay 5 is now known.
@@ -853,7 +867,29 @@ public sealed class WaveshareClientTests
         Assert.Equal(ChannelMask.Of(5), WaveshareBoard.ToBoardState(run.Client.State).Unavailable);
     }
 
-    // Another board (a new address, or a new model, which is a new client) says nothing it hasn't read itself.
+    // A person resets relay 3 while the modes can't be read: the board echoes the write, which confirms the relay left
+    // linkage mode, so it is available again although the read after it fails too (issue #567). Relay 5, which wasn't
+    // reset, stays unavailable.
+    [Fact]
+    public async Task Should_MakeARelayAvailable_WhenTheBoardConfirmsItsReset_ThoughTheModesCantBeRead()
+    {
+        await using var simulator = Started(WaveshareModels.Relay8B);
+        await simulator.SetRelayModeAsync(3, WaveshareApi.ModeLinkage);
+        await simulator.SetRelayModeAsync(5, WaveshareApi.ModeLinkage);
+        await using var run = ClientRun.Start(simulator.Port, WaveshareModels.Relay8B, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        simulator.RefuseModeReads = true;
+        await run.PollAsync();
+
+        Assert.Equal(0b0100UL, await run.Client.TurnOffModesAsync(0b0100, Cancel));
+
+        Assert.Null(run.Client.State.Modes);
+        Assert.Equal(ChannelMask.Of(5), WaveshareBoard.ToBoardState(run.Client.State).Unavailable);
+        await run.PollAsync();
+        Assert.Equal(ChannelMask.Of(5), WaveshareBoard.ToBoardState(run.Client.State).Unavailable);
+    }
+
+    // A new address: the board there says nothing it hasn't read itself.
     [Fact]
     public async Task Should_ForgetTheLinkageRelays_OnAnotherBoard()
     {
