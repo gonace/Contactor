@@ -16,8 +16,11 @@ namespace Contactor.Boards.Velleman;
 /// 1–4) is closed without an answer. It never tells the app anything by itself, as the real board. It also holds each
 /// relay's week schedule (<see cref="Vm208Alarm"/>) and answers <c>GET /getalarms</c> and <c>POST /shedule_set</c> as
 /// the firmware does; channel 0 and a channel above 268 crash the real board, and a channel 5–268 is an extension
-/// module's, which isn't simulated: no answer for either. It keeps the schedules but doesn't run them. Used by the
-/// tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
+/// module's, which isn't simulated: no answer for either. It keeps the schedules but doesn't run them. A pulse or a timer
+/// started as on the board's own page (<see cref="StartPulseAsync"/>, <see cref="StartTimerAsync"/>) runs as the firmware
+/// runs it (<c>src/PulseAndTimer.cpp</c>): it toggles the relay at once and again when it ends, the status shows it
+/// meanwhile (<c>pulseActive</c>, <c>timerActive</c>), and <c>POST /relay</c> for its relay stops it without toggling.
+/// Used by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
 public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardPower, ISimulatedBoardRules, ISimulatedBoardSlowAnswers
 {
@@ -33,6 +36,9 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
 
     // The app shows as connected while it asked something this recently: it opens a connection for every request.
     private static readonly TimeSpan ClientWindow = TimeSpan.FromSeconds(10);
+
+    // The largest time the board's own page takes for a pulse (ms) or a timer (minutes): max="60000" in data/www/js/index.js.
+    private const int MaxPageValue = 60000;
 
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _stopping = new();
@@ -51,6 +57,11 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     private int _requestCount;
     private int _unansweredCount;
     private int _authorizationCount;
+
+    // The pulses and the timers running, as pulseTask and timerTask keep them; each made on first use, so it takes the
+    // TimeProvider set by the initializer.
+    private SimulatedPulses? _pulseRuns;
+    private SimulatedPulses? _timerRuns;
 
     public Vm208Simulator()
         : this(NullLogger.Instance)
@@ -196,6 +207,58 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         return Task.CompletedTask;
     }
 
+    /// <summary>The relays with a pulse running, as the status shows them (<c>pulseActive</c>).</summary>
+    public ChannelMask RunningPulses => new(PulseRuns.Running);
+
+    /// <summary>The relays with a timer running, as the status shows them (<c>timerActive</c>).</summary>
+    public ChannelMask RunningTimers => new(TimerRuns.Running);
+
+    /// <summary>
+    /// Starts a pulse on a relay as the board's own page does (<c>POST /pulse</c>, 1–60000 ms on the page): the firmware
+    /// toggles the relay at once and again after the time (<c>pulseTask</c>, <c>src/PulseAndTimer.cpp</c> lines
+    /// 123–197); a second one on the same relay toggles it again and starts the time anew. Throws
+    /// <see cref="ArgumentOutOfRangeException"/> for a relay the board doesn't have or a time the page doesn't take.
+    /// Nothing while the power is cut.
+    /// </summary>
+    public Task StartPulseAsync(int relay, int milliseconds)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(milliseconds, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(milliseconds, MaxPageValue);
+        return StartRunAsync(PulseRuns, relay, PulseLength(milliseconds));
+    }
+
+    /// <summary>
+    /// Starts a timer on a relay as the board's own page does (<c>POST /timer</c>, 1–60000 minutes on the page): as a
+    /// pulse, but for as long as <see cref="TimerLength"/> says (<c>timerTask</c>, lines 24–100). Throws
+    /// <see cref="ArgumentOutOfRangeException"/> for a relay the board doesn't have or a time the page doesn't take.
+    /// Nothing while the power is cut.
+    /// </summary>
+    public Task StartTimerAsync(int relay, int minutes)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(minutes, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(minutes, MaxPageValue);
+        return StartRunAsync(TimerRuns, relay, TimerLength(minutes));
+    }
+
+    /// <summary>
+    /// How long a pulse of <paramref name="milliseconds"/> runs: the time is a 16-bit number in milliseconds
+    /// (<c>TimeParameters_t.time</c>, <c>uint16_t</c>), so the page's 1–60000 ms as given.
+    /// </summary>
+    public static TimeSpan PulseLength(int milliseconds)
+    {
+        return TimeSpan.FromMilliseconds((ushort)milliseconds);
+    }
+
+    /// <summary>
+    /// How long a timer of <paramref name="minutes"/> runs on the firmware: <c>auto time = param.time; time *= 60000;</c>
+    /// keeps the product in the 16-bit <c>time</c>, so it is <paramref name="minutes"/> × 60000 ms modulo 65536: 1 minute
+    /// runs 60 s, 2 minutes 54.464 s, 10 minutes 10.176 s; never more than 65.535 s. Not yet checked on a real board.
+    /// </summary>
+    public static TimeSpan TimerLength(int minutes)
+    {
+        return TimeSpan.FromMilliseconds((ushort)minutes * 60000L % 65536);
+    }
+
     /// <summary>When true, new connections are closed at once, as if the board were unreachable.</summary>
     public bool RejectConnections { get; set; }
 
@@ -274,6 +337,9 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         DropConnections();
         Change(() =>
         {
+            // Pulses and timers live in the board's memory only: a restart forgets them.
+            PulseRuns.Cancel(ulong.MaxValue);
+            TimerRuns.Cancel(ulong.MaxValue);
             _relays = (byte)0;
         }, power: true);
         return Task.CompletedTask;
@@ -363,6 +429,8 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
 
         _listener?.Dispose();
         _stopping.Dispose();
+        PulseRuns.Dispose();
+        TimerRuns.Dispose();
     }
 
     private async Task AcceptLoopAsync(TcpListener listener, CancellationToken cancellationToken)
@@ -562,8 +630,15 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
                 return NoAnswer("No answer: the board would crash on this request");
             }
 
+            // Lines 85–132: the relay set, then its pulse and its timer stopped (pulseStopQueue, timerStopQueue), without
+            // the toggle at their end.
             var mask = (byte)(1 << (command.Relay - 1));
-            Change(() => _relays = command.TurnOn ? (byte)(_relays | mask) : (byte)(_relays & ~mask));
+            Change(() =>
+            {
+                PulseRuns.Cancel(mask);
+                TimerRuns.Cancel(mask);
+                _relays = command.TurnOn ? (byte)(_relays | mask) : (byte)(_relays & ~mask);
+            });
             return RespondStatus();
         }
 
@@ -628,7 +703,8 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
             return Respond(HttpStatusCode.Unauthorized, "", "Asks for the web page's login", isError: true, extraHeader: "WWW-Authenticate: Basic realm=\"Login Required\"\r\n");
         }
 
-        // Pulses, timers, /setalarm and settings aren't simulated; the app never sends them.
+        // The routes of pulses and timers (started through StartPulseAsync and StartTimerAsync instead), /setalarm and
+        // settings aren't simulated; the app never sends them.
         return Respond(HttpStatusCode.NotFound, "", "Not found", isError: true);
     }
 
@@ -749,8 +825,8 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         bool routine;
         lock (_lock)
         {
-            status = new Vm208Status(_relays, _input, 0);
-            routine = status.SameSwitches(_lastStatusSent);
+            status = new Vm208Status(_relays, _input, 0) { Pulses = (byte)PulseRuns.Running, Timers = (byte)TimerRuns.Running };
+            routine = status.SameSwitches(_lastStatusSent) && status.Running == _lastStatusSent?.Running;
             _lastStatusSent = status;
         }
 
@@ -829,15 +905,48 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
                 return;
             }
 
-            var before = (_relays, _input);
+            var before = (_relays, _input, PulseRuns.Running, TimerRuns.Running);
             change();
-            changed = before != (_relays, _input);
+            changed = before != (_relays, _input, PulseRuns.Running, TimerRuns.Running);
         }
 
         if (changed)
         {
             RaiseChanged();
         }
+    }
+
+    private SimulatedPulses PulseRuns => Runs(ref _pulseRuns);
+
+    private SimulatedPulses TimerRuns => Runs(ref _timerRuns);
+
+    private SimulatedPulses Runs(ref SimulatedPulses? field)
+    {
+        if (Volatile.Read(ref field) is { } runs)
+        {
+            return runs;
+        }
+
+        var created = new SimulatedPulses(TimeProvider);
+        return Interlocked.CompareExchange(ref field, created, null) ?? created;
+    }
+
+    // A pulse or a timer as the firmware starts it: the relay toggled at once, and toggled again at its end unless
+    // POST /relay or a power cut stopped it first. Started and ended under the board's lock (see SimulatedPulses).
+    private Task StartRunAsync(SimulatedPulses runs, int relay, TimeSpan length)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relay, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, Vm208Api.RelayCount);
+
+        // An end at once (a time of 0 after the 16-bit wrap) still comes from the board's next check, not in this call.
+        var wait = length > TimeSpan.Zero ? length : TimeSpan.FromMilliseconds(1);
+        var mask = (byte)(1 << (relay - 1));
+        Change(() =>
+        {
+            runs.Start(mask, wait, take => Change(() => _relays ^= (byte)take()));
+            _relays ^= mask;
+        });
+        return Task.CompletedTask;
     }
 
     // Waits as long as AnswerDelay says before an answer goes out; at once without one.

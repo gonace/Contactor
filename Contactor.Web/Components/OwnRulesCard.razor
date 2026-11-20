@@ -17,7 +17,8 @@
 @inject AppLanguage Language
 
 @* The board's own rules (issue #497), on the board's page and on Settings with one board: each rule the app found,
-   with "Turn off" and "Keep" ("Reset" alone for a relay the board controls by itself), or a line for a board that may have rules the app can't see. None for a board that has
+   with "Turn off" and "Keep" ("Reset" alone for a relay the board controls by itself; "Keep" alone, with a line why,
+   for a rule the board can't turn off now, issue #552), or a line for a board that may have rules the app can't see. None for a board that has
    none. A rule whose turn-off takes other relays' rules with it says so under it ("Also turns off the board's timer
    for Heat."). A board that answers but couldn't read its rules (issue #551) gets a line saying so, under any rows
    from before. *@
@@ -35,6 +36,7 @@
                 @foreach (var row in _rows)
                 {
                     var kept = row.KeptUtc is not null;
+                    var canTurnOff = Handler.CanTurnOff(BoardId, new OwnRule(row.Channel, row.Kind));
                     var id = $"own-rule-{BoardId}-{row.Channel}-{OwnRuleKinds.For(row.Kind)}";
                     <li class="rule @(kept ? "kept" : null)" @key="id">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
@@ -42,14 +44,19 @@
                             <span class="label">@Texts["Relays.RelayLabel", row.Channel]</span>
                             <span class="name">@(_names.GetValueOrDefault(row.Channel) ?? Texts["Relays.DefaultName", row.Channel])</span>
                             <span class="note">@(kept ? Texts["OwnRules.Kept"] : Words.Found(Clock.ToLocal(row.FoundUtc), Clock.Now))</span>
-                            @if (ability.TurnsOff && Also(row) is { } also)
+                            @if (canTurnOff && Also(row) is { } also)
                             {
                                 @* Said before the press: the other relays' rules this "Turn off" takes with it. *@
                                 <span class="also">@also</span>
                             }
+                            else if (ability.TurnsOff && !canTurnOff)
+                            {
+                                @* A rule the board runs now and ends by itself, e.g. a timer started on the VM208's own page. *@
+                                <span class="also">@Texts["OwnRules.CantTurnOff"]</span>
+                            }
                         </span>
                         <span class="buttons">
-                            @if (ability.TurnsOff)
+                            @if (canTurnOff)
                             {
                                 @* A relay the board controls by itself is reset; the app can't switch it until then. *@
                                 <button type="button" class="@(kept ? "secondary" : "primary")" aria-describedby="@id" disabled="@(_busy || !connected)" @onclick="() => TurnOffAsync(row)">@Texts[row.Kind == OwnRuleKind.InputLinkage ? "OwnRules.Reset" : "OwnRules.TurnOff"]</button>
@@ -159,10 +166,13 @@
         return Words.AlsoTurnsOff(Handler.AlsoTurnsOff(BoardId, [new OwnRule(row.Channel, row.Kind)]), _names);
     }
 
-    // Every row's "also" words, to tell when the board's rules going together changed.
+    // Every row's "also" words and whether it can be turned off, to tell when the board's rules going together, or
+    // those it can't turn off, changed.
     private string AlsoShown()
     {
-        return Board is { } board && Ability(board).TurnsOff ? string.Join("\n", _rows.Select(Also)) : "";
+        return Board is { } board && Ability(board).TurnsOff
+            ? string.Join("\n", _rows.Select(r => $"{Handler.CanTurnOff(BoardId, new OwnRule(r.Channel, r.Kind))} {Also(r)}"))
+            : "";
     }
 
     // The rows, in relay order, and the names of their relays. Only the latest load shows: an older one that finishes

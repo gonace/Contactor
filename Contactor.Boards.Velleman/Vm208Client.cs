@@ -18,7 +18,9 @@ namespace Contactor.Boards.Velleman;
 /// The board's own rules are the relays' week schedules on the board (<see cref="Vm208Alarm"/>): the client reads them,
 /// one <c>GET /getalarms</c> per relay, at the first poll of each connection and then every
 /// <see cref="SchedulesInterval"/>, and never writes them on its own: only <see cref="TurnOffOwnRulesAsync"/>, on a
-/// person's press, turns one relay's schedule off with <c>POST /shedule_set</c>.
+/// person's press, turns one relay's schedule off with <c>POST /shedule_set</c>. A pulse or a timer started on the
+/// board's own page shows in every status (<see cref="Vm208Status.Running"/>) and is a rule too, which the app can't turn
+/// off (<see cref="OwnRules.CantTurnOff"/>): it never sends <c>/stoppulse</c> or <c>/stoptimer</c>, which toggle the relay.
 /// </summary>
 public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsyncDisposable
 {
@@ -52,6 +54,9 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
     private bool _schedulesRead;
     private bool _schedulesFailed;
     private DateTimeOffset _schedulesReadUtc;
+
+    // Under the poller's lock: the relays with a pulse or a timer running, as the last status said; null while unknown.
+    private byte? _running;
 
     public Vm208Client(IOptions<Vm208Options> options, TimeProvider timeProvider, ILogger<Vm208Client> logger)
     {
@@ -155,9 +160,10 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
     /// rule, its schedule is read (<c>GET /getalarms</c>), sent back with every alarm at its own time and disabled in one
     /// <c>POST /shedule_set</c>, which the board saves to its flash, and read again. Never <c>/setalarm</c>, which the
     /// board forgets at a restart, and never <c>/stoptimer</c> or <c>/stoppulse</c>, which toggle the relay. The others
-    /// still go when one relay's fails. A rule given twice is taken once. Returns the rules whose schedule the board
-    /// took (answered 200), in relay order. Throws <see cref="ArgumentOutOfRangeException"/> for a relay above 4 or
-    /// another kind of rule, and <see cref="BoardNotConnectedException"/> without a connection, both before anything
+    /// still go when one relay's fails. A rule given twice is taken once. A relay with a pulse or a timer running, as the
+    /// last status said, is left (<see cref="OwnRules.CantTurnOff"/>): nothing is sent for it, and it isn't taken. Returns
+    /// the rules whose schedule the board took (answered 200), in relay order. Throws
+    /// <see cref="ArgumentOutOfRangeException"/> for a relay above 4 or another kind of rule, and <see cref="BoardNotConnectedException"/> without a connection, both before anything
     /// is sent; and <see cref="BoardNotConnectedException"/> when the board took none of them or didn't answer.
     /// </summary>
     public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
@@ -252,6 +258,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
         _schedules = null;
         _schedulesRead = false;
         _schedulesFailed = false;
+        _running = null;
         return Task.CompletedTask;
     }
 
@@ -267,7 +274,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
             await ReadSchedulesAsync(target, cancellationToken).ConfigureAwait(false);
         }
 
-        return status with { OwnRules = CurrentOwnRules() };
+        return status with { OwnRules = CurrentOwnRules(status.Running) };
     }
 
     /// <summary>
@@ -548,28 +555,36 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
         return alarms;
     }
 
-    // Under the poller's lock: the own rules as last read, or null while the schedules are unknown. A Timer rule on each
-    // relay whose schedule has an enabled alarm, in relay order; each relay's schedule is its own unit, so turning one
-    // off takes no other rule with it.
-    private OwnRules? CurrentOwnRules()
+    // Under the poller's lock: the own rules, or null while the schedules or the running pulses and timers are unknown.
+    // A Timer rule on each relay whose schedule has an enabled alarm or that has a pulse or a timer running, in relay
+    // order; each relay is its own unit, so turning one off takes no other rule with it. A relay with a pulse or a timer
+    // running can't be turned off: the app never stops one, and turning its schedule off wouldn't remove the rule.
+    private OwnRules? CurrentOwnRules(byte? running)
     {
-        if (_schedules is not { } schedules)
+        if (_schedules is not { } schedules || running is not { } runs)
         {
             return null;
         }
 
         List<OwnRule> rules = [];
+        List<OwnRule> cantTurnOff = [];
         for (var relay = 1; relay <= schedules.Length; relay++)
         {
-            if (schedules[relay - 1].Any(a => a.Enabled))
+            var isRunning = (runs & (1 << (relay - 1))) != 0;
+            if (schedules[relay - 1].Any(a => a.Enabled) || isRunning)
             {
-                rules.Add(new OwnRule(relay, OwnRuleKind.Timer));
+                var rule = new OwnRule(relay, OwnRuleKind.Timer);
+                rules.Add(rule);
+                if (isRunning)
+                {
+                    cantTurnOff.Add(rule);
+                }
             }
         }
 
         return rules.Count == 0
             ? Contactor.Boards.OwnRules.Empty
-            : new OwnRules(rules, rules.Select(r => (IReadOnlyCollection<OwnRule>)[r]));
+            : new OwnRules(rules, rules.Select(r => (IReadOnlyCollection<OwnRule>)[r]), cantTurnOff);
     }
 
     // Under the poller's lock: for each relay asked, in relay order, its schedule read fresh (so each alarm keeps the
@@ -589,6 +604,13 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
         foreach (var rule in asked)
         {
             var relay = rule.Relay;
+            if (_running is { } running && (running & (1 << (relay - 1))) != 0)
+            {
+                // A pulse or a timer runs on it: the rule stays whatever the schedule, so nothing is sent for it.
+                refusal ??= string.Create(CultureInfo.InvariantCulture, $"relay {relay}: a pulse or a timer started on the board runs on it");
+                continue;
+            }
+
             var posted = false;
             try
             {
@@ -714,11 +736,14 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
             throw;
         }
 
-        var routine = status.SameSwitches(Interlocked.Exchange(ref _lastTraced, status));
+        var before = Interlocked.Exchange(ref _lastTraced, status);
+        var routine = status.SameSwitches(before) && status.Pulses == before?.Pulses && status.Timers == before?.Timers;
         Trace(BoardTraceDirection.Received, Vm208TraceText.Status(status), answer.Text, isRoutine: routine);
 
-        // A command's answer is taken as a poll's: with the rules as last read, so they don't seem to change.
-        return status with { OwnRules = CurrentOwnRules() };
+        // A command's answer is taken as a poll's: with the schedules as last read, so they don't seem to change, and the
+        // pulses and timers it shows.
+        _running = status.Running;
+        return status with { OwnRules = CurrentOwnRules(status.Running) };
     }
 
     /// <summary>

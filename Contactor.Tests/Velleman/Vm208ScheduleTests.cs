@@ -10,8 +10,10 @@ namespace Contactor.Tests.Velleman;
 
 /// <summary>
 /// The VM208's own rules: its relays' week schedules, read with <c>GET /getalarms</c> and turned off with
-/// <c>POST /shedule_set</c>, as Velleman's firmware (https://github.com/Velleman/VM208) takes them; the simulator
-/// answers as the firmware does. The client's clock is a <see cref="ManualTimeProvider"/>.
+/// <c>POST /shedule_set</c>, and the pulses and timers started on its own page, which the status shows and the app can't
+/// turn off, as Velleman's firmware (https://github.com/Velleman/VM208) takes them; the simulator answers as the firmware
+/// does. The client's clock is a <see cref="ManualTimeProvider"/>, and so is the simulator's where it runs a pulse or a
+/// timer.
 /// </summary>
 public sealed class Vm208ScheduleTests
 {
@@ -574,6 +576,133 @@ public sealed class Vm208ScheduleTests
 
         await stop.CancelAsync();
         await task;
+    }
+
+    // A timer started on the board's own page is a rule while it runs, which the app can't turn off; it ends by itself.
+    [Fact]
+    public async Task Should_ReportATimerStartedOnTheBoard_AsARuleItCantTurnOff_UntilItEnds()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new Vm208Simulator { TimeProvider = boardTime };
+        simulator.Start();
+        await using var run = Run.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+
+        await simulator.StartTimerAsync(3, minutes: 1);
+        await run.PollAsync(simulator, requests: 1);
+
+        var timer = new OwnRule(3, OwnRuleKind.Timer);
+        Assert.Equal<OwnRule>([timer], run.Client.State.OwnRules);
+        Assert.Equal([timer], run.Client.State.OwnRules!.CantTurnOff);
+
+        // The relay switched too, so the rules come with the state change, as a command's answer brings them.
+        Assert.Equal(run.Client.State.OwnRules, run.Changes[^1].OwnRules);
+        Assert.Contains(run.Traces, t => t.Text == "Status: relay 3 on · input off · timer running on relay 3" && !t.IsRoutine);
+
+        // Nothing is sent for it, and nothing is taken.
+        var before = simulator.ReceivedRequests.Count;
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([timer], Cancel));
+        Assert.Equal(before, simulator.ReceivedRequests.Count);
+        Assert.True(run.Client.State.IsConnected);
+
+        // At its end the board toggles the relay back, and the rule is gone at the next poll.
+        boardTime.Advance(TimeSpan.FromMinutes(1));
+        Assert.Equal(ChannelMask.None, simulator.State.Relays);
+        await run.PollAsync(simulator, requests: 1);
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+        Assert.Equal(OwnRules.Empty, run.Changes[^1].OwnRules);
+        AssertOnlySafeRequests(simulator);
+    }
+
+    // A relay whose schedule is on and that has a pulse running keeps its rule whatever its schedule: it is left, the
+    // others go. Switching the relay from the app stops the pulse without the toggle at its end, as the firmware does.
+    [Fact]
+    public async Task Should_LeaveARelayWithAPulseRunning_AndTurnOffTheOthers()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new Vm208Simulator { TimeProvider = boardTime };
+        simulator.Start();
+        await simulator.SetAlarmsAsync(2, Weekdays);
+        await simulator.SetAlarmsAsync(3, Weekdays);
+        await using var run = Run.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        await simulator.StartPulseAsync(2, milliseconds: 5000);
+        await run.PollAsync(simulator, requests: 1);
+        OwnRule two = new(2, OwnRuleKind.Timer), three = new(3, OwnRuleKind.Timer);
+        Assert.Equal([two], run.Client.State.OwnRules!.CantTurnOff);
+        var before = simulator.ReceivedRequests.Count;
+
+        var taken = await run.Client.TurnOffOwnRulesAsync([two, three], Cancel);
+
+        Assert.Equal<OwnRule>([three], taken);
+        Assert.DoesNotContain(simulator.ReceivedRequests.Skip(before), r => r.Contains("channel=2", StringComparison.Ordinal) || r.StartsWith("POST /shedule_set relay=2&", StringComparison.Ordinal));
+        Assert.Equal(Weekdays, simulator.Alarms(2));
+        Assert.Equal<OwnRule>([two], run.Client.State.OwnRules);
+
+        // Relay 2 is on by the pulse: turning it on changes no relay, only the rules, which come alone.
+        var ruleChanges = run.RuleChanges;
+        await run.Client.TurnOnAsync(0b0010, Cancel);
+        Assert.Equal(ChannelMask.None, simulator.RunningPulses);
+        Assert.Empty(run.Client.State.OwnRules!.CantTurnOff);
+        Assert.Equal(ruleChanges + 1, run.RuleChanges);
+        boardTime.Advance(TimeSpan.FromSeconds(5));
+        Assert.Equal(ChannelMask.Of(2), simulator.State.Relays);
+        AssertOnlySafeRequests(simulator);
+    }
+
+    // As src/PulseAndTimer.cpp runs them: the relay toggled at the start and at the end, the status showing it meanwhile,
+    // a timer's time in 16 bits, and a power cut forgetting them.
+    [Fact]
+    public async Task Should_RunAPulseAndATimer_AsTheFirmware()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new Vm208Simulator { TimeProvider = boardTime };
+        simulator.Start();
+        await simulator.SwitchRelayAsync(1, turnOn: true);
+
+        await simulator.StartPulseAsync(1, milliseconds: 500);
+        await simulator.StartTimerAsync(4, minutes: 2);
+
+        Assert.Equal(ChannelMask.Of(4), simulator.State.Relays);
+        var status = await SendAsync(simulator.Port, StatusRequest);
+        Assert.Contains("{\"name\":\"RELAY1\",\"state\":false,\"pulseActive\":true,\"timerActive\":false}", status, StringComparison.Ordinal);
+        Assert.Contains("{\"name\":\"RELAY4\",\"state\":true,\"pulseActive\":false,\"timerActive\":true}", status, StringComparison.Ordinal);
+
+        boardTime.Advance(TimeSpan.FromMilliseconds(500));
+        Assert.Equal(ChannelMask.Of([1, 4]), simulator.State.Relays);
+        Assert.Equal(ChannelMask.None, simulator.RunningPulses);
+
+        // auto time = param.time; time *= 60000; keeps 16 bits: 2 minutes end after 54.464 s.
+        Assert.Equal(TimeSpan.FromMinutes(1), Vm208Simulator.TimerLength(1));
+        Assert.Equal(TimeSpan.FromMilliseconds(54464), Vm208Simulator.TimerLength(2));
+        boardTime.Advance(TimeSpan.FromMilliseconds(54464 - 500 - 1));
+        Assert.Equal(ChannelMask.Of(4), simulator.RunningTimers);
+        boardTime.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal(ChannelMask.Of(1), simulator.State.Relays);
+        Assert.Equal(ChannelMask.None, simulator.RunningTimers);
+
+        // A second start toggles again and starts the time anew.
+        await simulator.StartPulseAsync(2, milliseconds: 1000);
+        boardTime.Advance(TimeSpan.FromMilliseconds(600));
+        await simulator.StartPulseAsync(2, milliseconds: 1000);
+        boardTime.Advance(TimeSpan.FromMilliseconds(600));
+        Assert.Equal(ChannelMask.Of(1), simulator.State.Relays);
+        Assert.Equal(ChannelMask.Of(2), simulator.RunningPulses);
+        boardTime.Advance(TimeSpan.FromMilliseconds(400));
+        Assert.Equal(ChannelMask.Of([1, 2]), simulator.State.Relays);
+
+        // A run lives in memory only: after a power cut it never toggles.
+        await simulator.StartTimerAsync(3, minutes: 1);
+        await simulator.CutPowerAsync();
+        await simulator.RestorePowerAsync();
+        boardTime.Advance(TimeSpan.FromMinutes(1));
+        Assert.Equal(ChannelMask.None, simulator.State.Relays);
+        Assert.Equal(ChannelMask.None, simulator.RunningTimers);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.StartPulseAsync(5, 100));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.StartTimerAsync(1, 0));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.StartTimerAsync(1, 60001));
     }
 
     private static void AssertOnlySafeRequests(Vm208Simulator simulator)

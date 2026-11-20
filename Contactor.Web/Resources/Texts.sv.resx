@@ -1730,6 +1730,9 @@
   <data name="OwnRules.CanSwitch_Other" xml:space="preserve">
     <value>De kan slå om {0} utan Contactor.</value>
   </data>
+  <data name="OwnRules.CantTurnOff" xml:space="preserve">
+    <value>Startad på kortets egen webbsida. Den slutar av sig själv, och Contactor kan inte stoppa den.</value>
+  </data>
   <data name="OwnRules.Card.CantTell" xml:space="preserve">
     <value>Kortet kan ha egna timers. Titta på kortets egen webbsida.</value>
   </data>

@@ -119,6 +119,26 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
+    /// Whether the app can turn off <paramref name="rule"/> now: the board turns its rules off
+    /// (<see cref="OwnRulesAbility.TurnsOff"/>) and its state doesn't name the rule among those it can't
+    /// (<see cref="OwnRules.CantTurnOff"/>, e.g. a timer started on the VM208's own page, which ends by itself). While the
+    /// board's rules aren't known, as the ability says. A screen offers "Turn off" only for such a rule.
+    /// </summary>
+    public bool CanTurnOff(int boardId, OwnRule rule)
+    {
+        return _registry.Find(boardId) is { } board
+            && board.Capabilities.OwnRulesOrCantTell.TurnsOff
+            && board.State.OwnRules?.CanTurnOff(rule) != false;
+    }
+
+    /// <summary>The rules of <paramref name="rules"/> the app can turn off now (<see cref="CanTurnOff(int, OwnRule)"/>), in the order given.</summary>
+    public IReadOnlyList<OwnRule> TurnsOff(int boardId, IEnumerable<OwnRule> rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        return [.. rules.Where(r => CanTurnOff(boardId, r))];
+    }
+
+    /// <summary>
     /// The other rules of the board's own that turning off <paramref name="rules"/> also removes on the board
     /// (<see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/>), e.g. relay 2's timer when relay 1's timer is a schedule
     /// on the board that switches both: each once, in the board's order. None for a board whose rules go alone, or

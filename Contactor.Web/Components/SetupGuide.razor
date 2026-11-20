@@ -159,9 +159,11 @@
         else if (_step == StepRules && Chosen is { } rulesBoard)
         {
             var asked = OwnRules.ToAsk(rulesBoard.BoardId);
-            @if (rulesBoard.Capabilities.OwnRulesOrCantTell.TurnsOff)
+            @* Only the rules the app can turn off: not a timer the board runs now and ends by itself. *@
+            var turnsOff = OwnRules.TurnsOff(rulesBoard.BoardId, asked);
+            @if (turnsOff.Count > 0)
             {
-                <button type="button" class="finish" disabled="@Busy" @onclick="TurnOffRulesAsync">@(asked.Count > 0 && asked.All(r => r.Kind == OwnRuleKind.InputLinkage) ? Texts["OwnRules.Reset"] : OwnRulesWords.TurnOffAll(asked.Count))</button>
+                <button type="button" class="finish" disabled="@Busy" @onclick="TurnOffRulesAsync">@(turnsOff.All(r => r.Kind == OwnRuleKind.InputLinkage) ? Texts["OwnRules.Reset"] : OwnRulesWords.TurnOffAll(turnsOff.Count))</button>
             }
             @* A relay the board controls by itself is never kept: with only such relays, the step is left as it is. *@
             @* A board being added has no groups yet; "Keep them" checks them anyway (KeepAllAsync). *@

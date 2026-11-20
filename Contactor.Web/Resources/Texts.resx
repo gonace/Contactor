@@ -1906,6 +1906,10 @@
     <value>They can switch {0} without Contactor.</value>
     <comment>Under OwnRules.Warning: {0} is e.g. "relays 3 and 5" (OwnRules.Relays).</comment>
   </data>
+  <data name="OwnRules.CantTurnOff" xml:space="preserve">
+    <value>Started on the board's own web page. It ends by itself, and Contactor can't stop it.</value>
+    <comment>In place of "Turn off" for a rule the board runs now, e.g. a pulse or a timer started on the VM208's own page.</comment>
+  </data>
   <data name="OwnRules.Card.CantTell" xml:space="preserve">
     <value>This board may have timers of its own. Check its own web page.</value>
     <comment>A board whose own rules the app can't see.</comment>

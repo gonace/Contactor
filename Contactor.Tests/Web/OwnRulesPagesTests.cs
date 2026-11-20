@@ -257,6 +257,43 @@ public sealed partial class OwnRulesPagesTests
         Assert.Empty(page.Errors);
     }
 
+    // A rule the board runs now and ends by itself (relay 3, e.g. a timer started on the VM208's own page): warned about,
+    // but no "Turn off" for it anywhere, a line why in its place, and "Keep" as for any timer. Once the board can turn it
+    // off again, the open card follows.
+    [Fact]
+    public async Task Should_OfferNoTurnOff_ForARuleTheBoardCantTurnOff()
+    {
+        const string CantTurnOff = "Started on the board's own web page. It ends by itself, and Contactor can't stop it.";
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, new OwnRules([Timer3, Timer5], null, [Timer3]));
+        var handler = app.Services.GetRequiredService<OwnRulesHandler>();
+        Assert.False(handler.CanTurnOff(BoardId, Timer3));
+        Assert.Equal([Timer5], handler.TurnsOff(BoardId, [Timer3, Timer5]));
+
+        var box = Box(await PageAsync(app, "/"));
+        Assert.Contains("They can switch relays 3 and 5 without Contactor.", box, StringComparison.Ordinal);
+        Assert.Contains(">Turn it off</button>", box, StringComparison.Ordinal);
+
+        var card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+        Assert.Single(Regex.Matches(card, ">Turn off</button>"));
+        Assert.Equal(2, Regex.Count(card, ">Keep</button>"));
+        Assert.Single(Regex.Matches(card, "Started on the board&#x27;s own web page\\. It ends by itself, and Contactor can|Started on the board's own web page\\. It ends by itself, and Contactor can"));
+
+        using var page = await PageRenderer.StartAsync<BoardPage>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardPage.Id)] = BoardId });
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains(CantTurnOff, StringComparison.Ordinal));
+        board.SetOwnRules(new OwnRules([Timer3, Timer5]));
+        await Wait.UntilAsync(() => !page.TextAsync().GetAwaiter().GetResult().Contains(CantTurnOff, StringComparison.Ordinal));
+        await page.ClickAsync(PageRenderer.WithText("Turn off"), 1);
+        Assert.Equal(new OwnRules([Timer3]), board.State.OwnRules);
+
+        // With only such a rule, the warning on Relays has no button at all.
+        board.SetOwnRules(new OwnRules([Timer3], null, [Timer3]));
+        await Wait.UntilAsync(() => Service(app).Rows(BoardId).Count == 1);
+        Assert.DoesNotContain("</button>", Box(await PageAsync(app, "/")), StringComparison.Ordinal);
+        Assert.Empty(page.Errors);
+    }
+
     [Fact]
     public async Task Should_KeepAndTurnOff_FromTheBoardsPage()
     {

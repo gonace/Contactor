@@ -24,8 +24,11 @@ public static class Vm208Json
     /// Reads a status answer, as <c>sendIOState(request, interface, socket)</c> (<c>src/Network/server_VM208.cpp</c>)
     /// writes it for the card itself:
     /// <c>{"Channels":[{"name":"…","state":b,"pulseActive":b,"timerActive":b}, …4],"m1":b,"m2":b,"input":b}</c>.
-    /// Each relay's <c>state</c> and the <c>input</c> must be true or false; the names, the pulse and timer flags are
-    /// ignored, and an <c>m1</c> or <c>m2</c> that isn't <c>true</c> reads as off.
+    /// Each relay's <c>state</c> and the <c>input</c> must be true or false; the names are ignored, and an <c>m1</c> or
+    /// <c>m2</c> that isn't <c>true</c> reads as off. Each relay's <c>pulseActive</c> and <c>timerActive</c> say whether
+    /// a pulse or a timer started on the board's own page runs on it (<c>src/PulseAndTimer.cpp</c>): when one relay's
+    /// flag isn't true or false, those flags are unknown (<see cref="Vm208Status.Pulses"/>, <see cref="Vm208Status.Timers"/>
+    /// null), and the status is still read.
     /// </summary>
     public static Vm208Status ReadStatus(ReadOnlySpan<byte> json)
     {
@@ -58,6 +61,8 @@ public static class Vm208Json
         }
 
         var relays = 0;
+        int? pulses = 0;
+        int? timers = 0;
         var index = 0;
         foreach (var channel in channels.EnumerateArray())
         {
@@ -71,6 +76,8 @@ public static class Vm208Json
                 relays |= 1 << index;
             }
 
+            pulses = Flag(channel, "pulseActive", pulses, index);
+            timers = Flag(channel, "timerActive", timers, index);
             index++;
         }
 
@@ -80,7 +87,11 @@ public static class Vm208Json
         }
 
         var outputs = (IsTrue(root, "m1") ? 1 : 0) | (IsTrue(root, "m2") ? 2 : 0);
-        return new Vm208Status((byte)relays, input.ValueKind == JsonValueKind.True, (byte)outputs);
+        return new Vm208Status((byte)relays, input.ValueKind == JsonValueKind.True, (byte)outputs)
+        {
+            Pulses = (byte?)pulses,
+            Timers = (byte?)timers,
+        };
     }
 
     /// <summary>A status as the firmware writes it, compact, with these relay names; for the simulator.</summary>
@@ -103,7 +114,9 @@ public static class Vm208Json
 
             text.Append("{\"name\":").Append(JsonSerializer.Serialize(names[i], WriteOptions))
                 .Append(",\"state\":").Append(Bool((status.Relays & (1 << i)) != 0))
-                .Append(",\"pulseActive\":false,\"timerActive\":false}");
+                .Append(",\"pulseActive\":").Append(Bool(((status.Pulses ?? 0) & (1 << i)) != 0))
+                .Append(",\"timerActive\":").Append(Bool(((status.Timers ?? 0) & (1 << i)) != 0))
+                .Append('}');
         }
 
         text.Append("],\"m1\":").Append(Bool((status.Outputs & 1) != 0))
@@ -192,6 +205,17 @@ public static class Vm208Json
         }
 
         return text.Append("]}}").ToString();
+    }
+
+    // The relays with the flag true so far, with this relay's added; null once one relay's flag isn't true or false.
+    private static int? Flag(JsonElement channel, string name, int? flags, int index)
+    {
+        if (flags is not { } known || !channel.TryGetProperty(name, out var flag) || !IsBoolean(flag))
+        {
+            return null;
+        }
+
+        return flag.ValueKind == JsonValueKind.True ? known | (1 << index) : known;
     }
 
     // A whole number the size of the firmware's fields, or null.

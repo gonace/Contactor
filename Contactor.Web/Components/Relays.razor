@@ -309,6 +309,9 @@
     // the page is drawn.
     private readonly Dictionary<int, IReadOnlyList<OwnRule>> _shownAlso = [];
 
+    // The rules each board's "Turn them off" turns off (OwnRulesHandler.TurnsOff), by board id: kept as the page is drawn.
+    private readonly Dictionary<int, IReadOnlyList<OwnRule>> _shownTurnsOff = [];
+
     // The relays each board controls by itself, by board id: kept as the page is drawn.
     private readonly Dictionary<int, ChannelMask> _shownUnavailable = [];
 
@@ -534,14 +537,15 @@
             <div>
                 <strong>@OwnRulesText.Heading(rules, boardName)</strong>
                 <span>@OwnRulesText.CanSwitch(rules)</span>
-                @if (board.Capabilities.OwnRulesOrCantTell.TurnsOff)
+                @* Only the rules the app can turn off: not a timer the board runs now and ends by itself. *@
+                @if (_shownTurnsOff.GetValueOrDefault(board.BoardId) is { Count: > 0 } turnsOff)
                 {
                     @* Said before the press: other relays' rules that go with these ("Also turns off the board's timer for Heat."). *@
                     @if (_shownAlso.GetValueOrDefault(board.BoardId) is { Count: > 0 } also)
                     {
                         <span class="also">@OwnRulesText.AlsoTurnsOff(also, RelayNames(board.BoardId))</span>
                     }
-                    <button type="button" class="turn-off-rules" disabled="@(_busy || !board.State.IsConnected)" @onclick="() => TurnOffRulesAsync(board.BoardId, rules)">@OwnRulesText.TurnOffAll(rules.Count)</button>
+                    <button type="button" class="turn-off-rules" disabled="@(_busy || !board.State.IsConnected)" @onclick="() => TurnOffRulesAsync(board.BoardId, turnsOff)">@OwnRulesText.TurnOffAll(turnsOff.Count)</button>
                 }
                 @if (_rulesError is { } error && error.BoardId == board.BoardId)
                 {
@@ -1220,6 +1224,12 @@
         return board.State.IsConnected ? [.. OwnRules.Warnings(board.BoardId).Where(r => r.Kind != OwnRuleKind.InputLinkage)] : [];
     }
 
+    // The warning's rules that "Turn them off" turns off: none on a board that can't, nor a rule it can't turn off now.
+    private IReadOnlyList<OwnRule> TurnsOffToShow(LiveBoard board, IReadOnlyList<OwnRule> rules)
+    {
+        return rules.Count > 0 ? OwnRules.TurnsOff(board.BoardId, rules) : [];
+    }
+
     // What turning off the warning's rules takes with it: only for a board that turns them off.
     private IReadOnlyList<OwnRule> AlsoToShow(LiveBoard board, IReadOnlyList<OwnRule> rules)
     {
@@ -1236,11 +1246,13 @@
     {
         _shownRules.Clear();
         _shownAlso.Clear();
+        _shownTurnsOff.Clear();
         _shownUnavailable.Clear();
         foreach (var board in Boards)
         {
             _shownRules[board.BoardId] = RulesToShow(board);
-            _shownAlso[board.BoardId] = AlsoToShow(board, _shownRules[board.BoardId]);
+            _shownTurnsOff[board.BoardId] = TurnsOffToShow(board, _shownRules[board.BoardId]);
+            _shownAlso[board.BoardId] = AlsoToShow(board, _shownTurnsOff[board.BoardId]);
             _shownUnavailable[board.BoardId] = board.State.Unavailable;
         }
 
@@ -1340,8 +1352,10 @@
                 }
 
                 var rules = RulesToShow(board);
+                var turnsOff = TurnsOffToShow(board, rules);
                 if (!rules.SequenceEqual(_shownRules.GetValueOrDefault(boardId) ?? [])
-                    || !AlsoToShow(board, rules).SequenceEqual(_shownAlso.GetValueOrDefault(boardId) ?? [])
+                    || !turnsOff.SequenceEqual(_shownTurnsOff.GetValueOrDefault(boardId) ?? [])
+                    || !AlsoToShow(board, turnsOff).SequenceEqual(_shownAlso.GetValueOrDefault(boardId) ?? [])
                     || board.State.Unavailable != _shownUnavailable.GetValueOrDefault(boardId))
                 {
                     StateHasChanged();

@@ -28,6 +28,10 @@
             {
                 <span class="note">@Texts["OwnRules.Unavailable.Step"]</span>
             }
+            else if (!_turnsOff.Contains(rule) && Board.Capabilities.OwnRulesOrCantTell.TurnsOff)
+            {
+                <span class="note">@Texts["OwnRules.CantTurnOff"]</span>
+            }
         </li>
     }
 </ul>
@@ -50,7 +54,11 @@
     // doesn't change under it.
     private IReadOnlyList<OwnRule> _rules = [];
 
-    // The other rules turning _rules off takes with it (OwnRulesHandler.AlsoTurnsOff): none on a board that can't.
+    // The rules of _rules "Turn them off" turns off (OwnRulesHandler.TurnsOff): not one the board runs now and ends by
+    // itself.
+    private IReadOnlyList<OwnRule> _turnsOff = [];
+
+    // The other rules turning _turnsOff off takes with it (OwnRulesHandler.AlsoTurnsOff): none on a board that can't.
     private IReadOnlyList<OwnRule> _also = [];
 
     /// <summary>The board being added; it must have a model.</summary>
@@ -116,7 +124,11 @@
     /// </summary>
     public Task<bool> TurnOffAsync()
     {
-        return PressAsync((boardId, rules, email) => Handler.TurnOffAndConfirmAsync(boardId, rules, email, CancellationToken.None), "Turning off the board's own rules failed");
+        // Only those it can turn off, as shown: the others stay, and Relays warns about them. None: no button is shown.
+        var turnsOff = _turnsOff;
+        return turnsOff.Count == 0
+            ? Task.FromResult(false)
+            : PressAsync((boardId, _, email) => Handler.TurnOffAndConfirmAsync(boardId, turnsOff, email, CancellationToken.None), "Turning off the board's own rules failed");
     }
 
     /// <summary>"Keep them": the app stops warning about them (<see cref="OwnRulesHandler.KeepAllAsync"/>). True when kept.</summary>
@@ -161,7 +173,8 @@
     private void Show(IReadOnlyList<OwnRule> rules)
     {
         _rules = rules;
-        _also = Also(rules);
+        _turnsOff = Handler.TurnsOff(Board.BoardId, rules);
+        _also = Also(_turnsOff);
     }
 
     private IReadOnlyList<OwnRule> Also(IReadOnlyList<OwnRule> rules)
@@ -208,7 +221,8 @@
                 }
 
                 var now = Handler.ToAsk(_watched);
-                if (!now.SequenceEqual(_rules) || !Also(now).SequenceEqual(_also))
+                var turnsOff = Handler.TurnsOff(_watched, now);
+                if (!now.SequenceEqual(_rules) || !turnsOff.SequenceEqual(_turnsOff) || !Also(turnsOff).SequenceEqual(_also))
                 {
                     Show(now);
                     StateHasChanged();
