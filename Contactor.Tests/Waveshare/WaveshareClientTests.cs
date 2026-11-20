@@ -779,6 +779,23 @@ public sealed class WaveshareClientTests
         Assert.Null(run.Client.State.Modes);
     }
 
+    // The modes are read before the board's first connected state, so unknown modes while it answers mean they couldn't
+    // be read, which the screens say (issue #551); a refused read is in Should_GiveNoModes_WhenTheirReadFails.
+    [Fact]
+    public async Task Should_ReadTheModes_BeforeTheFirstConnectedState()
+    {
+        await using var board = ScriptedBoard.Start(request => request[1] switch
+        {
+            WaveshareApi.ReadHoldingRegisters => WaveshareModbus.WithCrc([1, 3, 16, .. new byte[16]]),
+            _ => AllOff(request),
+        });
+        await using var run = ClientRun.Start(board.Port, WaveshareModels.Relay8B);
+
+        await Wait.UntilAsync(() => run.Changes.Any(s => s.IsConnected));
+
+        Assert.Equal<ushort>(new ushort[WaveshareApi.RelayModeCount], run.Changes.First(s => s.IsConnected).Modes!);
+    }
+
     [Theory]
     [InlineData("refused")]
     [InlineData("unreadable")]

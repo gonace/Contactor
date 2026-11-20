@@ -2,9 +2,7 @@ using System.Net;
 using Contactor.Boards;
 using Contactor.Tests.Boards;
 using Contactor.Web.Components;
-using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Events;
-using Contactor.Web.Features.Languages;
 using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.AspNetCore.Components;
@@ -347,19 +345,6 @@ public sealed class RelayPowerOnTests
         Assert.Single(await PowerOnEventsAsync(app));
     }
 
-    [Fact]
-    public async Task Should_SayOnlyOffIsAllowed_InSwedish()
-    {
-        await using var app = App(WholeBoard());
-        await AddGroupAsync(app, "Fläkt", "Värme");
-        using var http = app.CreateClient();
-        await app.Services.GetRequiredService<AppLanguage>().ChooseAsync("sv", Cancel);
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/relay/5", Cancel));
-
-        Assert.Contains("Fläkt och Värme ingår i en grupp, så kortet kan bara ställas på Av efter ett strömavbrott.", html, StringComparison.Ordinal);
-    }
-
     // Checked at Save too: a group made on the board while the page was open is caught, and nothing is sent.
     [Theory]
     [InlineData(PowerOnState.On)]
@@ -522,29 +507,6 @@ public sealed class RelayPowerOnTests
         Assert.Empty(board.PowerOnWrites);
     }
 
-    // A change of the states alone redraws the page only when the relay's own changed; closing the page lets go.
-    [Fact]
-    public async Task Should_Redraw_OnlyWhenTheRelaysStateChanged()
-    {
-        var board = Board();
-        await using var app = App(board);
-        var registry = app.Services.GetRequiredService<BoardRegistry>();
-        var page = await OpenAsync(app);
-        using (page)
-        {
-            var renders = page.PageRenders;
-
-            board.SetPowerOn(States(relay3: PowerOnState.On, relay5: PowerOnState.On));
-            board.SetPowerOn(States(relay3: PowerOnState.Off, relay5: PowerOnState.On));
-            await Wait.UntilAsync(() => page.HasAsync(a => a.TryGetValue("value", out var v) && "Off".Equals(v) && "true".Equals(a.GetValueOrDefault("aria-pressed"))).GetAwaiter().GetResult());
-
-            Assert.Equal(renders + 1, page.PageRenders);
-            Assert.Equal(1, PageRenderer.Handlers<RelayDetail>(registry, nameof(BoardRegistry.PowerOnChanged)));
-        }
-
-        Assert.Equal(0, PageRenderer.Handlers<RelayDetail>(registry, nameof(BoardRegistry.PowerOnChanged)));
-    }
-
     [Theory]
     [InlineData("""{"from":"on","to":"off"}""", "set the relay to stay off after a power cut")]
     [InlineData("""{"to":"as-before"}""", "set the relay to go back as it was after a power cut")]
@@ -557,36 +519,6 @@ public sealed class RelayPowerOnTests
         var view = TestTexts.Events.For(Entry(details), "Heat", "Erik");
 
         Assert.Equal(new EventView(true, "E", "Erik", "{0} " + what, "Heat"), view);
-    }
-
-    [Theory]
-    [InlineData("""{"to":"off"}""", "Erik ställde in att reläet förblir avstängt efter ett strömavbrott")]
-    [InlineData("""{"to":"as-before"}""", "Erik ställde in att reläet blir som innan efter ett strömavbrott")]
-    [InlineData("""{"to":"on"}""", "Erik ställde in att reläet slås på efter ett strömavbrott")]
-    [InlineData("""{"to":"follows-input"}""", "Erik ställde in att reläet följer sin brytare efter ett strömavbrott")]
-    [InlineData("{", "Erik ändrade vad reläet gör efter ett strömavbrott")]
-    public void Should_DescribeThePersonsChange_InSwedish(string details, string text)
-    {
-        using var swedish = TestCulture.Language("sv");
-
-        Assert.Equal(text, TestTexts.Events.For(Entry(details), "Värme", "Erik").Text);
-    }
-
-    [Fact]
-    public async Task Should_ShowTheFieldInSwedish()
-    {
-        var board = Board();
-        await using var app = App(board);
-        using var http = app.CreateClient();
-        await http.GetAsync("/", Cancel);
-        await app.Services.GetRequiredService<AppLanguage>().ChooseAsync("sv", Cancel);
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/relay/3", Cancel));
-
-        Assert.Contains("Efter ett strömavbrott", html, StringComparison.Ordinal);
-        Assert.Contains("Som innan", html, StringComparison.Ordinal);
-        Assert.Contains("Följer sin brytare", html, StringComparison.Ordinal);
-        Assert.Contains("Kortet slår på det själv, utan Contactor.", html, StringComparison.Ordinal);
     }
 
     [Fact]

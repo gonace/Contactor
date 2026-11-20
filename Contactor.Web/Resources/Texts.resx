@@ -1910,6 +1910,10 @@
     <value>This board may have timers of its own. Check its own web page.</value>
     <comment>A board whose own rules the app can't see.</comment>
   </data>
+  <data name="OwnRules.Card.CouldntRead" xml:space="preserve">
+    <value>Contactor couldn't read this board's own rules. Check its own web page.</value>
+    <comment>A board that answers and reads its own rules, but couldn't read them this time, e.g. another firmware.</comment>
+  </data>
   <data name="OwnRules.Card.Hint" xml:space="preserve">
     <value>They can turn relays on and off without Contactor.</value>
   </data>

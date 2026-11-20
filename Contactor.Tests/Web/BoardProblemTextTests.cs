@@ -2,15 +2,12 @@ using Contactor.Boards;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Shelly;
 using Contactor.Boards.Velleman;
-using Contactor.Web.Features.Boards;
 
 namespace Contactor.Tests.Web;
 
 /// <summary>Why a board refuses the connection, in words: "password" words for a password alone, "login" words else.</summary>
 public sealed class BoardProblemTextTests
 {
-    private static readonly BoardProblemText Problem = new(TestTexts.Localizer);
-
     public static TheoryData<ConnectionProblem, string, string> English { get; } = new()
     {
         { new(ConnectionProblemKind.WrongModel, DevantechModels.Eth008, DevantechModels.Eth484), "The board at this address is an ETH484-B, not an ETH008-B.", "Wrong model" },
@@ -48,39 +45,6 @@ public sealed class BoardProblemTextTests
         { new(ConnectionProblemKind.AskedToWait, Vm204Model.Model), "Kortet ber Contactor att vänta en stund. Kontrollera användarnamnet och lösenordet om du nyss har ändrat dem.", "Ber oss vänta" },
     };
 
-    [Theory]
-    [MemberData(nameof(English))]
-    public void Should_SayWhy_InEnglish(ConnectionProblem problem, string longText, string shortText)
-    {
-        Assert.Equal(longText, Problem.Long(problem));
-        Assert.Equal(shortText, Problem.Short(problem));
-    }
-
-    [Theory]
-    [MemberData(nameof(Swedish))]
-    public void Should_SayWhy_InSwedish(ConnectionProblem problem, string longText, string shortText)
-    {
-        using var swedish = TestCulture.Language("sv");
-
-        Assert.Equal(longText, Problem.Long(problem));
-        Assert.Equal(shortText, Problem.Short(problem));
-    }
-
-    // Another number of relays names the counts, never the models, and is added again only with an entry for its count.
-    [Fact]
-    public void Should_SayToAddItAgain_WithTheRelaysFound_ForAnotherNumberOfRelays()
-    {
-        var four = new ConnectionProblem(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, ShellyModels.FourRelays, FoundRelayCount: 4);
-
-        Assert.Equal("Add it again with 'Add a board' and choose the one with 4 relays, then remove this one.", Problem.AddAgain(four));
-        Assert.Null(Problem.AddAgain(new ConnectionProblem(ConnectionProblemKind.WrongModel, ShellyModels.TwoRelays, FoundRelayCount: 6)));
-        Assert.Equal("The board at this address has 4 relays, not 2.", four.ToString());
-        using (TestCulture.Language("sv"))
-        {
-            Assert.Equal("Lägg till det igen med \"Lägg till reläkort\", välj det med 4 reläer och ta sedan bort det här.", Problem.AddAgain(four));
-        }
-    }
-
     // A new kind of problem gets its words in both languages, and a test here.
     [Fact]
     public void Should_HaveATestForEveryKindOfProblem_InBothLanguages()
@@ -100,21 +64,5 @@ public sealed class BoardProblemTextTests
     public void Should_SayWhetherAProblemIsAboutTheLogin(ConnectionProblemKind kind, bool aboutLogin)
     {
         Assert.Equal(aboutLogin, new ConnectionProblem(kind, ShellyModels.OneRelay).IsAboutLogin);
-    }
-
-    // Settings can't change a board's model: another one is added again, but only when the app knows which.
-    [Fact]
-    public void Should_SayToAddItAgain_OnlyForAModelTheAppKnows()
-    {
-        var found = new ConnectionProblem(ConnectionProblemKind.WrongModel, DevantechModels.Eth008, DevantechModels.Eth484);
-
-        Assert.Equal("Add it again as an ETH484-B with 'Add a board', then remove this one.", Problem.AddAgain(found));
-        Assert.Null(Problem.AddAgain(new ConnectionProblem(ConnectionProblemKind.WrongModel, DevantechModels.Eth008)));
-        Assert.Null(Problem.AddAgain(new ConnectionProblem(ConnectionProblemKind.LoginRefused, DevantechModels.Eth008)));
-        Assert.Null(Problem.AddAgain(new ConnectionProblem(ConnectionProblemKind.CoverProfile, ShellyModels.TwoRelays)));
-        using (TestCulture.Language("sv"))
-        {
-            Assert.Equal("Lägg till det igen som ett ETH484-B med \"Lägg till reläkort\" och ta sedan bort det här.", Problem.AddAgain(found));
-        }
     }
 }

@@ -85,21 +85,31 @@ function openDatabase(readOnly = false) {
     return db;
 }
 
-// Takes the write lock once, so the app can't take it between two of the writes, and the data lands all at once.
-function writeAll(db, write) {
-    db.exec('BEGIN IMMEDIATE');
+// Opens the database and takes the write lock once, so the app can't take it between two of the writes, and the data
+// lands all at once. The database is closed whatever happens, so a failed write never leaves it open while the
+// temporary folder is removed (on Windows that fails with EBUSY and hides the real error).
+function writeAll(write) {
+    const db = openDatabase();
     try {
-        write();
-        db.exec('COMMIT');
-    } catch (error) {
-        db.exec('ROLLBACK');
-        throw error;
+        db.exec('BEGIN IMMEDIATE');
+        try {
+            write(db);
+            db.exec('COMMIT');
+        } catch (error) {
+            try {
+                db.exec('ROLLBACK');
+            } catch {
+                // SQLite rolled it back by itself (e.g. disk full, an I/O error): the real error is the one to show.
+            }
+            throw error;
+        }
+    } finally {
+        db.close();
     }
 }
 
 function seed() {
-    const db = openDatabase();
-    writeAll(db, () => {
+    writeAll((db) => {
         // By channel: a relay's id is only the database's key.
         const relays = [
             [1, 'Fan 1', 1],
@@ -159,17 +169,16 @@ function seed() {
             .run(utc(5 * 60), db.prepare('SELECT "Id" FROM "Input" WHERE "BoardId" = 1 AND "Channel" = 1').get().Id);
         event.run(utc(90), null, 1, 'alex@example.com', 'group-create', '{"name":"Fan heaters","steps":["Fans","Heaters"]}');
     });
-    db.close();
 }
 
 // Past the setup guide with a VM201, only on this network and with no sign-in, so the app runs that board from its
 // next start and opens on the relays. The shared person is called John, so the screens greet someone by name.
 function setUp() {
-    const db = openDatabase();
-    db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "SetupDoneUtc", "AccessType", "SignInType") VALUES (1, ?, \'local\', \'none\')').run('2026-11-01 08:00:00');
-    db.prepare('INSERT INTO "Board" ("Id", "Name", "Type", "SortOrder") VALUES (1, \'Velleman VM201\', \'vm201\', 1)').run();
-    db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (\'someone@contactor.invalid\', \'John\', 0)').run();
-    db.close();
+    writeAll((db) => {
+        db.prepare('INSERT OR REPLACE INTO "Installation" ("Id", "SetupDoneUtc", "AccessType", "SignInType") VALUES (1, ?, \'local\', \'none\')').run('2026-11-01 08:00:00');
+        db.prepare('INSERT INTO "Board" ("Id", "Name", "Type", "SortOrder") VALUES (1, \'Velleman VM201\', \'vm201\', 1)').run();
+        db.prepare('INSERT OR REPLACE INTO "User" ("Email", "DisplayName", "ShowBoardTraffic") VALUES (\'someone@contactor.invalid\', \'John\', 0)').run();
+    });
 }
 
 // A shot's height is the phone's, a number, or 'content': as tall as the page, so the tab bar covers nothing.
@@ -306,8 +315,7 @@ try {
     // Last, as it is the whole app's language: Swedish, chosen in Settings, and the relays in it, with the names a
     // Swedish workshop would give them.
     {
-        const db = openDatabase();
-        writeAll(db, () => {
+        writeAll((db) => {
             const rename = db.prepare('UPDATE "Relay" SET "Name" = ? WHERE "BoardId" = 1 AND "Channel" = ?');
             for (const [channel, name] of [[1, 'Fläkt 1'], [2, 'Fläkt 2'], [3, 'Värme 1'], [4, 'Värme 2'], [5, 'Kompressor'], [6, 'Ventilation – Lackrum'], [7, 'Belysning – Lackrum']]) {
                 rename.run(name, channel);
@@ -315,7 +323,6 @@ try {
             db.prepare('UPDATE "RelayGroup" SET "Name" = \'Värmefläktar\' WHERE "Id" = 1').run();
             db.prepare('UPDATE "RelayGroupStep" SET "Name" = CASE "Position" WHEN 1 THEN \'Fläktar\' ELSE \'Värme\' END WHERE "GroupId" = 1').run();
         });
-        db.close();
         const page = await browser.newPage({ ...phone, locale: 'sv-SE' });
         await page.goto(base + 'settings');
         await page.waitForFunction(() => window.Blazor !== undefined);

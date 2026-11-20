@@ -1322,7 +1322,6 @@ public sealed class BoardPollerTests
             _answers = new Queue<object>(answers);
         }
 
-        /// <summary>Records when each read happened on this clock.</summary>
         /// <summary>Answers for the next reads, in order; the last one is kept after them, as with the first ones.</summary>
         public void Answer(params object[] answers)
         {
@@ -1335,6 +1334,7 @@ public sealed class BoardPollerTests
             }
         }
 
+        /// <summary>Records when each read happened on this clock.</summary>
         public FakePolledBoard On(TimeProvider time)
         {
             _time = time;
