@@ -105,53 +105,49 @@ public sealed class Vm201ClientTests
     }
 
     // A login that worked before may be refused for a while: tried every 10 minutes for 24 hours, then held, as on the
-    // polled boards.
+    // polled boards. The clock goes straight to the end of the 24 hours: two tries in a row at the start show a try at
+    // each 10 minutes, and three in a row at the end show the last tries before the 24 hours end and the hold at the end.
     [Fact]
     public async Task Should_TryALoginThatWorkedBefore_Every10MinutesFor24Hours_ThenHoldIt()
     {
-        var before = new Vm201Simulator("admin", "secret", NullLogger.Instance);
-        before.Start();
-        var port = before.Port;
+        await using var board = new BoardAtOnePort("admin", "secret");
         var time = new ManualTimeProvider();
         var trace = new TraceLog();
-        await using var run = ClientRun.Start(before, username: "admin", password: "secret", traced: trace.Add, time: time);
+        await using var run = ClientRun.Start(board.Simulator, username: "admin", password: "secret", traced: trace.Add, time: time);
         await WaitUntilAsync(() => run.Client.State.IsConnected);
 
         // The board's password is changed on the board itself.
-        await before.DisposeAsync();
-        await WaitUntilAsync(() => trace.Entries.Any(e => e.Kind == Vm201TraceKind.Reconnecting) && time.WaitsOnly(TimeSpan.FromSeconds(1)));
-        await using var after = new Vm201Simulator("admin", "changed", NullLogger.Instance);
-        after.Start(port);
-        time.Advance(TimeSpan.FromSeconds(1));
-        await WaitUntilAsync(() => after.DeniedLoginCount == 1 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
+        await ChangeTheBoardsPasswordAsync(board, time, "changed");
+        await WaitUntilAsync(() => board.Simulator.DeniedLoginCount == 1 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
+        var firstRefusal = time.GetUtcNow();
         Assert.Equal("600", trace.Entries.Last(e => e.Kind == Vm201TraceKind.Reconnecting).Detail);
         Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm201Model.Model), run.Client.State.Problem);
 
-        // Nothing in between.
+        // Nothing in between, then a try every 10 minutes.
         time.Advance(Vm201Client.RefusedLoginPause - TimeSpan.FromSeconds(1));
-        Assert.Equal(1, after.DeniedLoginCount);
+        Assert.Equal(1, board.Simulator.DeniedLoginCount);
         time.Advance(TimeSpan.FromSeconds(1));
-        await WaitUntilAsync(() => after.DeniedLoginCount == 2 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
+        await WaitUntilAsync(() => board.Simulator.DeniedLoginCount == 2 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
+        await RefusedAtAsync(board.Simulator, time, firstRefusal + (2 * Vm201Client.RefusedLoginPause));
 
-        var steps = (int)(Vm201Client.RefusedLoginRetries / Vm201Client.RefusedLoginPause);
-        for (var i = 3; i <= steps; i++)
-        {
-            time.Advance(Vm201Client.RefusedLoginPause);
-            await WaitUntilAsync(() => after.DeniedLoginCount == i && time.WaitsOnly(Vm201Client.RefusedLoginPause));
-        }
+        // The last tries before the 24 hours end.
+        await RefusedAtAsync(board.Simulator, time, firstRefusal + Vm201Client.RefusedLoginRetries - (2 * Vm201Client.RefusedLoginPause));
+        await RefusedAtAsync(board.Simulator, time, firstRefusal + Vm201Client.RefusedLoginRetries - Vm201Client.RefusedLoginPause);
+        Assert.Equal(5, board.Simulator.DeniedLoginCount);
 
         // 24 hours after the first refusal: held, no timer.
         Assert.Equal(0, Held(trace));
         time.Advance(Vm201Client.RefusedLoginPause);
-        await WaitUntilAsync(() => after.DeniedLoginCount == steps + 1 && Held(trace) == 1);
+        Assert.Equal(firstRefusal + Vm201Client.RefusedLoginRetries, time.GetUtcNow());
+        await WaitUntilAsync(() => board.Simulator.DeniedLoginCount == 6 && Held(trace) == 1);
         Assert.Equal(0, time.PendingTimers);
         time.Advance(TimeSpan.FromDays(1));
-        Assert.Equal(steps + 1, after.DeniedLoginCount);
+        Assert.Equal(6, board.Simulator.DeniedLoginCount);
         Assert.Equal(new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm201Model.Model), run.Client.State.Problem);
 
         // "Check again" still sends one attempt, and holds again.
         run.Client.TryAgain();
-        await WaitUntilAsync(() => after.DeniedLoginCount == steps + 2 && Held(trace) == 2);
+        await WaitUntilAsync(() => board.Simulator.DeniedLoginCount == 7 && Held(trace) == 2);
         Assert.Equal(0, time.PendingTimers);
     }
 
@@ -184,56 +180,64 @@ public sealed class Vm201ClientTests
         Assert.DoesNotContain(trace.Entries, e => e.Kind == Vm201TraceKind.Reconnecting);
     }
 
-    // A login that works again ends the tries, and the 24 hours start over at the next refusal.
+    // A login that works again ends the tries, and the 24 hours start over at the next refusal: tried past the first
+    // 24 hours' end, and held at the end of the new 24 hours.
     [Fact]
     public async Task Should_StartThe24HoursOver_WhenTheLoginWorksInBetween()
     {
-        var board = new Vm201Simulator("admin", "secret", NullLogger.Instance);
-        board.Start();
-        var port = board.Port;
+        await using var board = new BoardAtOnePort("admin", "secret");
         var time = new ManualTimeProvider();
         var trace = new TraceLog();
-        await using var run = ClientRun.Start(board, username: "admin", password: "secret", traced: trace.Add, time: time);
+        await using var run = ClientRun.Start(board.Simulator, username: "admin", password: "secret", traced: trace.Add, time: time);
         await WaitUntilAsync(() => run.Client.State.IsConnected);
 
-        // The board's password changes on the board: refused, and tried every 10 minutes for 20 hours.
-        await board.DisposeAsync();
-        await WaitUntilAsync(() => time.WaitsOnly(TimeSpan.FromSeconds(1)));
-        board = new Vm201Simulator("admin", "other", NullLogger.Instance);
-        board.Start(port);
-        time.Advance(TimeSpan.FromSeconds(1));
-        await WaitUntilAsync(() => board.DeniedLoginCount == 1 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
-        await TryEvery10MinutesAsync(board, time, TimeSpan.FromHours(20));
+        // The board's password changes on the board: refused, and tried again 20 minutes before the 24 hours end.
+        await ChangeTheBoardsPasswordAsync(board, time, "other");
+        await WaitUntilAsync(() => board.Simulator.DeniedLoginCount == 1 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
+        var firstRefusal = time.GetUtcNow();
+        await RefusedAtAsync(board.Simulator, time, firstRefusal + Vm201Client.RefusedLoginRetries - (2 * Vm201Client.RefusedLoginPause));
 
-        // Changed back: the login works again.
-        await board.DisposeAsync();
-        board = new Vm201Simulator("admin", "secret", NullLogger.Instance);
-        board.Start(port);
+        // Changed back: the login works again at the next try, 10 minutes before the 24 hours end.
+        await board.StopAsync();
+        board.Start("admin", "secret");
         time.Advance(Vm201Client.RefusedLoginPause);
         await WaitUntilAsync(() => run.Client.State.IsConnected);
 
-        // Refused again: tried every 10 minutes past the first 24 hours' end.
-        await board.DisposeAsync();
-        await WaitUntilAsync(() => time.WaitsOnly(TimeSpan.FromSeconds(1)));
-        board = new Vm201Simulator("admin", "other", NullLogger.Instance);
-        board.Start(port);
-        time.Advance(TimeSpan.FromSeconds(1));
-        await WaitUntilAsync(() => board.DeniedLoginCount == 1 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
-        await TryEvery10MinutesAsync(board, time, TimeSpan.FromHours(5));
-
+        // Refused again: the next try is past the first 24 hours' end, and it is not held.
+        await ChangeTheBoardsPasswordAsync(board, time, "other");
+        await WaitUntilAsync(() => board.Simulator.DeniedLoginCount == 1 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
+        var secondRefusal = time.GetUtcNow();
+        await RefusedAtAsync(board.Simulator, time, secondRefusal + Vm201Client.RefusedLoginPause);
+        Assert.True(time.GetUtcNow() > firstRefusal + Vm201Client.RefusedLoginRetries);
         Assert.Equal(0, Held(trace));
-        await board.DisposeAsync();
+
+        // The new 24 hours end 24 hours after the second refusal: the last try before it, then held.
+        await RefusedAtAsync(board.Simulator, time, secondRefusal + Vm201Client.RefusedLoginRetries - Vm201Client.RefusedLoginPause);
+        Assert.Equal(0, Held(trace));
+        time.Advance(Vm201Client.RefusedLoginPause);
+        await WaitUntilAsync(() => board.Simulator.DeniedLoginCount == 4 && Held(trace) == 1);
+        Assert.Equal(0, time.PendingTimers);
     }
 
-    // Moves the clock on by the pause, one try each time, for this long.
-    private static async Task TryEvery10MinutesAsync(Vm201Simulator board, ManualTimeProvider time, TimeSpan duration)
+    // The board loses its connection and comes back at the same address with another password, while the client waits
+    // its first second of backoff; the clock then moves on to the next try.
+    private static async Task ChangeTheBoardsPasswordAsync(BoardAtOnePort board, ManualTimeProvider time, string password)
     {
-        for (var i = 0; i < (int)(duration / Vm201Client.RefusedLoginPause); i++)
-        {
-            var denied = board.DeniedLoginCount;
-            time.Advance(Vm201Client.RefusedLoginPause);
-            await WaitUntilAsync(() => board.DeniedLoginCount == denied + 1 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
-        }
+        await board.StopAsync();
+        await WaitUntilAsync(() => time.WaitsOnly(TimeSpan.FromSeconds(1)));
+        board.Start("admin", password);
+        time.Advance(TimeSpan.FromSeconds(1));
+    }
+
+    // Moves the clock to this time, at or after the next try: one try there (late if after), refused, and the next in
+    // 10 minutes. Skips the tries in between, as a computer that was asleep would.
+    private static async Task RefusedAtAsync(Vm201Simulator board, ManualTimeProvider time, DateTimeOffset at)
+    {
+        Assert.True(time.WaitsOnly(Vm201Client.RefusedLoginPause));
+        Assert.True(at - time.GetUtcNow() >= Vm201Client.RefusedLoginPause);
+        var denied = board.DeniedLoginCount;
+        time.Advance(at - time.GetUtcNow());
+        await WaitUntilAsync(() => board.DeniedLoginCount == denied + 1 && time.WaitsOnly(Vm201Client.RefusedLoginPause));
     }
 
     // Without a refused login, a lost connection is tried again with the usual backoff: 1 s, 2 s, 4 s.
@@ -946,6 +950,51 @@ public sealed class Vm201ClientTests
         {
             _release.Dispose();
             Held.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// One simulated board at one port that can be stopped and started again with another login, as a board whose
+    /// password is changed on the board. Disposing it stops the one that runs, also when a test fails partway.
+    /// </summary>
+    private sealed class BoardAtOnePort : IAsyncDisposable
+    {
+        private Vm201Simulator? _simulator;
+        private int _port;
+
+        public BoardAtOnePort(string username, string password)
+        {
+            Start(username, password);
+        }
+
+        public Vm201Simulator Simulator => _simulator ?? throw new InvalidOperationException("The board is stopped.");
+
+        public void Start(string username, string password)
+        {
+            if (_simulator is not null)
+            {
+                throw new InvalidOperationException("The board already runs.");
+            }
+
+            var simulator = new Vm201Simulator(username, password, NullLogger.Instance);
+            _simulator = simulator;
+            simulator.Start(_port);
+            _port = simulator.Port;
+        }
+
+        public async Task StopAsync()
+        {
+            var simulator = _simulator;
+            _simulator = null;
+            if (simulator is not null)
+            {
+                await simulator.DisposeAsync();
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await StopAsync();
         }
     }
 
