@@ -1013,7 +1013,9 @@ public sealed class BoardPollerTests
         }
         finally
         {
-            // The held connect ignores cancellation: released, so a failed test leaves no poller waiting on it.
+            // On a failed test: stop first, then release the held connect, which ignores cancellation. The poller then
+            // reports Stopped and leaves its loop, instead of waiting on the connect or on a backoff the clock never ends.
+            await stop.CancelAsync();
             connect.TrySetCanceled(Cancel);
         }
     }
@@ -1063,7 +1065,9 @@ public sealed class BoardPollerTests
         }
         finally
         {
-            // The held connect ignores cancellation: released, so a failed test leaves no poller waiting on it.
+            // On a failed test: stop first, then release the held connect, which ignores cancellation. The poller then
+            // reports Stopped and leaves its loop, instead of waiting on the connect or on a backoff the clock never ends.
+            await stop.CancelAsync();
             held.TrySetCanceled(Cancel);
         }
     }
