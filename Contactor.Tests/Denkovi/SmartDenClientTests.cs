@@ -735,6 +735,52 @@ public sealed class SmartDenClientTests
     }
 
     [Fact]
+    public async Task Should_WriteNoRowOfATimer_WhenItsOffRowMovedToWhereItsOnRowWas()
+    {
+        // Relay 1's ON row and OFF row switch the same relays, below another relay's row.
+        await using var simulator = Started();
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(0, Enabled: true, Relays: 0b10, TurnOn: true, Hour: 5, Minute: 0, WeekDays: 0x7F));
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(1, Enabled: true, Relays: 0b01, TurnOn: true, Hour: 6, Minute: 0, WeekDays: 0x7F));
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(2, Enabled: true, Relays: 0b01, TurnOn: false, Hour: 22, Minute: 0, WeekDays: 0x7F));
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // Row 0 is deleted on the web page: the ON row moves to row 0, and the OFF row to row 1, where the ON row was seen.
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(0, Enabled: true, Relays: 0b01, TurnOn: true, Hour: 6, Minute: 0, WeekDays: 0x7F));
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(1, Enabled: true, Relays: 0b01, TurnOn: false, Hour: 22, Minute: 0, WeekDays: 0x7F));
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(2, Enabled: false, Relays: 0, TurnOn: false, Hour: 0, Minute: 0, WeekDays: 0));
+
+        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
+
+        // Turning off row 1 alone would leave the ON row to switch the relay on every day and never off.
+        Assert.Equal("The smartDEN board's week schedule changed; nothing was sent.", error.Message);
+        Assert.DoesNotContain(simulator.ReceivedRequests, r => r.Contains(" 00 06 62 ", StringComparison.Ordinal));
+        Assert.Equal([0, 1], simulator.ScheduleRows.Where(r => r.Enabled).Select(r => r.Row));
+    }
+
+    [Fact]
+    public async Task Should_WriteNoSharedRow_ForATimerWhoseOtherRowChanged()
+    {
+        // Row 0 switches relays 1 and 2, row 1 relay 2; row 1 then switches relay 3 instead.
+        await using var simulator = Started();
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(0, Enabled: true, Relays: 0b011, TurnOn: true, Hour: 6, Minute: 0, WeekDays: 0x7F));
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(1, Enabled: true, Relays: 0b010, TurnOn: false, Hour: 22, Minute: 0, WeekDays: 0x7F));
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(1, Enabled: true, Relays: 0b100, TurnOn: false, Hour: 22, Minute: 0, WeekDays: 0x7F));
+
+        // Relay 1's rows are as seen, but row 0 is also relay 2's, whose rows changed: writing it would leave relay 2
+        // half off, so neither goes.
+        await Assert.ThrowsAsync<BoardNotConnectedException>(
+            () => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.Timer)], Cancel));
+
+        Assert.DoesNotContain(simulator.ReceivedRequests, r => r.Contains(" 00 06 62 ", StringComparison.Ordinal));
+        Assert.Equal(SmartDenApi.RowEnabled, simulator.Register(SmartDenApi.RowEnableRegister));
+    }
+
+    // One timer's rows are as seen and go; another's changed and don't: the rows written are read back, and only the
+    // timer that went is returned.
+    [Fact]
     public async Task Should_WriteOnlyTheRowsStillAsSeen_WhenTheScheduleChangedBeforeThePress()
     {
         await using var simulator = Started();
@@ -768,7 +814,7 @@ public sealed class SmartDenClientTests
             simulator.ReceivedRequests);
         Assert.Equal(SmartDenApi.RowEnabled, simulator.Register(SmartDenApi.RowEnableRegister));
         Assert.Equal(new SmartDenSchedule([new SmartDenRow(0, 0b0010)]), run.Client.State.Schedule);
-        Assert.Contains(run.Traces, t => t.Text == "Week schedule row 1 changed since it was read: not turned off" && t.IsError);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 2's week schedule rows changed since they were read: not turned off" && t.IsError);
     }
 
     [Fact]

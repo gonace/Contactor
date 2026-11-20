@@ -171,15 +171,17 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
     /// command. Each <see cref="OwnRuleKind.Timer"/> rule turns off every row that switches its relay as last read, with
     /// one FC 06 writing 0 to that row's enable flag, each row once: the other relays such a row switches lose their
     /// timer too, as <see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/> says. A row is known only by its place, so the
-    /// schedule is read again first, in the same command, and a row is written only while it still switches the same
-    /// relays: a row that changed (e.g. moved up when one before it was deleted on the board's web page) is left. A row's
+    /// schedule is read again first, in the same command. A rule's rows are written only while the rows that switch its
+    /// relay are exactly the ones last read, the same places with the same relays; otherwise none of them is (e.g. after a
+    /// row above was deleted on the board's web page, an OFF row may stand where its ON row was). A row that is also behind
+    /// an asked rule whose rows changed isn't written either, and its rules don't go, so no rule is left half off. A row's
     /// outputs code, state and time are never written. A refused write or one whose answer can't be read doesn't stop the
-    /// others. A rule given twice is taken once. Returns the rules asked whose rows all took it, the rows as last read and as
-    /// read again (also when no row switches its relay), in relay order; a rule with a row that changed isn't among them; none, and nothing sent, for none asked.
+    /// others. A rule given twice is taken once. Returns the rules asked whose rows all took it, in relay order; none, and
+    /// nothing sent, for none asked.
     /// Throws <see cref="ArgumentOutOfRangeException"/> for another kind of rule or a relay the board doesn't have, and
     /// <see cref="BoardNotConnectedException"/> without a connection, both before anything is sent; and
-    /// <see cref="BoardNotConnectedException"/> when the schedule isn't known or couldn't be read again, or every row
-    /// changed (nothing sent), the board took none of them or didn't answer.
+    /// <see cref="BoardNotConnectedException"/> when the schedule isn't known or couldn't be read again, or every rule's
+    /// rows changed (nothing sent), the board took none of them or didn't answer.
     /// </summary>
     public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
@@ -455,29 +457,43 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
             throw new BoardNotConnectedException("The smartDEN board's week schedule couldn't be read again; nothing was sent.");
         }
 
-        List<SmartDenRow> rows = [];
-        foreach (var row in asked.SelectMany(r => seen.Switching(r.Relay)).Distinct().OrderBy(r => r.Row))
+        // All or nothing per rule: a rule's rows go only while the rows that switch its relay now are exactly the rows the
+        // person saw, the same places with the same relays. Matching row by row isn't enough: a timer's ON and OFF rows
+        // often switch the same relays, so after a row above them is deleted, the OFF row can stand where the ON row was
+        // seen, and turning it off would leave the ON row to switch the relay on every day and never off.
+        var ready = asked.Where(r => Same(seen.Switching(r.Relay), fresh.Switching(r.Relay))).ToHashSet();
+
+        // A row that turns off one rule's timer and is also behind a rule that can't go (as seen, or as the board has it
+        // now) would leave that rule half off: neither rule goes. Until nothing more changes, as each rule left out may
+        // hold back another.
+        var held = true;
+        while (held)
         {
-            if (fresh.Rows.Contains(row))
-            {
-                rows.Add(row);
-            }
-            else
-            {
-                Trace(
-                    BoardTraceDirection.None,
-                    string.Create(CultureInfo.InvariantCulture, $"Week schedule row {row.Row} changed since it was read: not turned off"),
-                    isError: true);
-            }
+            var blocked = asked.Where(r => !ready.Contains(r))
+                .SelectMany(r => seen.Switching(r.Relay).Concat(fresh.Switching(r.Relay)))
+                .Select(row => row.Row)
+                .ToHashSet();
+            held = ready.RemoveWhere(r => seen.Switching(r.Relay).Any(row => blocked.Contains(row.Row))) > 0;
         }
 
+        foreach (var rule in asked.Where(r => !ready.Contains(r)))
+        {
+            Trace(
+                BoardTraceDirection.None,
+                string.Create(CultureInfo.InvariantCulture, $"Relay {rule.Relay}'s week schedule rows changed since they were read: not turned off"),
+                isError: true);
+        }
+
+        List<SmartDenRow> rows = [.. ready.SelectMany(r => seen.Switching(r.Relay)).Distinct().OrderBy(r => r.Row)];
         HashSet<int> off = [];
+        var sent = false;
         string? refusal = null;
         var unreadable = false;
         foreach (var row in rows)
         {
             // No answer, also on the new connection ExchangeAsync tries after a broken one, is thrown as it is and stops
             // the rest: the poller counts it as a failed poll.
+            sent = true;
             try
             {
                 var answer = await ExchangeAsync(SmartDenModbus.WriteRowEnable(NextTransaction(), row.Row, enable: false), routine: false, cancellationToken)
@@ -498,18 +514,18 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
             }
         }
 
-        // A timer is taken when every row behind it went off: those the person saw, and those the board has now. A timer
-        // with a row that changed isn't, also when that row no longer switches it.
-        List<OwnRule> done = [.. asked.Where(r => seen.Switching(r.Relay).Concat(fresh.Switching(r.Relay)).All(row => off.Contains(row.Row)))];
+        // A timer is taken when it could go and every row behind it took the write.
+        List<OwnRule> done = [.. ready.Where(r => seen.Switching(r.Relay).All(row => off.Contains(row.Row)))];
         if (done.Count == 0)
         {
-            if (refusal is null)
+            if (!sent)
             {
                 // Nothing went out: the rows changed since the person saw them.
                 throw new BoardNotConnectedException("The smartDEN board's week schedule changed; nothing was sent.");
             }
 
-            throw unreadable ? new SmartDenProtocolException(refusal) : new BoardRefusedException(refusal);
+            var why = refusal ?? "no timer's rows all went off";
+            throw unreadable ? new SmartDenProtocolException(why) : new BoardRefusedException(why);
         }
 
         taken.Value = [.. done.OrderBy(r => r.Relay)];
@@ -521,6 +537,12 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
         {
             // The writes went out; the poller keeps the last state and reads again at once, the schedule included.
             return default;
+        }
+
+        // The same rows: the same places, each with the same relays.
+        static bool Same(IReadOnlyList<SmartDenRow> a, IReadOnlyList<SmartDenRow> b)
+        {
+            return a.Count == b.Count && a.All(b.Contains);
         }
     }
 
