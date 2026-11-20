@@ -1,5 +1,6 @@
 @implements IDisposable
 @using Contactor.Boards
+@using Contactor.Web.Features.BoardRules
 @using Contactor.Web.Features.Boards
 @using Contactor.Web.Features.Languages
 @using Contactor.Web.Features.Relays
@@ -16,11 +17,11 @@
     <h1 tabindex="-1" @ref="_heading">@Texts["Boards.Relays.Title"]</h1>
     <p>@Texts["Boards.Relays.Intro", (int)SetupHandler.TryLength.TotalSeconds]</p>
 </div>
-@* A board that may have rules of its own the app can't see (issue #497) gets no step for them: this one line. *@
-@if (Board.Capabilities.OwnRulesOrCantTell is { MayHaveUnseen: true } unseen)
+@* A board that may have rules of its own the app can't see (issue #497) gets no step for them: this one line. So does a
+   board that answers but couldn't read its rules (issue #551). *@
+@if (OwnRulesLine(Board) is { } line)
 {
-    @* A board that reads its rules (the Shelly) may still have others it can't see: "also". *@
-    <p class="hint own-rules">@Texts[unseen.Reads ? "OwnRules.Card.MayHaveUnseen" : "OwnRules.Card.CantTell"]</p>
+    <p class="hint own-rules">@Texts[line]</p>
 }
 @if (!Board.State.IsConnected)
 {
@@ -74,6 +75,9 @@
     private ElementReference _heading;
     private int _watched;
 
+    // The own-rules line drawn last: a change of the board's rules alone redraws the step only when it changes.
+    private string? _shownLine;
+
     /// <summary>Every relay the board has, by channel, for the step.</summary>
     public static async Task<List<Row>> LoadAsync(SetupHandler setup, int boardId, CancellationToken cancellationToken)
     {
@@ -105,13 +109,36 @@
         {
             Registry.StateChanged -= OnBoardChanged;
             Registry.StateChanged += OnBoardChanged;
+            Registry.OwnRulesChanged -= OnOwnRulesChanged;
+            Registry.OwnRulesChanged += OnOwnRulesChanged;
             _watched = Board.BoardId;
         }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        _shownLine = OwnRulesLine(Board);
     }
 
     public void Dispose()
     {
         Registry.StateChanged -= OnBoardChanged;
+        Registry.OwnRulesChanged -= OnOwnRulesChanged;
+    }
+
+    // The text's key of the line about the board's own rules, or null for none: "couldn't read" for a board that answers
+    // but couldn't read them (OwnRulesHandler.CouldntRead), otherwise for a board that may have rules the app can't see,
+    // "also" when it reads its rules (the Shelly) and may still have others.
+    private static string? OwnRulesLine(LiveBoard board)
+    {
+        if (OwnRulesHandler.CouldntRead(board))
+        {
+            return "OwnRules.Card.CouldntRead";
+        }
+
+        return board.Capabilities.OwnRulesOrCantTell is { MayHaveUnseen: true } unseen
+            ? unseen.Reads ? "OwnRules.Card.MayHaveUnseen" : "OwnRules.Card.CantTell"
+            : null;
     }
 
     private async Task TryAsync(Row relay)
@@ -163,12 +190,27 @@
         }
     }
 
-    private async Task RefreshAsync()
+    // From the board's read loop, when only its own rules changed: the line may change, nothing else on the step.
+    private void OnOwnRulesChanged(object? sender, BoardStateChange change)
+    {
+        if (change.BoardId == _watched)
+        {
+            _ = RefreshAsync(onlyIfLineChanged: true);
+        }
+    }
+
+    private async Task RefreshAsync(bool onlyIfLineChanged = false)
     {
         using var language = Language.Use();
         try
         {
-            await InvokeAsync(StateHasChanged);
+            await InvokeAsync(() =>
+            {
+                if (!onlyIfLineChanged || OwnRulesLine(Board) != _shownLine)
+                {
+                    StateHasChanged();
+                }
+            });
         }
         catch (ObjectDisposedException)
         {

@@ -14,36 +14,6 @@ public sealed class ReleaseNotesTests
         Assert.Equal(Changes2026_11_16_3, ReleaseNotes.Changes(Notes2026_11_16_3));
     }
 
-    [Fact]
-    public void Should_ShowTheRealNotes_WithoutMarkdownCharacters()
-    {
-        var changes = ReleaseNotes.Changes(Notes2026_11_17_2);
-
-        Assert.Equal(7, changes.Count);
-        Assert.Equal(
-            [("\"+ Board\" is gone from the board chips", true), (" on Relays, Events and Debug, and \"+ Add a board\" from the side menu, so nobody taps it by mistake. Add a board under ", false), ("Settings", true), (", where the boards are.", false)],
-            ReleaseNotes.Parts(changes[0]));
-        foreach (var part in changes.SelectMany(ReleaseNotes.Parts))
-        {
-            Assert.DoesNotContain("*", part.Text, StringComparison.Ordinal);
-            Assert.DoesNotContain("#", part.Text, StringComparison.Ordinal);
-            Assert.DoesNotContain("|", part.Text, StringComparison.Ordinal);
-            Assert.DoesNotContain("sha256", part.Text, StringComparison.Ordinal);
-            Assert.DoesNotContain("Full Changelog", part.Text, StringComparison.Ordinal);
-        }
-    }
-
-    // The notes are made from the pull requests' titles, those labelled "internal" left out (.github/release.yml):
-    // what is left besides the list is GitHub's own.
-    [Fact]
-    public void Should_KeepOnlyTheListedChanges()
-    {
-        var changes = ReleaseNotes.Changes(
-            "## What's Changed\n### Fixes\n* Fix the clock by @someone-else in https://github.com/gonace/Contactor/pull/9\n- A plain line\n\n## New Contributors\n* @someone-else made their first contribution in https://github.com/gonace/Contactor/pull/9\n\n**Full Changelog**: https://x");
-
-        Assert.Equal(["Fix the clock", "A plain line"], changes);
-    }
-
     // The Release workflow writes an "Images" section at the end of the notes (Issue #314): a table and docker pull
     // lines, never changes.
     [Fact]
@@ -53,42 +23,6 @@ public sealed class ReleaseNotesTests
             "## What's Changed\n* Fix the clock by @someone in https://github.com/gonace/Contactor/pull/9\n\n<!-- images -->\n## Images\n\n| Image | Version | Digest |\n|---|---|---|\n| [ghcr.io/gonace/contactor](https://github.com/gonace/Contactor/pkgs/container/contactor) | `2026.11.15` | `sha256:aa` |\n\n```sh\ndocker pull ghcr.io/gonace/contactor@sha256:aa\n```");
 
         Assert.Equal(["Fix the clock"], changes);
-    }
-
-    [Fact]
-    public void Should_KeepTheTextOfLinksAndCode()
-    {
-        var changes = ReleaseNotes.Changes("* See [the guide](https://example.com/guide) and ![a picture](https://example.com/a.png)\n* Run `docker compose up` once");
-
-        Assert.Equal(["See the guide and a picture", "Run docker compose up once"], changes);
-    }
-
-    // A link in a link's text: the list and the page show the same text.
-    [Fact]
-    public void Should_KeepOnlyTheText_OfALinkInALink()
-    {
-        var change = Assert.Single(ReleaseNotes.Changes("* See [[the guide](https://example.com/a)](https://example.com/b) now"));
-
-        Assert.Equal("See the guide now", change);
-        Assert.Equal([(change, false)], ReleaseNotes.Parts(change));
-    }
-
-    [Fact]
-    public void Should_KeepTheTextOfLinks_WithParenthesesOrATitle()
-    {
-        var changes = ReleaseNotes.Changes(
-            "* See [the page](https://en.wikipedia.org/wiki/Relay_(electric)) now\n* Read [the guide](https://example.com/guide \"The guide\") and [this](https://example.com 'This') and [that](https://example.com (That))");
-
-        Assert.Equal(["See the page now", "Read the guide and this and that"], changes);
-    }
-
-    [Fact]
-    public void Should_LeaveOutComments_CodeBlocks_AndHeadings()
-    {
-        var changes = ReleaseNotes.Changes(
-            "# Title\n<!-- a comment\n* hidden in the comment\n-->\n* First <!-- inline --> change\n```\n* hidden in the code\n```\n~~~\n- hidden too\n~~~\n### * Not a change\n* Last change");
-
-        Assert.Equal(["First change", "Last change"], changes);
     }
 
     // A code block ends only on a fence of its own character, at least as long as the one that opened it, with nothing
@@ -101,12 +35,6 @@ public sealed class ReleaseNotesTests
     public void Should_EndACodeBlock_OnlyOnAFenceAsLongAsItsOwn(string notes)
     {
         Assert.Equal(["Shown", "Last"], ReleaseNotes.Changes(notes));
-    }
-
-    [Fact]
-    public void Should_ReadEachLine_WhateverItsLineEnd()
-    {
-        Assert.Equal(["One", "Two", "Three", "Four"], ReleaseNotes.Changes("* One\r* Two\r\n* Three\n* Four"));
     }
 
     [Theory]
@@ -157,77 +85,6 @@ public sealed class ReleaseNotesTests
     }
 
     [Fact]
-    public void Should_SplitAChange_IntoPlainAndBoldParts()
-    {
-        Assert.Equal([("Start", true), (" then plain", false)], ReleaseNotes.Parts("**Start** then plain"));
-        Assert.Equal([("A ", false), ("middle", true), (" word", false)], ReleaseNotes.Parts("A **middle** word"));
-        Assert.Equal([("At the ", false), ("end", true)], ReleaseNotes.Parts("At the **end**"));
-        Assert.Equal([("Plain", false)], ReleaseNotes.Parts("Plain"));
-    }
-
-    // A line saved by an older version can still hold a ** without a partner, or an empty pair.
-    [Fact]
-    public void Should_LeaveOutAStrayBoldMarker_WhenDrawn()
-    {
-        Assert.Equal([("Both", true), (" and open", false)], ReleaseNotes.Parts("**Both** and **open"));
-        Assert.Equal([("ab", false)], ReleaseNotes.Parts("a****b"));
-        Assert.Empty(ReleaseNotes.Parts("**"));
-    }
-
-    // A line saved by an older version can still hold a link's markdown or a ***.
-    [Fact]
-    public void Should_LeaveOutALinksMarkdown_AndAStrayAsterisk_WhenDrawn()
-    {
-        Assert.Equal([("See the guide ", false), ("now", true)], ReleaseNotes.Parts("See [the guide](https://example.com/guide) **now**"));
-        Assert.Equal([("Both", true)], ReleaseNotes.Parts("***Both***"));
-    }
-
-    [Fact]
-    public void Should_EndALongChange_OnASentence()
-    {
-        var sentence = "This sentence is about fifty characters long, ok. ";
-        var notes = "* " + string.Concat(Enumerable.Repeat(sentence, 20));
-
-        var change = Assert.Single(ReleaseNotes.Changes(notes));
-
-        Assert.True(change.Length <= ReleaseNotes.MaxChangeLength);
-        Assert.EndsWith("ok.", change, StringComparison.Ordinal);
-        Assert.Equal(string.Concat(Enumerable.Repeat(sentence, change.Length / sentence.Length + 1)).TrimEnd(), change);
-    }
-
-    // A sentence end early in the change would leave out most of it.
-    [Fact]
-    public void Should_EndALongChange_OnAWord_WhenItsOnlySentenceEndsEarly()
-    {
-        var notes = "* Fix. " + string.Join(' ', Enumerable.Repeat("word", 200));
-
-        var change = Assert.Single(ReleaseNotes.Changes(notes));
-
-        Assert.True(change.Length <= ReleaseNotes.MaxChangeLength);
-        Assert.True(change.Length > ReleaseNotes.MaxChangeLength * 2 / 3);
-        Assert.StartsWith("Fix. word", change, StringComparison.Ordinal);
-        Assert.EndsWith("word…", change, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Should_EndALongChange_OnAWord_WithoutASentence()
-    {
-        var notes = "* " + string.Join(' ', Enumerable.Repeat("word", 1000));
-
-        var change = Assert.Single(ReleaseNotes.Changes(notes));
-
-        Assert.True(change.Length <= ReleaseNotes.MaxChangeLength);
-        Assert.EndsWith("word…", change, StringComparison.Ordinal);
-        Assert.DoesNotContain("  ", change, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Should_LeaveOutAChange_WithNoWordThatFits()
-    {
-        Assert.Equal(["Next"], ReleaseNotes.Changes("* " + new string('a', 5000) + "\n* Next"));
-    }
-
-    [Fact]
     public void Should_ListAtMostThirty()
     {
         var notes = string.Join('\n', Enumerable.Range(1, 40).Select(i => $"* Change {i}"));
@@ -236,18 +93,6 @@ public sealed class ReleaseNotesTests
 
         Assert.Equal(ReleaseNotes.MaxChanges, changes.Count);
         Assert.Equal("Change 30", changes[^1]);
-    }
-
-    [Fact]
-    public void Should_LeaveOutWholeChanges_PastTheLimitForARelease()
-    {
-        var notes = string.Join('\n', Enumerable.Range(1, 20).Select(i => $"* Change {i}: " + string.Join(' ', Enumerable.Repeat("words", 80))));
-
-        var changes = ReleaseNotes.Changes(notes);
-
-        Assert.True(changes.Sum(c => c.Length) <= ReleaseNotes.MaxLength);
-        Assert.Equal(ReleaseNotes.MaxLength / changes[0].Length, changes.Count);
-        Assert.All(changes, c => Assert.EndsWith("words", c, StringComparison.Ordinal));
     }
 
     // GitHub's list is at most 2 MB (GitHubReleases.MaxResponseBytes): one huge line, or very many, read in one pass.

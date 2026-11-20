@@ -57,15 +57,15 @@ Contactor.Demo/           # The public demo: a proxy that gives each visitor the
 Contactor.AppHost/        # Aspire: runs everything locally (aspire run)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
-  Advantech/                # Modbus TCP codec, trace words, simulator + client against the simulator
+  Advantech/                # Modbus TCP codec, simulator + client against the simulator
   Boards/                   # ChannelMask, BoardPoller, board adapters
   Demo/                     # The demo's proxy, visitors' copies, supervised programs, settings, pages and the Workshop template
-  Denkovi/                  # Modbus TCP and SNMPv1 codecs, trace words, simulators + clients against the simulators
-  Devantech/                # Command bytes and layouts, trace words, simulator + client against the simulator
-  Shelly/                   # RPC JSON, digest, trace words, simulator + client against the simulator
+  Denkovi/                  # Modbus TCP and SNMPv1 codecs, simulators + clients against the simulators
+  Devantech/                # Command bytes and layouts, the trace lines that hide secrets, simulator + client against the simulator
+  Shelly/                   # RPC JSON, digest, the trace lines that hide secrets, simulator + client against the simulator
   Simulator/                # The simulator's boards and page
-  Velleman/                 # VM201 codec, VM204 and VM208 JSON, login, trace words, connections + clients against the simulator
-  Waveshare/                # Modbus codec, trace words, simulator + client against the simulator
+  Velleman/                 # VM201 codec, VM204 and VM208 JSON, login, the trace lines that hide secrets, connections + clients against the simulator
+  Waveshare/                # Modbus codec, simulator + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 install/
   install.sh                # The one-command install (curl … | sh), the only file attached to each GitHub Release
@@ -99,6 +99,7 @@ THIRD-PARTY-NOTICES.md      # Others' work we include or bundle; their licence t
 
 ## Adding a relay board
 
+- **The same situation, the same behaviour.** When a board has the same situation as a board the app already supports, give it the same behaviour, so two boards never act differently. For example, a rule on the board that switches several relays at once works like the Shelly's schedules. Ask the user when the situation is new. This is about behaviour, not the protocol: a gap in the manual still means stop and ask.
 - **Protocol from the manufacturer's manual only.** Name the manual, its date and the section for every command and answer format, in the board's README. Never guess a format, and never mix two interfaces. If something isn't documented, stop and ask.
 - **The simulator speaks the manual's format, not the client's.** Each board's tests include the manual's own example answer, byte for byte, parsed by the client.
 - **Switch one relay without touching the others.** Never read a whole port, change a bit and write it back: a change at the board in between would be overwritten. Use the board's per-relay command; if it has none, ask.

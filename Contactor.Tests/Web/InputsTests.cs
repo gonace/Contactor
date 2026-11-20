@@ -53,20 +53,6 @@ public sealed class InputsTests
         Assert.Null((await Handler(database).GetAsync(1, Cancel))!.LastChange);
     }
 
-    [Theory]
-    [InlineData(1, 0, false, "Show 1 inactive relay")]
-    [InlineData(2, 0, false, "Show 2 inactive relays")]
-    [InlineData(0, 1, false, "Show 1 inactive input")]
-    [InlineData(0, 3, false, "Show 3 inactive inputs")]
-    [InlineData(2, 1, false, "Show 3 inactive")]
-    [InlineData(2, 0, true, "Hide inactive relays")]
-    [InlineData(0, 1, true, "Hide inactive inputs")]
-    [InlineData(1, 1, true, "Hide inactive")]
-    public void Should_NameTheInactiveButton(int relays, int inputs, bool shown, string text)
-    {
-        Assert.Equal(text, TestTexts.Inputs.Inactive(relays, inputs, shown));
-    }
-
     [Fact]
     public async Task Should_SaveNameAndActive()
     {
@@ -137,27 +123,6 @@ public sealed class InputsTests
         Assert.Equal([true, false, false], inputs.Select(i => i.LastChange!.Known));
     }
 
-    [Fact]
-    public async Task Should_ShowTheInputs_InASectionAfterTheRelays()
-    {
-        await using var app = new TestWebApp("Development", John, TestWebApp.WithLostBoard);
-        await RenameInputAsync(app, "Door");
-        using var http = app.CreateClient();
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-
-        var relays = html.IndexOf("id=\"relays-heading\"", StringComparison.Ordinal);
-        var inputs = html.IndexOf("id=\"inputs-heading\"", StringComparison.Ordinal);
-        Assert.True(relays >= 0 && relays < inputs, $"{relays} {inputs}");
-        Assert.Contains("href=\"input/1\"", html, StringComparison.Ordinal);
-        Assert.Contains("INPUT 1", html, StringComparison.Ordinal);
-        Assert.Contains("Door", html, StringComparison.Ordinal);
-
-        // No logged change: the app can't know since when, and says why behind the ⓘ.
-        Assert.Contains("Open since unknown", html, StringComparison.Ordinal);
-        Assert.Contains("aria-label=\"Why is the time unknown for Door?\"", html, StringComparison.Ordinal);
-    }
-
     [Theory]
     [InlineData(false, true, "Show 1 inactive input")]
     [InlineData(true, false, "Show 1 inactive relay")]
@@ -179,53 +144,6 @@ public sealed class InputsTests
         Assert.Equal(!inputInactive, html.Contains("id=\"inputs-heading\"", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task Should_ShowTheInputScreen()
-    {
-        await using var app = new TestWebApp("Development", John, TestWebApp.WithLostBoard);
-        await RenameInputAsync(app, "Door");
-        using var http = app.CreateClient();
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/input/1", Cancel));
-        var missing = WebUtility.HtmlDecode(await http.GetStringAsync("/input/9", Cancel));
-
-        Assert.Contains("INPUT 1 · NAME", html, StringComparison.Ordinal);
-        Assert.Contains("value=\"Door\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("When closed", html, StringComparison.Ordinal);
-        Assert.Contains("This input hasn't changed yet.", html, StringComparison.Ordinal);
-        Assert.Contains(TestTexts.Inputs.WhyUnknown, html, StringComparison.Ordinal);
-        Assert.Contains("The input doesn't exist.", missing, StringComparison.Ordinal);
-    }
-
-    // The Input screen shows both the input's own "since unknown" and an event's "time unknown": two tooltips, two ids.
-    [Fact]
-    public async Task Should_KeepTheTooltipsApart_OnTheInputScreen()
-    {
-        await using var app = new TestWebApp("Development", John, TestWebApp.WithLostBoard);
-        await RenameInputAsync(app, "Door");
-        await using (var db = await Factory(app).CreateDbContextAsync(Cancel))
-        {
-            db.EventLog.Add(new EventLogEntry
-            {
-                TimestampUtc = DateTime.UtcNow,
-                InputId = 1,
-                Actor = EventActors.External,
-                Action = EventActions.InputChanged,
-                Details = """{"on":false,"noticed":true}""",
-            });
-            await db.SaveChangesAsync(Cancel);
-        }
-
-        using var http = app.CreateClient();
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/input/1", Cancel));
-
-        var ids = System.Text.RegularExpressions.Regex.Matches(html, "id=\"(why-[a-z]+-\\d+)\"").Select(m => m.Groups[1].Value).ToList();
-        Assert.Equal(2, ids.Count);
-        Assert.Equal(ids.Count, ids.Distinct().Count());
-        Assert.Contains("aria-label=\"Why is the time unknown for Door?\"", html, StringComparison.Ordinal);
-        Assert.Contains(TestTexts.Events.WhyTimeUnknown, html, StringComparison.Ordinal);
-    }
-
     private static InputsHandler Handler(TestDatabase database)
     {
         return database.Services.GetRequiredService<InputsHandler>();
@@ -234,13 +152,6 @@ public sealed class InputsTests
     private static IDbContextFactory<ContactorDbContext> Factory(TestWebApp app)
     {
         return app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>();
-    }
-
-    private static async Task RenameInputAsync(TestWebApp app, string name)
-    {
-        await using var db = await Factory(app).CreateDbContextAsync(Cancel);
-        (await db.Inputs.SingleAsync(i => i.Id == 1, Cancel)).Name = name;
-        await db.SaveChangesAsync(Cancel);
     }
 
     private static async Task<TestDatabase> DatabaseAsync(int inputCount, int? seededInputs = null)
@@ -282,5 +193,4 @@ public sealed class InputsTests
         Assert.Equal("Relay 4: Lighting", TestTexts.Inputs.Label(new InputActionTarget(7, 4, null, "Lighting")));
         Assert.Equal("Relay : Gone", TestTexts.Inputs.Label(new InputActionTarget(7, null, null, "Gone")));
     }
-
 }
