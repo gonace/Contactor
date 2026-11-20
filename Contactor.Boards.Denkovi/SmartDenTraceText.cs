@@ -13,7 +13,8 @@ public static class SmartDenTraceText
     private const int SimpleFrameBytes = SmartDenApi.HeaderBytes + 5;
 
     /// <summary>
-    /// What a request asks for: "Ask for the relays", "Turn on relay 3", "Turn off relay 3", "Pulse relay 3 for 0.7 s".
+    /// What a request asks for: "Ask for the relays", "Turn on relay 3", "Turn off relay 3", "Pulse relay 3 for 0.7 s",
+    /// "Ask for the week schedule's enable flags", "Turn off week schedule row 4".
     /// </summary>
     public static string Request(ReadOnlySpan<byte> frame)
     {
@@ -28,6 +29,17 @@ public static class SmartDenTraceText
         return function switch
         {
             SmartDenApi.ReadCoils => "Ask for the relays",
+            SmartDenApi.ReadHoldingRegisters when address == SmartDenApi.RowEnableRegister && value == SmartDenApi.ScheduleRows =>
+                "Ask for the week schedule's enable flags",
+            SmartDenApi.ReadHoldingRegisters when address == SmartDenApi.RowOutputsRegister && value == SmartDenApi.ScheduleRows =>
+                "Ask for the week schedule's relays",
+            SmartDenApi.ReadHoldingRegisters => $"Read {Number(value)} registers from {address:X4}",
+            SmartDenApi.WriteSingleRegister when SmartDenModbus.IsRowEnable(address) => value switch
+            {
+                SmartDenApi.RowDisabled => $"Turn off week schedule row {Number(address - SmartDenApi.RowEnableRegister)}",
+                SmartDenApi.RowEnabled => $"Turn on week schedule row {Number(address - SmartDenApi.RowEnableRegister)}",
+                _ => $"Write {value:X4} to week schedule row {Number(address - SmartDenApi.RowEnableRegister)}'s enable flag",
+            },
             SmartDenApi.WriteSingleCoil => value switch
             {
                 SmartDenApi.CoilOn => $"Turn on relay {Number(address + 1)}",
@@ -37,7 +49,9 @@ public static class SmartDenTraceText
             },
             SmartDenApi.WriteSingleRegister when SmartDenModbus.IsPulse(address) =>
                 $"Pulse relay {Number(address - SmartDenApi.PulseRegister + 1)} for {Seconds(value)}",
+            SmartDenApi.WriteSingleRegister => $"Write {value:X4} to register {address:X4}",
             SmartDenApi.WriteMultipleCoils => $"Set {Number(value)} relays from relay {Number(address + 1)}",
+            SmartDenApi.WriteMultipleRegisters => $"Write {Number(value)} registers from {address:X4}",
             _ => $"Function {function:X2} at {address:X4}",
         };
     }
@@ -65,8 +79,33 @@ public static class SmartDenTraceText
             SmartDenApi.WriteSingleCoil when value == SmartDenApi.CoilToggle => $"Relay {Number(address + 1)} flipped",
             SmartDenApi.WriteSingleRegister when SmartDenModbus.IsPulse(address) =>
                 $"Relay {Number(address - SmartDenApi.PulseRegister + 1)} turned on for {Seconds(value)}",
+            SmartDenApi.WriteSingleRegister when SmartDenModbus.IsRowEnable(address) && value == SmartDenApi.RowDisabled =>
+                $"Week schedule row {Number(address - SmartDenApi.RowEnableRegister)} turned off",
+            SmartDenApi.WriteSingleRegister when SmartDenModbus.IsRowEnable(address) && value == SmartDenApi.RowEnabled =>
+                $"Week schedule row {Number(address - SmartDenApi.RowEnableRegister)} turned on",
             _ => "Done",
         };
+    }
+
+    /// <summary>
+    /// The week schedule as the app reads it: "Week schedule: no row on", or "Week schedule: row 0 switches relays 1 and
+    /// 2, row 4 switches relay 3". Rows are numbered from 0, as their addresses' low byte.
+    /// </summary>
+    public static string Schedule(SmartDenSchedule schedule)
+    {
+        ArgumentNullException.ThrowIfNull(schedule);
+        if (schedule.Rows.Count == 0)
+        {
+            return "Week schedule: no row on";
+        }
+
+        var rows = schedule.Rows.Select(r =>
+        {
+            var relays = new ChannelMask(r.Relays).Channels.Select(Number).ToList();
+            var list = relays.Count == 1 ? $"relay {relays[0]}" : $"relays {string.Join(", ", relays[..^1])} and {relays[^1]}";
+            return $"row {Number(r.Row)} switches {list}";
+        });
+        return $"Week schedule: {string.Join(", ", rows)}";
     }
 
     /// <summary>"Refused: no such address (code 2)".</summary>

@@ -1,5 +1,6 @@
 using System.Globalization;
 using Contactor.Boards;
+using Contactor.Boards.Denkovi;
 using Contactor.Boards.Shelly;
 
 namespace Contactor.Simulator;
@@ -49,10 +50,14 @@ public sealed class RunningBoard : IAsyncDisposable
         FromSettings = fromSettings;
         _time = time;
         Shelly = board is ShellySimulator shelly ? new ShellyControls(shelly, text => Add(TrafficKind.AtBoard, text)) : null;
+        SmartDen = board is SmartDenSimulator smartDen ? new SmartDenControls(smartDen, text => Add(TrafficKind.AtBoard, text)) : null;
         Switches = new BoardSwitches(board, text => Add(TrafficKind.AtBoard, text));
         Board.Traced += OnTraced;
         Board.Changed += OnChanged;
     }
+
+    /// <summary>A smartDEN's week schedule controls; null for any other board.</summary>
+    public SmartDenControls? SmartDen { get; }
 
     /// <summary>Raised when the board's state or its traffic changes, from any thread: handlers must be quick.</summary>
     public event EventHandler? Changed;

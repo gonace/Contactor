@@ -248,6 +248,56 @@ public sealed class SmartDenModbusTests
         Assert.Throws<ArgumentOutOfRangeException>(() => SmartDenModbus.Bits(Bytes("00 01 00 00 00 04 00 01 01 05"), 65));
     }
 
+    [Fact]
+    public async Task Should_ReadTheManualsHoldingRegisters_ByteForByte()
+    {
+        // Tables 10.21 and 10.22: the week schedule's start date, 10/09/2020.
+        var request = SmartDenModbus.ReadHoldingRegisters(4, SmartDenApi.ScheduleStartDateRegister, 3);
+        Assert.Equal("00 04 00 00 00 06 00 03 61 00 00 03", SmartDenModbus.Hex(request.Frame));
+
+        var frame = await ReadAsync(request, "00 04 00 00 00 09 00 03 06 00 0A 00 09 07 E4");
+
+        Assert.Equal([10, 9, 2020], SmartDenModbus.Registers(frame));
+    }
+
+    [Theory]
+    [InlineData("00 04 00 00 00 03 00 83 01", 1)]
+    [InlineData("00 04 00 00 00 03 00 83 02", 2)]
+    public async Task Should_ThrowRefused_ForTheManualsExceptionAnswerToARegisterRead(string answer, byte code)
+    {
+        // Table 10.23, to table 10.21's request.
+        var error = await Assert.ThrowsAsync<SmartDenRefusedException>(
+            () => ReadAsync(SmartDenModbus.ReadHoldingRegisters(4, SmartDenApi.ScheduleStartDateRegister, 3), answer));
+
+        Assert.Equal(code, error.Code);
+    }
+
+    [Theory]
+    [InlineData(0, "00 07 00 00 00 06 00 06 62 00 00 00")]
+    [InlineData(29, "00 07 00 00 00 06 00 06 62 1D 00 00")]
+    public async Task Should_TurnOffAScheduleRow_WithOneWriteToItsEnableFlag(int row, string frame)
+    {
+        // Table 10.7: row n's enable flag at 0x6200 + n; FC 06 as in table 10.24, its answer the echo (table 10.25).
+        var request = SmartDenModbus.WriteRowEnable(7, row, enable: false);
+
+        Assert.Equal(frame, SmartDenModbus.Hex(request.Frame));
+        Assert.Equal(frame, SmartDenModbus.Hex(await ReadAsync(request, frame)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SmartDenModbus.WriteRowEnable(1, -1, enable: false));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SmartDenModbus.WriteRowEnable(1, 30, enable: false));
+    }
+
+    [Theory]
+    [InlineData(2, "00 04 00 00 00 09 00 03 06 00 0A 00 09 07 E4", "The answer is 9 bytes long, not 7.")]
+    [InlineData(3, "00 04 00 00 00 09 00 03 04 00 0A 00 09 07 E4", "The answer has 4 bytes of data, not 6.")]
+    public async Task Should_RefuseARegisterAnswer_ThatDoesntCarryTheRegistersAsked(ushort count, string answer, string message)
+    {
+        var request = SmartDenModbus.ReadHoldingRegisters(4, SmartDenApi.ScheduleStartDateRegister, count);
+
+        var error = await Assert.ThrowsAsync<SmartDenProtocolException>(() => ReadAsync(request, answer));
+
+        Assert.Equal(message, error.Message);
+    }
+
     internal static byte[] Bytes(string hex)
     {
         return hex.Length == 0 ? [] : Convert.FromHexString(hex.Replace(" ", "", StringComparison.Ordinal));

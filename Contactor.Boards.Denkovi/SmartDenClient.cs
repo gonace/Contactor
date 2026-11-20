@@ -16,11 +16,17 @@ namespace Contactor.Boards.Denkovi;
 /// late answer is skipped by its transaction id.
 /// Commands are never queued: without a connection they fail at once with <see cref="BoardNotConnectedException"/>, a
 /// poll under way gives way to them, and the board's state right after them is reported at once. Modbus has no login.
+/// It also reads the board's week schedule (two FC 03), at the first poll on each connection and then every
+/// <see cref="RulesInterval"/>, and never writes it on its own: only <see cref="TurnOffOwnRulesAsync"/>, on a person's
+/// press, turns rows off (FC 06 at a row's enable flag).
 /// </summary>
 public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, IAsyncDisposable
 {
     /// <summary>How long a request may take before it counts as unanswered; also the limit to connect.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>How often the week schedule is read again, after the read at the first poll on a connection.</summary>
+    public static readonly TimeSpan RulesInterval = TimeSpan.FromSeconds(60);
 
     // Bytes waiting before a request were sent unasked; more than this and the connection is opened afresh.
     private const int MaxSkippedBytes = 4096;
@@ -47,6 +53,11 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
     private int _disposed;
     private int _transaction;
 
+    // The week schedule as last read on this connection (null: unknown), and when; the time is null before the first read
+    // on the connection open now. Only under the poller's lock (a connect, a poll or a command).
+    private SmartDenSchedule? _schedule;
+    private DateTimeOffset? _scheduleReadUtc;
+
     public SmartDenClient(IOptions<SmartDenOptions> options, BoardModel model, TimeProvider timeProvider, ILogger<SmartDenClient> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -68,7 +79,7 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
         _endpoint = new BoardEndpoint(settings.Host, settings.Port);
         _timeProvider = timeProvider;
         _logger = logger;
-        _poller = new BoardPoller<SmartDenStatus>(this, timeProvider)
+        _poller = new BoardPoller<SmartDenStatus>(this, timeProvider, SmartDenStatus.RelaysComparer)
         {
             PollInterval = TimeSpan.FromSeconds(settings.PollSeconds),
         };
@@ -82,6 +93,12 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
 
     /// <summary>Every request and answer and every connection step, in plain words. Handlers must be quick.</summary>
     public event EventHandler<BoardTraceEntry>? Traced;
+
+    /// <summary>
+    /// Raised when only the week schedule changed (<see cref="SmartDenState.Schedule"/>), not the relays or the
+    /// connection, which come as <see cref="StateChanged"/>. On the poller's loop: handlers must be quick.
+    /// </summary>
+    public event EventHandler<SmartDenState>? OwnRulesChanged;
 
     /// <summary>The model it talks to: how many relays to read.</summary>
     public BoardModel Model => _model;
@@ -149,6 +166,77 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
         return CommandAsync(mask, relay => SmartDenModbus.Pulse(NextTransaction(), relay, length), cancellationToken);
     }
 
+    /// <summary>
+    /// Turns off the board's own <paramref name="rules"/>, as a person asked, and reads the week schedule back in the same
+    /// command. Each <see cref="OwnRuleKind.Timer"/> rule turns off every row that switches its relay as last read, with
+    /// one FC 06 writing 0 to that row's enable flag, each row once: the other relays such a row switches lose their
+    /// timer too, as <see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/> says. A row is known only by its place, so the
+    /// schedule is read again first, in the same command. A rule's rows are written only while the rows that switch its
+    /// relay are exactly the ones last read, the same places with the same relays; otherwise none of them is (e.g. after a
+    /// row above was deleted on the board's web page, an OFF row may stand where its ON row was). A row that is also behind
+    /// an asked rule whose rows changed isn't written either, and its rules don't go, so no rule is left half off. A row's
+    /// outputs code, state and time are never written. A refused write or one whose answer can't be read doesn't stop the
+    /// others. A rule given twice is taken once. Returns the rules asked whose rows all took it, in relay order; none, and
+    /// nothing sent, for none asked.
+    /// Throws <see cref="ArgumentOutOfRangeException"/> for another kind of rule or a relay the board doesn't have, and
+    /// <see cref="BoardNotConnectedException"/> without a connection, both before anything is sent; and
+    /// <see cref="BoardNotConnectedException"/> when the schedule isn't known or couldn't be read again, or every rule's
+    /// rows changed (nothing sent), the board took none of them or didn't answer.
+    /// </summary>
+    public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        List<OwnRule> asked = [];
+        foreach (var rule in rules)
+        {
+            if (rule is null)
+            {
+                throw new ArgumentException("A rule can't be null.", nameof(rules));
+            }
+
+            if (rule.Kind != OwnRuleKind.Timer)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Kind, "The smartDEN's own rules are its week schedule's rows.");
+            }
+
+            if (rule.Relay > _model.Capabilities.RelayCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Relay, $"The {_model.Name} has relays 1–{_model.Capabilities.RelayCount} only.");
+            }
+
+            if (!asked.Contains(rule))
+            {
+                asked.Add(rule);
+            }
+        }
+
+        if (asked.Count == 0)
+        {
+            return [];
+        }
+
+        if (!State.IsConnected)
+        {
+            throw new BoardNotConnectedException();
+        }
+
+        try
+        {
+            var taken = new StrongBox<IReadOnlyList<OwnRule>>([]);
+            await _poller.RunSwitchesAsync(token => TurnOffRowsAndReadAsync(asked, taken, token), cancellationToken).ConfigureAwait(false);
+            return taken.Value ?? [];
+        }
+        catch (Exception ex) when (IsNoAnswer(ex))
+        {
+            // The poller counted it as a failed poll and reads the board at once.
+            throw new BoardNotConnectedException("The smartDEN board didn't answer; its week schedule may not have been turned off.", ex);
+        }
+        catch (Exception ex) when (ex is SmartDenProtocolException or BoardRefusedException)
+        {
+            throw new BoardNotConnectedException($"The smartDEN board didn't turn its week schedule off: {ex.Message}", ex);
+        }
+    }
+
     /// <summary>Polls at once; the answer comes as <see cref="StateChanged"/> if anything changed.</summary>
     public void Refresh()
     {
@@ -180,14 +268,23 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
         Close();
     }
 
+    // Only opens the connection: the first poll reads the week schedule, as on any new connection. Nothing is written.
     Task IPolledBoard<SmartDenStatus>.ConnectAsync(CancellationToken cancellationToken)
     {
+        _schedule = null;
+        _scheduleReadUtc = null;
         return OpenAsync(cancellationToken);
     }
 
     Task<SmartDenStatus> IPolledBoard<SmartDenStatus>.ReadAsync(CancellationToken cancellationToken)
     {
-        return ReadStatusAsync(cancellationToken);
+        return ReadStatusAsync(ScheduleRead.IfDue, cancellationToken);
+    }
+
+    // The comparer leaves out only the schedule: that is what changed.
+    void IPolledBoard<SmartDenStatus>.OnReadingChanged(PolledState<SmartDenStatus> state)
+    {
+        Raise(OwnRulesChanged, new SmartDenState(state.IsConnected, state.Reading, state.LastContactUtc));
     }
 
     void IPolledBoard<SmartDenStatus>.OnStateChanged(PolledState<SmartDenStatus> state)
@@ -324,7 +421,8 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
 
         try
         {
-            return new CommandReading<SmartDenStatus>(await ReadStatusAsync(cancellationToken).ConfigureAwait(false));
+            // Not the schedule: a group's next step waits for this read.
+            return new CommandReading<SmartDenStatus>(await ReadStatusAsync(ScheduleRead.Never, cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is SmartDenRefusedException or SmartDenProtocolException || IsNoAnswer(ex))
         {
@@ -335,7 +433,122 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
         }
     }
 
-    private async Task<SmartDenStatus> ReadStatusAsync(CancellationToken cancellationToken)
+    // Under the poller's lock: the schedule read again, then one FC 06 per row behind the timers asked that is still as
+    // the person saw it, then the board's state read back with the schedule. Puts the rules the board took in taken.
+    private async Task<CommandReading<SmartDenStatus>> TurnOffRowsAndReadAsync(IReadOnlyList<OwnRule> asked, StrongBox<IReadOnlyList<OwnRule>> taken, CancellationToken cancellationToken)
+    {
+        // The schedule as last read, which the person saw.
+        if (_schedule is not { } seen)
+        {
+            // Nothing went out: not an answer, and not a failure of the board.
+            throw new BoardNotConnectedException("The smartDEN board's week schedule isn't known yet; nothing was sent.");
+        }
+
+        // Whatever comes of it, the next read reads the schedule again.
+        _scheduleReadUtc = null;
+
+        // A row is known only by its place, and the board's web page may move rows up when one is deleted: read the rows
+        // again, and write only a row that still switches the relays the person saw. A row that changed is left, and its
+        // timers aren't taken: the next state shows the rules as they are now.
+        var fresh = await ReadScheduleAsync(cancellationToken).ConfigureAwait(false);
+        _schedule = fresh;
+        if (fresh is null)
+        {
+            throw new BoardNotConnectedException("The smartDEN board's week schedule couldn't be read again; nothing was sent.");
+        }
+
+        // All or nothing per rule: a rule's rows go only while the rows that switch its relay now are exactly the rows the
+        // person saw, the same places with the same relays. Matching row by row isn't enough: a timer's ON and OFF rows
+        // often switch the same relays, so after a row above them is deleted, the OFF row can stand where the ON row was
+        // seen, and turning it off would leave the ON row to switch the relay on every day and never off.
+        var ready = asked.Where(r => Same(seen.Switching(r.Relay), fresh.Switching(r.Relay))).ToHashSet();
+
+        // A row that turns off one rule's timer and is also behind a rule that can't go (as seen, or as the board has it
+        // now) would leave that rule half off: neither rule goes. Until nothing more changes, as each rule left out may
+        // hold back another.
+        var held = true;
+        while (held)
+        {
+            var blocked = asked.Where(r => !ready.Contains(r))
+                .SelectMany(r => seen.Switching(r.Relay).Concat(fresh.Switching(r.Relay)))
+                .Select(row => row.Row)
+                .ToHashSet();
+            held = ready.RemoveWhere(r => seen.Switching(r.Relay).Any(row => blocked.Contains(row.Row))) > 0;
+        }
+
+        foreach (var rule in asked.Where(r => !ready.Contains(r)))
+        {
+            Trace(
+                BoardTraceDirection.None,
+                string.Create(CultureInfo.InvariantCulture, $"Relay {rule.Relay}'s week schedule rows changed since they were read: not turned off"),
+                isError: true);
+        }
+
+        List<SmartDenRow> rows = [.. ready.SelectMany(r => seen.Switching(r.Relay)).Distinct().OrderBy(r => r.Row)];
+        HashSet<int> off = [];
+        var sent = false;
+        string? refusal = null;
+        var unreadable = false;
+        foreach (var row in rows)
+        {
+            // No answer, also on the new connection ExchangeAsync tries after a broken one, is thrown as it is and stops
+            // the rest: the poller counts it as a failed poll.
+            sent = true;
+            try
+            {
+                var answer = await ExchangeAsync(SmartDenModbus.WriteRowEnable(NextTransaction(), row.Row, enable: false), routine: false, cancellationToken)
+                    .ConfigureAwait(false);
+                Trace(BoardTraceDirection.Received, SmartDenTraceText.Confirmed(answer), SmartDenModbus.Hex(answer));
+                off.Add(row.Row);
+            }
+            catch (Exception ex) when (ex is SmartDenRefusedException or SmartDenProtocolException)
+            {
+                // The others still go, the next on a new connection after an unreadable answer; the read after them
+                // shows what the board did.
+                refusal ??= ex.Message;
+                unreadable |= ex is SmartDenProtocolException;
+                Trace(
+                    BoardTraceDirection.None,
+                    string.Create(CultureInfo.InvariantCulture, $"The board didn't turn off week schedule row {row.Row}: {ex.Message}"),
+                    isError: true);
+            }
+        }
+
+        // A timer is taken when it could go and every row behind it took the write.
+        List<OwnRule> done = [.. ready.Where(r => seen.Switching(r.Relay).All(row => off.Contains(row.Row)))];
+        if (done.Count == 0)
+        {
+            if (!sent)
+            {
+                // Nothing went out: the rows changed since the person saw them.
+                throw new BoardNotConnectedException("The smartDEN board's week schedule changed; nothing was sent.");
+            }
+
+            var why = refusal ?? "no timer's rows all went off";
+            throw unreadable ? new SmartDenProtocolException(why) : new BoardRefusedException(why);
+        }
+
+        taken.Value = [.. done.OrderBy(r => r.Relay)];
+        try
+        {
+            return new CommandReading<SmartDenStatus>(await ReadStatusAsync(ScheduleRead.Now, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (ex is SmartDenRefusedException or SmartDenProtocolException || IsNoAnswer(ex))
+        {
+            // The writes went out; the poller keeps the last state and reads again at once, the schedule included.
+            return default;
+        }
+
+        // The same rows: the same places, each with the same relays.
+        static bool Same(IReadOnlyList<SmartDenRow> a, IReadOnlyList<SmartDenRow> b)
+        {
+            return a.Count == b.Count && a.All(b.Contains);
+        }
+    }
+
+    // The relays, and after them the week schedule when it is asked for or due: at the first read on a connection and
+    // every RulesInterval after. The relays first, so a schedule read that fails can't keep them from the poll.
+    private async Task<SmartDenStatus> ReadStatusAsync(ScheduleRead schedule, CancellationToken cancellationToken)
     {
         var last = Volatile.Read(ref _lastTraced);
         var relayCount = _model.Capabilities.RelayCount;
@@ -343,9 +556,73 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
             .ConfigureAwait(false);
         var relays = SmartDenModbus.Bits(answer, relayCount);
         Trace(BoardTraceDirection.Received, SmartDenTraceText.Relays(relays, relayCount), SmartDenModbus.Hex(answer), isRoutine: last?.Relays == relays);
-        var status = new SmartDenStatus(relays);
+
+        if (schedule == ScheduleRead.Now
+            || (schedule == ScheduleRead.IfDue && (_scheduleReadUtc is not { } readUtc || _timeProvider.GetUtcNow() - readUtc >= RulesInterval)))
+        {
+            _schedule = await ReadScheduleAsync(cancellationToken).ConfigureAwait(false);
+            _scheduleReadUtc = _timeProvider.GetUtcNow();
+        }
+
+        var status = new SmartDenStatus(relays, _schedule);
         Volatile.Write(ref _lastTraced, status);
         return status;
+    }
+
+    // The week schedule: each row's enable flag and outputs code, one FC 03 of 30 registers each, as a read must stay in
+    // one block (section 10.2.1.3); never written here. Never fails the poll: a read the board refuses, an answer that
+    // can't be read or holds an enable flag the manual doesn't name (0 or 1), or no answer at all, gives null: unknown,
+    // never a guess: the relays read before it still make the poll. The next request opens a new connection when this
+    // one was closed. Only a cancelled read (a command takes the poll's place, or the app stops) is thrown.
+    private async Task<SmartDenSchedule?> ReadScheduleAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var enabled = await ReadRegistersAsync(SmartDenApi.RowEnableRegister, cancellationToken).ConfigureAwait(false);
+            if (enabled is null)
+            {
+                return null;
+            }
+
+            var outputs = await ReadRegistersAsync(SmartDenApi.RowOutputsRegister, cancellationToken).ConfigureAwait(false);
+            if (outputs is null)
+            {
+                return null;
+            }
+
+            var schedule = SmartDenSchedule.From(enabled.Value.Registers, outputs.Value.Registers);
+            Trace(
+                BoardTraceDirection.Received,
+                SmartDenTraceText.Schedule(schedule),
+                $"{enabled.Value.Hex} / {outputs.Value.Hex}",
+                isRoutine: _schedule == schedule);
+            return schedule;
+        }
+        catch (Exception ex) when (ex is SmartDenRefusedException or SmartDenProtocolException || IsNoAnswer(ex))
+        {
+            // A refusal or no answer is traced by ExchangeAsync; this says what it means.
+            Trace(BoardTraceDirection.None, $"Couldn't read the week schedule: {ex.Message}", isError: true);
+            return null;
+        }
+    }
+
+    // One block of 30 registers, one per row; null for an enable flag other than 0 or 1.
+    private async Task<(ushort[] Registers, string Hex)?> ReadRegistersAsync(ushort address, CancellationToken cancellationToken)
+    {
+        var answer = await ExchangeAsync(SmartDenModbus.ReadHoldingRegisters(NextTransaction(), address, SmartDenApi.ScheduleRows), routine: true, cancellationToken)
+            .ConfigureAwait(false);
+        var registers = SmartDenModbus.Registers(answer);
+        if (address == SmartDenApi.RowEnableRegister && registers.Any(r => r > SmartDenApi.RowEnabled))
+        {
+            Trace(
+                BoardTraceDirection.Received,
+                $"Week schedule enable flags the manual doesn't name: {string.Join(",", registers)}",
+                SmartDenModbus.Hex(answer),
+                isError: true);
+            return null;
+        }
+
+        return (registers, SmartDenModbus.Hex(answer));
     }
 
     /// <summary>
@@ -353,7 +630,8 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
     /// Traces the request and anything but a good answer, which the caller traces as it knows what it says. Closes
     /// the connection when the answer doesn't come or can't be read. When the connection was open from before and turns
     /// out broken (the board may close one it found idle), the request goes once more on a new connection: reading the
-    /// relays, switching one or starting its pulse does the same when done twice.
+    /// relays or the week schedule, switching one relay, starting its pulse or turning a schedule row off does the same
+    /// when done twice.
     /// </summary>
     private async Task<byte[]> ExchangeAsync(SmartDenRequest request, bool routine, CancellationToken cancellationToken, bool again = true)
     {
@@ -547,6 +825,14 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
     private void Trace(BoardTraceDirection direction, string text, string? bytes = null, bool isError = false, bool isRoutine = false)
     {
         Raise(Traced, new BoardTraceEntry(_timeProvider.GetUtcNow(), direction, text, bytes, isError, isRoutine));
+    }
+
+    // Which reads read the week schedule: a poll when it is due, a turn-off's read-back always, a switch's never.
+    private enum ScheduleRead
+    {
+        IfDue,
+        Now,
+        Never,
     }
 
     // Each subscriber on its own: one that fails must not take down the poller or keep the news from the others.
