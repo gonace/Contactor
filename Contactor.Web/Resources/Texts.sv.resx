@@ -1733,6 +1733,9 @@
   <data name="OwnRules.Card.CantTell" xml:space="preserve">
     <value>Kortet kan ha egna timers. Titta på kortets egen webbsida.</value>
   </data>
+  <data name="OwnRules.Card.CouldntRead" xml:space="preserve">
+    <value>Contactor kunde inte läsa kortets egna regler. Titta på kortets egen webbsida.</value>
+  </data>
   <data name="OwnRules.Card.Hint" xml:space="preserve">
     <value>De kan slå på och stänga av reläer utan Contactor.</value>
   </data>

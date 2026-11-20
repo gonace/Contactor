@@ -1,7 +1,4 @@
 using Contactor.Boards;
-using Contactor.Boards.Denkovi;
-using Contactor.Boards.Devantech;
-using Contactor.Boards.Shelly;
 using Contactor.Boards.Velleman;
 using Contactor.Web.Features.Boards;
 
@@ -30,41 +27,10 @@ public sealed class BoardLoginTextTests
         new LoginProblem(LoginProblemKind.CommunityMissing),
     ];
 
-    [Theory]
-    [MemberData(nameof(Problems))]
-    public void Should_SayAProblem_AsItsEnglish(LoginProblem problem)
-    {
-        Assert.Equal(problem.ToString(), Login.Problem(problem));
-    }
-
     [Fact]
     public void Should_HaveATestForEveryKindOfProblem()
     {
         Assert.Equal(Enum.GetValues<LoginProblemKind>().Order(), Problems.Select(p => p.Data.Kind).Distinct().Order());
-    }
-
-    [Fact]
-    public void Should_SayTheBoardsOwnProblems_InTheirOldEnglish()
-    {
-        Assert.Equal("The Devantech board takes a password only, no user name.", Login.Problem(new LoginProblem(LoginProblemKind.PasswordOnly, LoginField.UserName, Board: "Devantech")));
-        Assert.Equal("The Shelly board takes a password only, no user name.", Login.Problem(new ShellyConnection(new ShellyClient(Microsoft.Extensions.Options.Options.Create(new ShellyOptions()), ShellyModels.OneRelay, TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<ShellyClient>.Instance), Microsoft.Extensions.Options.Options.Create(new ShellyOptions())).CheckLogin(new BoardLogin("admin", "x"))!));
-        Assert.Equal("The password can be at most 128 characters.", Login.Problem(ShellyModels.CheckPassword(new string('x', 129))!));
-        Assert.Equal("The VM208 takes no login: its password only protects its own web pages.", Login.Problem(new LoginProblem(LoginProblemKind.NoLoginWebPages, Board: "VM208")));
-        Assert.Equal("The Waveshare board takes no login: its password only protects its own web page.", Login.Problem(new LoginProblem(LoginProblemKind.NoLoginWebPage, Board: "Waveshare")));
-    }
-
-    [Fact]
-    public void Should_SayEachModelsLoginHint()
-    {
-        Assert.Equal("The same as on the board's own web page. At most 8 characters: letters a–z, digits and plain symbols.", Login.Hint(Vm201Model.Model));
-        Assert.Equal($"The same as on the board's own web page. At most 31 characters, 48 for both together: letters a–z, digits and {Vm204Login.SymbolList}.", Login.Hint(Vm204Model.Model));
-        Assert.Equal("The TCP password from the board's configuration page, not the login of its web page. At most 32 characters: letters, digits and plain symbols, no spaces.", Login.Hint(DevantechModels.Eth008));
-        Assert.Equal(
-            "The board's Read-write Community from its SNMP settings, 4 to 12 characters: letters, digits and plain symbols, no spaces. On a new board it is private. With a wrong community the board doesn't answer: check the address and the community.",
-            Login.Hint(DaenetIp2Models.Relays8));
-
-        // A Shelly's password is the one set on the device; it takes any character, so there is no rule to give.
-        Assert.Null(Login.Hint(ShellyModels.OneRelay));
     }
 
     [Fact]

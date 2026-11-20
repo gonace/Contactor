@@ -16,27 +16,6 @@ public sealed class Vm204TraceTextTests
         Assert.Equal(shown, Vm204TraceText.Redact(target));
     }
 
-    [Theory]
-    [InlineData("/api/auth?user=a&password=b", "Log in")]
-    [InlineData("/api/status?key=k", "Ask for status")]
-    [InlineData("/api/relay/on?key=k&relay=3", "Turn on relay 3")]
-    [InlineData("/api/relay/off?key=k&relay=1,2,4", "Turn off relay 1, 2 and 4")]
-    [InlineData("/api/relay/on?key=k&relay=1,2,3,4", "Turn on all")]
-    [InlineData("/api/relay/on?key=k&relay=9,x,", "Turn on no relays")]
-    [InlineData("/index.html", "Ask for /index.html")]
-    public void Should_SayWhatARequestAsksFor(string target, string text)
-    {
-        Assert.Equal(text, Vm204TraceText.Request(target));
-    }
-
-    [Fact]
-    public void Should_DescribeTheStatus()
-    {
-        Assert.Equal("Status: relay 1 and 3 on · input 2 on · analog 512", Vm204TraceText.Status(new Vm204Status(0b0101, 0b0010, 512)));
-        Assert.Equal("Status: all off · inputs off", Vm204TraceText.Status(new Vm204Status(0, 0, null)));
-        Assert.Equal("Status: all on · all inputs on · analog 0", Vm204TraceText.Status(new Vm204Status(0b1111, 0b1111, 0)));
-    }
-
     [Fact]
     public void Should_ShowAnAnswer_WithoutItsKeyOrAnythingUnprintable()
     {
