@@ -234,10 +234,10 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
             }
 
             // The app's own changes this status matched are expected again, or the next try would call them external
-            // and clear their runtime, e.g. a relay's auto-off.
+            // and clear their runtime, e.g. a relay's auto-off. The board already showed them: not on their way.
             foreach (var (channel, on) in _consumed)
             {
-                _expected.Expect(ChannelMask.Of(channel), on);
+                _expected.ExpectAgain(channel, on);
             }
 
             // A newer status that fails right after the one it replaces failed again keeps the grown wait.

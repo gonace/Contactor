@@ -216,7 +216,7 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
 
         // Tracked, so the end is checked against these rows' versions. An ON whose run was saved just before they were
         // read is either still on its way, or the board shows it on by now: the state at the start of the check may be
-        // older. Pending first: the board's state changes before the expectation is used up.
+        // older. Pending first: the board's state changes before a status marks the expectation as shown.
         var stale = await db.RelayRuntimes
             .Where(r => off.Contains(r.RelayId) && r.OnSinceUtc != null)
             .ToListAsync(cancellationToken);

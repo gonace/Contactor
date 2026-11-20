@@ -54,11 +54,31 @@ internal sealed class FakeRelayBoard : IRelayBoard
     {
         get
         {
+            BoardState state;
             lock (_lock)
             {
-                return _state;
+                state = _state;
             }
+
+            if (Interlocked.Exchange(ref _afterStateRead, null) is { } after)
+            {
+                after();
+            }
+
+            return state;
         }
+    }
+
+    private Action? _afterStateRead;
+
+    /// <summary>
+    /// Runs once, after the next read of <see cref="State"/> took the state and before it returns it: a status that
+    /// comes just after someone read the state, e.g. <see cref="SetRelay"/>.
+    /// </summary>
+    public Action? AfterStateRead
+    {
+        get => Volatile.Read(ref _afterStateRead);
+        set => Volatile.Write(ref _afterStateRead, value);
     }
 
     public Task<ChannelMask> TurnOnAsync(ChannelMask relays, CancellationToken cancellationToken = default)
