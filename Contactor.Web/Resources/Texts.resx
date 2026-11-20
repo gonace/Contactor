@@ -87,11 +87,25 @@
   <data name="Analog.Scale" xml:space="preserve">
     <value>SCALE</value>
   </data>
+  <data name="Analog.Scale.Above" xml:space="preserve">
+    <value>This board reads at most {0} V. Above {1} the app shows "{2}".</value>
+    <comment>{0} is the most the board reads, e.g. 3.3; {1} the scale's value there with its unit, e.g. 66.0 °C; {2} what the screens show at the board's top value, e.g. ≥ 66.0 °C.</comment>
+  </data>
+  <data name="Analog.Scale.Below" xml:space="preserve">
+    <value>This board reads at most {0} V. Below {1} the app shows "{2}".</value>
+    <comment>{0} is the most the board reads, e.g. 3.3; {1} the scale's value there with its unit, e.g. 66.0 °C; {2} what the screens show at the board's top value, e.g. ≥ 66.0 °C.</comment>
+  </data>
   <data name="Analog.Scale.Hint" xml:space="preserve">
     <value>Two readings from the sensor's label, e.g. 0–5 V for −20 to 80 °C.</value>
   </data>
   <data name="Analog.ShowAs" xml:space="preserve">
     <value>+ Show it as °C, %, bar …</value>
+  </data>
+  <data name="Analog.TopValue.Less" xml:space="preserve">
+    <value>The board's top value: it may be less</value>
+  </data>
+  <data name="Analog.TopValue.More" xml:space="preserve">
+    <value>The board's top value: it may be more</value>
   </data>
   <data name="Analog.Unit" xml:space="preserve">
     <value>UNIT</value>

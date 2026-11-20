@@ -1,4 +1,5 @@
 using Contactor.Boards;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Inputs;
 using Contactor.Web.Persistence;
 
@@ -15,12 +16,70 @@ public sealed class AnalogValueTextTests
 
     private static readonly BoardState Connected = new(true, ChannelMask.None, ChannelMask.None, DateTimeOffset.UnixEpoch);
 
-    // The top of the board's range may stand for any higher voltage: no value, never 80 °C.
+    // The top of the board's range may stand for any higher voltage: without a scale no value, never 5.00 V.
     [Fact]
-    public void Should_ShowNoValue_AtTheTopOfTheBoardsRange()
+    public void Should_ShowNoValue_AtTheTopOfTheBoardsRange_WithoutAScale()
     {
-        Assert.Equal(new AnalogValue(AnalogValueState.AboveRange, "–", "", null, ""), Show(1023));
-        Assert.Equal(AnalogValueState.Value, Show(1022).State);
+        Assert.Equal(new AnalogValue(AnalogValueState.AboveRange, "–", "", null, ""), Show(1023, AnalogScale.None));
+        Assert.Equal(AnalogValueState.Value, Show(1022, AnalogScale.None).State);
+    }
+
+    // With a scale, the scale's value at the board's full scale, rounded as any value, after "≥", as it may be more;
+    // after "≤" for a scale that falls, as it may be less.
+    [Fact]
+    public void Should_ShowTheScaledTopValue_WithASign_AtTheTopOfTheBoardsRange_WithAScale()
+    {
+        Assert.Equal(new AnalogValue(AnalogValueState.TopValue, "≥\u00A080.0", "°C", 5m, "5.00"), Show(1023, Celsius));
+        Assert.True(AnalogValueText.Rises(Celsius));
+
+        // 0 V = 100 %, 5 V = 0 %.
+        var falling = new AnalogScale(AnalogUnits.Percent, "", 0m, 100m, 5m, 0m);
+        Assert.Equal("≤\u00A00.0", Show(1023, falling).Text);
+        Assert.False(AnalogValueText.Rises(falling));
+
+        using (TestCulture.Formats("sv-SE"))
+        {
+            Assert.Equal("≥\u00A080,0", Show(1023, Celsius).Text);
+        }
+    }
+
+    // A point above what the board reads is warned of on boards that read less than it, and only on those, with what
+    // the screens show at the top: a 0–5 V sensor (0–100 °C) on a 3.3 V board shows at most "≥ 66.0 °C".
+    [Fact]
+    public void Should_WarnOfAScaleBeyondTheBoardsRange_ByEachBoardsAbility()
+    {
+        var sensor = new AnalogScale(AnalogUnits.Celsius, "", 0m, 0m, 5m, 100m);
+        var abilities = BoardCatalogue.All.Select(r => r.Model).Where(m => m.Capabilities.Analog is not null).ToList();
+        Assert.NotEmpty(abilities);
+        foreach (var model in abilities)
+        {
+            var ability = model.Capabilities.Analog!;
+            var beyond = AnalogValueText.BeyondRange(sensor, ability);
+            Assert.True((beyond is not null) == (ability.FullScaleVolts < 5m), model.Name);
+        }
+
+        var threeVolts = new AnalogAbility(1, 1023, 3.3m);
+        Assert.Equal(new AnalogBeyondRange("3.3", "66.0\u00A0°C", "≥\u00A066.0\u00A0°C", true), AnalogValueText.BeyondRange(sensor, threeVolts));
+        Assert.Null(AnalogValueText.BeyondRange(AnalogScale.None, threeVolts));
+        Assert.Null(AnalogValueText.BeyondRange(sensor, null));
+
+        // A point at the full scale itself is within the board's range.
+        Assert.Null(AnalogValueText.BeyondRange(sensor with { Volts2 = 3.3m }, threeVolts));
+    }
+
+    // The warning follows the points as typed, but only as they would save: rounded, and nothing for points out of
+    // range, which could make the scaled value too large for a number while the page draws.
+    [Fact]
+    public void Should_WarnOnlyOfTypedPoints_AsTheyWouldSave()
+    {
+        var threeVolts = new AnalogAbility(1, 1023, 3.3m);
+        var typed = AnalogInputsHandler.AsSaved(AnalogUnits.Celsius, "", 0m, 0m, 5.0004m, 100m);
+        Assert.Equal(new AnalogScale(AnalogUnits.Celsius, "", 0m, 0m, 5m, 100m), typed);
+        Assert.NotNull(AnalogValueText.BeyondRange(typed!, threeVolts));
+
+        Assert.Null(AnalogInputsHandler.AsSaved(AnalogUnits.Celsius, "", 0m, -decimal.MaxValue, 5m, decimal.MaxValue));
+        Assert.Null(AnalogInputsHandler.AsSaved(AnalogUnits.Celsius, "", 0m, 0m, 101m, 100m));
+        Assert.Null(AnalogInputsHandler.AsSaved(AnalogUnits.Celsius, "", 0m, 0m, null, 100m));
     }
 
     // No reading, or one outside the board's range: no value.
@@ -45,6 +104,11 @@ public sealed class AnalogValueTextTests
 
     private static AnalogValue Show(int? counts)
     {
-        return AnalogValueText.Show(Celsius, TenBitFiveVolts, Connected with { Analog = new AnalogReadings([counts]) }, 1);
+        return Show(counts, Celsius);
+    }
+
+    private static AnalogValue Show(int? counts, AnalogScale scale)
+    {
+        return AnalogValueText.Show(scale, TenBitFiveVolts, Connected with { Analog = new AnalogReadings([counts]) }, 1);
     }
 }

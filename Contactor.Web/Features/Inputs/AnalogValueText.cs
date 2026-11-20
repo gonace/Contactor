@@ -41,8 +41,16 @@ public enum AnalogValueState
     /// <summary>The board answers, but gave no reading for this input: "–", and "check the sensor".</summary>
     NoReading,
 
-    /// <summary>The reading is the top of the board's range, so the voltage may be higher: "–".</summary>
+    /// <summary>
+    /// The reading is the top of the board's range and the input has no scale, so the voltage may be higher: "–".
+    /// </summary>
     AboveRange,
+
+    /// <summary>
+    /// The reading is the top of the board's range and the input has a scale: the scale's value there, with "≥" (or
+    /// "≤" for a scale that falls), as the value may be beyond it, e.g. "≥ 66.0 °C".
+    /// </summary>
+    TopValue,
 
     /// <summary>A value to show.</summary>
     Value,
@@ -51,13 +59,22 @@ public enum AnalogValueState
 /// <summary>
 /// An analog input's value as the screens show it. <paramref name="Text"/> is the number, or "–" without one;
 /// <paramref name="Unit"/> its unit ("°C"), "" without a value. <paramref name="Volts"/> and <paramref name="VoltsText"/>
-/// are what the board reads at the terminal, null and "" without a value.
+/// are what the board reads at the terminal, null and "" without a value; at <see cref="AnalogValueState.TopValue"/> the
+/// board's full scale, which the voltage may be above.
 /// </summary>
 public sealed record AnalogValue(AnalogValueState State, string Text, string Unit, decimal? Volts, string VoltsText)
 {
     /// <summary>What the screens show for an input without a value.</summary>
     public const string NoValue = "–";
 }
+
+/// <summary>
+/// A scale with a point above what the board reads, as an analog input's page warns of it: the board reads at most
+/// <paramref name="MaxVolts"/> V ("3.3"), so beyond <paramref name="Value"/> ("66.0 °C") the screens show
+/// <paramref name="Shown"/> ("≥ 66.0 °C"). <paramref name="Rises"/>: whether the scale's values rise with the voltage,
+/// so "beyond" is above; otherwise it is below.
+/// </summary>
+public sealed record AnalogBeyondRange(string MaxVolts, string Value, string Shown, bool Rises);
 
 /// <summary>
 /// Turns an analog input's reading into the text shown, in the current culture: scaled by its two points, and with as
@@ -165,13 +182,58 @@ public static class AnalogValueText
 
         if (ability.IsFullScale(counts))
         {
-            return Empty(AnalogValueState.AboveRange);
+            // Without a scale no number: "–". With one, the scale's value at the top, with "≥" or "≤", since a sensor
+            // that reads more than the board can still shows its value as far as the board can tell.
+            return scale.HasScale
+                ? new AnalogValue(AnalogValueState.TopValue, TopText(scale, ability), Unit(scale), ability.FullScaleVolts, Number(ability.FullScaleVolts, Decimals(ability.VoltsPerCount, AnalogScale.None)))
+                : Empty(AnalogValueState.AboveRange);
         }
 
         var volts = ability.Volts(counts);
         var text = Number(Scaled(volts, scale), Decimals(ability.VoltsPerCount, scale));
         var voltsText = Number(volts, Decimals(ability.VoltsPerCount, AnalogScale.None));
         return new AnalogValue(AnalogValueState.Value, text, Unit(scale), volts, voltsText);
+    }
+
+    /// <summary>Whether a scale's values rise with the voltage; true without a scale, where the value is the voltage.</summary>
+    public static bool Rises(AnalogScale scale)
+    {
+        ArgumentNullException.ThrowIfNull(scale);
+        return !scale.HasScale || (scale.Value2!.Value > scale.Value1!.Value) == (scale.Volts2!.Value > scale.Volts1!.Value);
+    }
+
+    /// <summary>
+    /// What a scale with a point above the board's full scale makes the screens show at the board's top value, for the
+    /// analog input's page to warn of; null without a scale, without analog inputs, or with both points within the
+    /// board's range (a point at the full scale itself is within it).
+    /// </summary>
+    /// <param name="scale">The input's unit and scale.</param>
+    /// <param name="ability">The board's analog inputs; null for a board that has none.</param>
+    public static AnalogBeyondRange? BeyondRange(AnalogScale scale, AnalogAbility? ability)
+    {
+        ArgumentNullException.ThrowIfNull(scale);
+        if (ability is null || !scale.HasScale || (scale.Volts1!.Value <= ability.FullScaleVolts && scale.Volts2!.Value <= ability.FullScaleVolts))
+        {
+            return null;
+        }
+
+        var unit = Unit(scale);
+        var number = Number(Scaled(ability.FullScaleVolts, scale), Decimals(ability.VoltsPerCount, scale));
+        var maxVolts = ability.FullScaleVolts.ToString("0.###", CultureInfo.CurrentCulture);
+        return new AnalogBeyondRange(maxVolts, WithUnit(number, unit), WithUnit(TopText(scale, ability), unit), Rises(scale));
+    }
+
+    // The value at the board's full scale, after "≥" for a scale that rises and "≤" for one that falls: "≥ 66.0". A
+    // no-break space, so the sign never ends a line alone.
+    private static string TopText(AnalogScale scale, AnalogAbility ability)
+    {
+        var number = Number(Scaled(ability.FullScaleVolts, scale), Decimals(ability.VoltsPerCount, scale));
+        return (Rises(scale) ? "≥" : "≤") + "\u00A0" + number;
+    }
+
+    private static string WithUnit(string text, string unit)
+    {
+        return unit.Length == 0 ? text : text + "\u00A0" + unit;
     }
 
     private static AnalogValue Empty(AnalogValueState state)

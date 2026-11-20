@@ -165,6 +165,23 @@ public sealed class AnalogInputsHandler
         return points[1] == points[3] ? _texts["Analog.Save.SameValues"].Value : null;
     }
 
+    /// <summary>
+    /// The scale typed points make once saved: rounded as saving rounds them, or null for points saving refuses for
+    /// their range (voltages 0 to <see cref="MaxVolts"/>, values within ±<see cref="MaxValue"/>) or that aren't all
+    /// four set. Points that share a voltage or a value give a scale without <see cref="AnalogScale.HasScale"/>. For a
+    /// warning drawn as the points are typed: within these bounds no scaled value can overflow.
+    /// </summary>
+    public static AnalogScale? AsSaved(string unit, string unitText, decimal? volts1, decimal? value1, decimal? volts2, decimal? value2)
+    {
+        if (Round(volts1) is not { } v1 || Round(value1) is not { } x1 || Round(volts2) is not { } v2 || Round(value2) is not { } x2
+            || v1 < 0m || v1 > MaxVolts || v2 < 0m || v2 > MaxVolts || Math.Abs(x1) > MaxValue || Math.Abs(x2) > MaxValue)
+        {
+            return null;
+        }
+
+        return new AnalogScale(unit, unitText, v1, x1, v2, x2);
+    }
+
     private static decimal? Round(decimal? value)
     {
         return value is { } number ? Math.Round(number, PointDecimals, MidpointRounding.AwayFromZero) : null;

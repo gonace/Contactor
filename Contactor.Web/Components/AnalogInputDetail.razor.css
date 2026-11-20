@@ -119,7 +119,9 @@ h2 {
     color: var(--muted);
 }
 
-.error {
+/* A save that failed, and a scale beyond what the board reads: in red, as the person should act on both. */
+.error,
+.warning {
     margin: 0;
     font-size: 14px;
     font-weight: 600;

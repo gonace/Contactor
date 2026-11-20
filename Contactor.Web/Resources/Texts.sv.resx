@@ -84,11 +84,23 @@
   <data name="Analog.Scale" xml:space="preserve">
     <value>SKALA</value>
   </data>
+  <data name="Analog.Scale.Above" xml:space="preserve">
+    <value>Kortet läser högst {0} V. Över {1} visar appen "{2}".</value>
+  </data>
+  <data name="Analog.Scale.Below" xml:space="preserve">
+    <value>Kortet läser högst {0} V. Under {1} visar appen "{2}".</value>
+  </data>
   <data name="Analog.Scale.Hint" xml:space="preserve">
     <value>Två värden från givarens etikett, t.ex. 0–5 V för −20 till 80 °C.</value>
   </data>
   <data name="Analog.ShowAs" xml:space="preserve">
     <value>+ Visa den som °C, %, bar …</value>
+  </data>
+  <data name="Analog.TopValue.Less" xml:space="preserve">
+    <value>Kortets högsta värde: det kan vara mindre</value>
+  </data>
+  <data name="Analog.TopValue.More" xml:space="preserve">
+    <value>Kortets högsta värde: det kan vara mer</value>
   </data>
   <data name="Analog.Unit" xml:space="preserve">
     <value>ENHET</value>
