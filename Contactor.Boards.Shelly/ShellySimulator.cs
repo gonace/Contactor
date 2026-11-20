@@ -23,7 +23,7 @@ namespace Contactor.Boards.Shelly;
 /// device the app must refuse. It never tells the app anything by itself. Used by the tests and, in development, by
 /// Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class ShellySimulator : ISimulatedBoard
+public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower, ISimulatedBoardRules, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
     /// <summary>How long a client may take to send its whole request before the connection is closed.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -71,6 +71,9 @@ public sealed class ShellySimulator : ISimulatedBoard
     private long _scheduleRevision;
     private long _nextJobId = 1;
     private byte _relays;
+    private int _poweredOff;
+    private long _answerDelayTicks;
+    private byte _beforeCut;
     private byte _lastStatusSent = byte.MaxValue;
     private long _configRevision = 10;
     private int _deniedCount;
@@ -250,6 +253,26 @@ public sealed class ShellySimulator : ISimulatedBoard
         }
     }
 
+    // Under _lock, as the power comes back: each relay as its initial_state says. "match_input" follows the switch's input,
+    // which the simulator doesn't have, so it comes back off.
+    private byte PowerOnRelays()
+    {
+        var relays = 0;
+        for (var relay = 1; relay <= _initialStates.Length; relay++)
+        {
+            var bit = 1 << (relay - 1);
+            var on = _initialStates[relay - 1] switch
+            {
+                "on" => true,
+                "restore_last" => (_beforeCut & bit) != 0,
+                _ => false,
+            };
+            relays |= on ? bit : 0;
+        }
+
+        return (byte)relays;
+    }
+
     /// <summary>A relay's <c>initial_state</c>, as <c>Switch.GetConfig</c> gives it: "off" at start.</summary>
     public string InitialState(int relay)
     {
@@ -349,6 +372,11 @@ public sealed class ShellySimulator : ISimulatedBoard
         long id;
         lock (_lock)
         {
+            if (IsPoweredOff)
+            {
+                throw new InvalidOperationException("The device has no power: it takes no change.");
+            }
+
             id = _nextJobId++;
             _jobs.Add(new SimulatedJob(id, timespec, calls) { Enable = enable });
             _scheduleRevision++;
@@ -363,6 +391,12 @@ public sealed class ShellySimulator : ISimulatedBoard
     {
         lock (_lock)
         {
+            // Without power the device takes no change of any kind.
+            if (IsPoweredOff)
+            {
+                return;
+            }
+
             Job(id).Enable = enable;
             _scheduleRevision++;
         }
@@ -379,7 +413,7 @@ public sealed class ShellySimulator : ISimulatedBoard
         lock (_lock)
         {
             var job = _jobs.Find(j => j.Id == id);
-            if (job is null || job.Enable == enable)
+            if (IsPoweredOff || job is null || job.Enable == enable)
             {
                 return false;
             }
@@ -453,6 +487,17 @@ public sealed class ShellySimulator : ISimulatedBoard
         Volatile.Write(ref _password, password);
     }
 
+    /// <summary>The device's login is a password alone: <paramref name="username"/> is ignored (<see cref="ChangePassword"/>).</summary>
+    void ISimulatedBoardLogin.ChangeLogin(string username, string password)
+    {
+        if (ShellyModels.CheckPassword(password) is { } error)
+        {
+            throw new ArgumentException(error.ToString(), nameof(password));
+        }
+
+        ChangePassword(password);
+    }
+
     /// <summary>Forgets every nonce, as after a reboot: the next request with one gets a plain 401.</summary>
     public void ForgetNonces()
     {
@@ -460,6 +505,144 @@ public sealed class ShellySimulator : ISimulatedBoard
         {
             _nonces.Clear();
         }
+    }
+
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => "Each relay comes back as its initial_state says. Forgets its nonces.";
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            _beforeCut = _relays;
+            _relays = (byte)0;
+        }, power: true);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        ForgetNonces();
+        Change(
+            () =>
+            {
+                _relays = PowerOnRelays();
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Each schedule that is on, with the relays its <c>Switch.Set</c> calls switch, and each relay with auto-on that is
+    /// off, which it turns on again, as the device does at their times. A schedule without a <c>Switch.Set</c> the simulator can
+    /// read isn't among them.
+    /// </summary>
+    public IReadOnlyList<SimulatedRule> RunnableRules
+    {
+        get
+        {
+            List<SimulatedRule> rules = [];
+            foreach (var schedule in Schedules.Where(s => s.Enable))
+            {
+                var switches = SwitchSets(schedule.Calls);
+                if (switches.Count > 0)
+                {
+                    rules.Add(new SimulatedRule(
+                        string.Create(CultureInfo.InvariantCulture, $"schedule-{schedule.Id}"),
+                        string.Create(CultureInfo.InvariantCulture, $"Schedule {schedule.Id}: {string.Join(", ", switches.Select(w => string.Create(CultureInfo.InvariantCulture, $"relay {w.Relay} {(w.TurnOn ? "on" : "off")}")))}"),
+                        switches));
+                }
+            }
+
+            for (var relay = 1; relay <= _model.Capabilities.RelayCount; relay++)
+            {
+                // Auto-on turns a relay on again some time after it went off: only a relay that is off has one to run.
+                if (AutoOn(relay) && !State.Relays.Contains(relay))
+                {
+                    rules.Add(new SimulatedRule(
+                        string.Create(CultureInfo.InvariantCulture, $"auto-on-{relay}"),
+                        string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s auto-on"),
+                        [new SimulatedRuleSwitch(relay, true)]));
+                }
+            }
+
+            return rules;
+        }
+    }
+
+    public async Task<SimulatedRule?> RunRuleAsync(string id)
+    {
+        if (RunnableRules.FirstOrDefault(r => r.Id == id) is not { } rule)
+        {
+            return null;
+        }
+
+        foreach (var change in rule.Switches)
+        {
+            await SwitchRelayAsync(change.Relay, change.TurnOn).ConfigureAwait(false);
+        }
+
+        return rule;
+    }
+
+    // The Switch.Set calls of a job's calls, for a relay the device has; anything else is left out.
+    private List<SimulatedRuleSwitch> SwitchSets(string calls)
+    {
+        List<SimulatedRuleSwitch> switches = [];
+        try
+        {
+            using var document = JsonDocument.Parse(calls);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return switches;
+            }
+
+            foreach (var call in document.RootElement.EnumerateArray())
+            {
+                if (call.ValueKind == JsonValueKind.Object
+                    && call.TryGetProperty("method", out var method) && method.ValueKind == JsonValueKind.String && method.GetString() == "Switch.Set"
+                    && call.TryGetProperty("params", out var parameters) && parameters.ValueKind == JsonValueKind.Object
+                    && parameters.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number && id.TryGetInt32(out var switchId)
+                    && switchId >= 0 && switchId < _model.Capabilities.RelayCount
+                    && parameters.TryGetProperty("on", out var on) && on.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    switches.Add(new SimulatedRuleSwitch(switchId + 1, on.GetBoolean()));
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Calls a test gave that aren't JSON: nothing the simulator can run.
+        }
+
+        return switches;
     }
 
     public void DropConnections()
@@ -513,7 +696,7 @@ public sealed class ShellySimulator : ISimulatedBoard
         _connections.TryAdd(tcp, 0);
         try
         {
-            if (RejectConnections)
+            if (RejectConnections || IsPoweredOff)
             {
                 return;
             }
@@ -552,6 +735,7 @@ public sealed class ShellySimulator : ISimulatedBoard
                 return;
             }
 
+            await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
             await stream.WriteAsync(response, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
@@ -1090,6 +1274,12 @@ public sealed class ShellySimulator : ISimulatedBoard
                 return Error(rpc, new ShellyRpcError(-105, string.Create(CultureInfo.InvariantCulture, $"Bad id={jobId}")));
             }
 
+            // A request read just before the power went changes nothing: without power the device takes no change.
+            if (IsPoweredOff)
+            {
+                return Error(rpc, Refusal);
+            }
+
             if (enable is { } value)
             {
                 job.Enable = value;
@@ -1113,6 +1303,12 @@ public sealed class ShellySimulator : ISimulatedBoard
     {
         lock (_lock)
         {
+            // Without power the board takes no change of any kind (Issue #557).
+            if (IsPoweredOff)
+            {
+                return false;
+            }
+
             if (_autoOn[relay - 1] == autoOn)
             {
                 return false;
@@ -1145,6 +1341,12 @@ public sealed class ShellySimulator : ISimulatedBoard
     {
         lock (_lock)
         {
+            // Without power the board takes no change of any kind (Issue #557).
+            if (IsPoweredOff)
+            {
+                return false;
+            }
+
             if (_initialStates[relay - 1] == initialState)
             {
                 return false;
@@ -1255,11 +1457,17 @@ public sealed class ShellySimulator : ISimulatedBoard
         };
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = _relays;
             change();
             changed = before != _relays;
@@ -1269,6 +1477,13 @@ public sealed class ShellySimulator : ISimulatedBoard
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

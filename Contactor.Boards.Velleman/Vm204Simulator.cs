@@ -15,7 +15,7 @@ namespace Contactor.Boards.Velleman;
 /// per connection. It never tells the app anything by itself, as the real board. Used by the tests and, in
 /// development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm204Simulator : ISimulatedBoard
+public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
     /// <summary>How long a client may take to send its whole request head before the connection is closed.</summary>
     public static readonly TimeSpan RequestHeadTimeout = TimeSpan.FromSeconds(5);
@@ -32,8 +32,8 @@ public sealed class Vm204Simulator : ISimulatedBoard
     // The app shows as connected while it asked something this recently: it opens a connection for every request.
     private static readonly TimeSpan ClientWindow = TimeSpan.FromSeconds(10);
 
-    private readonly string _username;
-    private readonly string _password;
+    // Swapped whole, so a login never meets a user name from one and a password from another.
+    private Credentials _credentials;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _stopping = new();
     private readonly ConcurrentDictionary<TcpClient, byte> _connections = new();
@@ -43,6 +43,8 @@ public sealed class Vm204Simulator : ISimulatedBoard
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private byte _relays;
+    private int _poweredOff;
+    private long _answerDelayTicks;
     private byte _inputs;
     private int _analog;
     private string _key = NewKey();
@@ -65,8 +67,7 @@ public sealed class Vm204Simulator : ISimulatedBoard
             throw new ArgumentException("Give both a user name and a password, or neither.", nameof(password));
         }
 
-        _username = username ?? "";
-        _password = password ?? "";
+        _credentials = new Credentials(username ?? "", password ?? "");
         _logger = logger;
     }
 
@@ -81,7 +82,7 @@ public sealed class Vm204Simulator : ISimulatedBoard
 
     public int Port { get; private set; }
 
-    public bool HasLogin => _username.Length > 0 || _password.Length > 0;
+    public bool HasLogin => Volatile.Read(ref _credentials) is { } credentials && (credentials.Username.Length > 0 || credentials.Password.Length > 0);
 
     /// <summary>
     /// Its relays, inputs and analog input; the clients are the addresses that asked something within the last 10 s.
@@ -189,6 +190,77 @@ public sealed class Vm204Simulator : ISimulatedBoard
         }
     }
 
+    /// <summary>
+    /// Changes the login while the board runs, as on its own web page: from then on the app's login no longer fits. The key
+    /// the app already has keeps working until it is made anew. Only on a board with a login, and only to another login it takes.
+    /// </summary>
+    public void ChangeLogin(string username, string password)
+    {
+        ArgumentNullException.ThrowIfNull(username);
+        ArgumentNullException.ThrowIfNull(password);
+        if (!HasLogin)
+        {
+            throw new InvalidOperationException("The board has no login to change.");
+        }
+
+        if (Vm204Login.TryCreate(username, password, out var error) is null || username.Length == 0)
+        {
+            throw new ArgumentException(error?.ToString() ?? "The VM204 takes a user name and a password.", nameof(username));
+        }
+
+        Volatile.Write(ref _credentials, new Credentials(username, password));
+    }
+
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => "Every relay comes back off (not yet checked on a real VM204).";
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            _relays = (byte)0;
+        }, power: true);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        Change(
+            () =>
+            {
+                _relays = (byte)0;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
+        return Task.CompletedTask;
+    }
+
     public void DropConnections()
     {
         foreach (var connection in _connections.Keys)
@@ -240,7 +312,7 @@ public sealed class Vm204Simulator : ISimulatedBoard
         _connections.TryAdd(tcp, 0);
         try
         {
-            if (RejectConnections)
+            if (RejectConnections || IsPoweredOff)
             {
                 return;
             }
@@ -270,6 +342,7 @@ public sealed class Vm204Simulator : ISimulatedBoard
 
             var response = Handle(head);
             Interlocked.Increment(ref _requestCount);
+            await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
             await stream.WriteAsync(response, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
@@ -363,8 +436,9 @@ public sealed class Vm204Simulator : ISimulatedBoard
         if (first.Equals("auth", StringComparison.OrdinalIgnoreCase))
         {
             // authUser (Main/api.c): strcmp, so case matters, against the values exactly as they arrived.
-            if (parameters.TryGetValue("user", out var user) && user == _username
-                && parameters.TryGetValue("password", out var password) && password == _password)
+            var credentials = Volatile.Read(ref _credentials);
+            if (parameters.TryGetValue("user", out var user) && user == credentials.Username
+                && parameters.TryGetValue("password", out var password) && password == credentials.Password)
             {
                 var body = Vm204Json.WriteKey(Key);
                 return Respond(HttpStatusCode.OK, body, "Logged in", bytes: Vm204TraceText.Answer(200, body, hideBody: true), json: true);
@@ -447,11 +521,17 @@ public sealed class Vm204Simulator : ISimulatedBoard
         };
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = (_relays, _inputs, _analog);
             change();
             changed = before != (_relays, _inputs, _analog);
@@ -461,6 +541,13 @@ public sealed class Vm204Simulator : ISimulatedBoard
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)
@@ -513,5 +600,19 @@ public sealed class Vm204Simulator : ISimulatedBoard
     {
         const string alphanumeric = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
         return RandomNumberGenerator.GetString(alphanumeric, 32);
+    }
+
+    // A class rather than a record, so the password can't leak through a generated ToString.
+    private sealed class Credentials
+    {
+        public Credentials(string username, string password)
+        {
+            Username = username;
+            Password = password;
+        }
+
+        public string Username { get; }
+
+        public string Password { get; }
     }
 }

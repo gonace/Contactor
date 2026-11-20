@@ -166,6 +166,7 @@ When `Host` is empty, the setup guide asks for the address.
 - Relays, inputs and each relay's mode (`ISimulatedBoardRelayModes`, a select per relay on the simulator's page) can be
   set "at the board", and connections can be dropped or refused.
 - For the tests, `NoAnswer` stops all answers and `FailRelays` refuses function 05 for some relays with code 4.
+- A power cut (`ISimulatedBoardPower`): the wiki doesn't say whether the relays come back off or as they were, nor whether the relay modes stay (see "To check on a real board"). The simulator brings every relay back off and keeps the modes.
 
 ## Settings on the board that switch relays without the app
 

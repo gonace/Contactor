@@ -19,7 +19,7 @@ namespace Contactor.Boards.Denkovi;
 /// doesn't say which; see README.md). It never tells the app anything by itself, as the real board. Used by the tests and, in
 /// development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class SmartDenSimulator : ISimulatedBoard
+public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardSlowAnswers
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -34,6 +34,9 @@ public sealed class SmartDenSimulator : ISimulatedBoard
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private ulong _relays;
+    private int _poweredOff;
+    private long _answerDelayTicks;
+    private ulong _beforeCut;
     private ulong? _lastRelaysSent;
     private int _requestCount;
     private int _unansweredCount;
@@ -168,6 +171,61 @@ public sealed class SmartDenSimulator : ISimulatedBoard
         throw new ArgumentOutOfRangeException(nameof(input), input, $"The {Model.Name} has no inputs.");
     }
 
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => SaveOutputs ? "Save Outputs is on: the relays come back as they were." : "Save Outputs is off: every relay comes back off.";
+
+    /// <summary>"Save Outputs" (section 8.2): the board sets the relays again after a restart as they were; off, they come back off. Off by default here, as the manual gives no factory value.</summary>
+    public bool SaveOutputs { get; set; }
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            Pulses.Cancel(ulong.MaxValue);
+            _beforeCut = _relays;
+            _relays = 0UL;
+        }, power: true);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        Change(
+            () =>
+            {
+                _relays = SaveOutputs ? _beforeCut : 0UL;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
+        return Task.CompletedTask;
+    }
+
     public void DropConnections()
     {
         lock (_connectionsLock)
@@ -222,7 +280,7 @@ public sealed class SmartDenSimulator : ISimulatedBoard
             }
 
             handlers.RemoveAll(h => h.IsCompleted);
-            if (RejectConnections)
+            if (RejectConnections || IsPoweredOff)
             {
                 tcp.Dispose();
                 continue;
@@ -232,6 +290,13 @@ public sealed class SmartDenSimulator : ISimulatedBoard
             {
                 if (Admit(tcp) is { } remote)
                 {
+                    if (IsPoweredOff)
+                    {
+                        // The power went just as it came: DropConnections may have missed it.
+                        Remove(tcp);
+                        continue;
+                    }
+
                     handlers.Add(HandleConnectionAsync(tcp, remote, cancellationToken));
                 }
             }
@@ -340,6 +405,7 @@ public sealed class SmartDenSimulator : ISimulatedBoard
                 }
 
                 Interlocked.Increment(ref _requestCount);
+                await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
                 await stream.WriteAsync(answer, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -618,11 +684,17 @@ public sealed class SmartDenSimulator : ISimulatedBoard
         }
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = _relays;
             change();
             changed = before != _relays;
@@ -632,6 +704,13 @@ public sealed class SmartDenSimulator : ISimulatedBoard
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

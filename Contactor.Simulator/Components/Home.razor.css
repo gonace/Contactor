@@ -1,5 +1,5 @@
 /* A developer tool. From 1024 px: the whole window, the boards on the left, the traffic filling the rest. Narrower (at
-   the end): one column that scrolls, the boards a row of cards, "Add a board" and the traffic folded away. */
+   the end): one column that scrolls, the boards a row of cards, the traffic folded away. */
 .screen {
     height: 100vh;
     display: flex;
@@ -152,20 +152,18 @@ h1 {
     margin: 0;
 }
 
-.add {
+/* "+ Add a board" at the foot of the list; the panel it opens takes the board's place on the right. */
+.add-board {
     flex: none;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 16px;
-    border-top: 1px solid var(--line);
+    margin: 12px 16px 16px;
+    height: 44px;
+    border: 1px dashed var(--line-strong);
+    font-weight: 600;
 }
 
-.add .row {
-    display: flex;
-    gap: 8px;
-    /* Not a trace row: no line under it. */
-    border-bottom: 0;
+.add-board.open {
+    background: var(--accent-tint);
+    border-color: var(--accent-border);
 }
 
 .field {
@@ -223,6 +221,13 @@ button.danger {
     color: var(--danger-ink);
 }
 
+button.danger:disabled,
+.relay:disabled {
+    border-color: var(--line);
+    background: var(--card);
+    color: var(--muted);
+}
+
 .error {
     margin: 0;
     font-size: 13px;
@@ -232,6 +237,7 @@ button.danger {
 .main {
     flex: 1;
     min-width: 0;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -290,14 +296,17 @@ h2 {
     gap: 8px;
 }
 
+/* The inputs beside the relays while both fit; many inputs go below them. */
 .split {
     display: flex;
-    align-items: flex-end;
-    gap: 32px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 16px 32px;
 }
 
 .relays-box {
-    flex: 1;
+    flex: 1 1 480px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -330,17 +339,149 @@ h2 {
     font-weight: 600;
 }
 
+.relay .pulse {
+    font-size: 11px;
+}
+
 .relay.on {
     border-color: var(--accent-border);
     background: var(--accent);
     color: var(--on-accent);
 }
 
-.extras {
+.inputs {
     flex: none;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+}
+
+.input-list {
+    display: grid;
+    grid-template-columns: repeat(var(--columns, 4), auto);
+    column-gap: 16px;
+}
+
+/* The rest of the card: sections that fold, two side by side, each opened and closed by the browser itself. */
+.sections {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+
+.section {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+}
+
+.section > summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    padding: 10px 14px;
+    cursor: pointer;
+}
+
+.section > summary::-webkit-details-marker {
+    display: none;
+}
+
+.section > summary::after {
+    content: "+";
+    content: "+" / "";
+    font-family: var(--font-mono);
+    color: var(--muted);
+}
+
+.section[open] > summary::after {
+    content: "−";
+    content: "−" / "";
+}
+
+.section .name {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.section .sum {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--muted);
+    text-align: right;
+}
+
+.section .in {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 14px 14px;
+}
+
+h4 {
+    margin: 6px 0 0;
+}
+
+.button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.schedule-list {
+    display: flex;
+    flex-direction: column;
+}
+
+/* One of a few choices, e.g. a power cut's length. */
+.segments {
+    display: inline-flex;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.segments button {
+    border: 0;
+    border-right: 1px solid var(--line-strong);
+    border-radius: 0;
+}
+
+.segments button:last-child {
+    border-right: 0;
+}
+
+.segments button.on {
+    background: var(--ink);
+    color: var(--on-ink);
+    font-weight: 600;
+}
+
+.button-row {
+    align-items: center;
+}
+
+/* One of the board's own rules, with its "Run now". */
+.rule-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 40px;
+    font-size: 14px;
+}
+
+.rule-line button {
+    height: 34px;
+    flex: none;
+}
+
+.client {
+    font-size: 14px;
 }
 
 .check {
@@ -355,18 +496,6 @@ h2 {
     width: 20px;
     height: 20px;
     accent-color: var(--accent);
-}
-
-.timers {
-    margin: 0;
-    padding: 0;
-    border: 0;
-    min-width: 0;
-}
-
-.timers legend {
-    padding: 0;
-    margin-bottom: 2px;
 }
 
 .timer-relays {
@@ -427,9 +556,10 @@ h2 {
     text-align: right;
 }
 
+/* It fills what the card leaves; under a tall card, the page scrolls and it keeps room for a few rows. */
 .traffic {
-    flex: 1;
-    min-height: 0;
+    flex: 1 0 280px;
+    min-height: 280px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -506,6 +636,134 @@ h3 {
     padding: 24px;
 }
 
+/* "Add a board": manufacturer and model side by side, then the port and login. */
+.add {
+    flex: 0 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 18px 20px;
+    overflow-y: auto;
+}
+
+.add-cols {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 20px;
+}
+
+.step {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.step .label b {
+    color: var(--ink);
+}
+
+.makers {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.maker {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-color: var(--line);
+    text-align: left;
+}
+
+.maker .count {
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.maker.selected {
+    background: var(--accent-tint);
+    border-color: var(--accent-border);
+    font-weight: 600;
+}
+
+.models {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.model {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1.2fr) 64px 64px 64px minmax(0, 1.6fr) 110px;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--row-line);
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.model:last-child {
+    border-bottom: 0;
+}
+
+/* The model table's own header row, not the traffic's. */
+.model-head {
+    padding-block: 8px;
+    background: var(--bg);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    cursor: default;
+}
+
+.model.selected {
+    background: var(--accent-tint);
+}
+
+.model input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.model .name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.where {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+}
+
+.where .field {
+    flex: none;
+    width: 200px;
+}
+
+.where .field.port {
+    width: 100px;
+}
+
+.foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+
 /* The folds' buttons, shown only below 1024 px. */
 .fold {
     display: none;
@@ -576,23 +834,47 @@ h3 {
         font-weight: 600;
     }
 
-    .add-fold {
-        justify-content: center;
-        margin: 12px 16px 16px;
-        border: 1px dashed var(--line-strong);
-    }
-
-    .add-fold[aria-expanded="true"] {
-        margin-bottom: 0;
-    }
-
+    /* "Add a board": one column; each model a card of its own, its numbers named. */
     .add {
-        display: none;
-        border-top: none;
+        padding: 16px;
     }
 
-    .add.open {
+    .add-cols {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Each model's numbers are named on the phone, so the table needs no header row. */
+    .model.model-head {
+        display: none;
+    }
+
+    .model {
         display: flex;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+    }
+
+    .model .name {
+        flex: 1 1 calc(100% - 40px);
+    }
+
+    .model > span:nth-child(n + 3) {
+        font-size: 13px;
+        color: var(--muted);
+    }
+
+    .model > span[data-label]::before {
+        content: attr(data-label) ": ";
+    }
+
+    .where .field {
+        flex: 1 1 160px;
+        width: auto;
+    }
+
+    .where .field.port {
+        flex: none;
+        width: 100px;
     }
 
     .main {
@@ -612,6 +894,37 @@ h3 {
         flex-direction: column;
         align-items: stretch;
         gap: 16px;
+    }
+
+    /* In a column, a flex-basis is a height: the relays take only what they need. */
+    .relays-box {
+        flex-basis: auto;
+    }
+
+    .sections {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .input-list {
+        grid-template-columns: repeat(2, auto);
+    }
+
+    /* The name and the reading above the slider, so the reading never runs past the section. */
+    .analog {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .analog > span:first-child {
+        white-space: nowrap;
+    }
+
+    .analog input[type="range"] {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
+    .analog .mono {
+        min-width: 0;
     }
 
     .relays {

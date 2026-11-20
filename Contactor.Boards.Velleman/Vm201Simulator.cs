@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -14,7 +15,7 @@ namespace Contactor.Boards.Velleman;
 /// ends its pulse, and a new pulse of it starts again. Used by the tests and, in
 /// development, by Contactor.Simulator (started by the Aspire AppHost). It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
+public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardNoAnswer, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardRules, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
     private const int NameLength = Vm201Command.NameDataLength - 1;
     private const int InputChannel = 9;
@@ -22,8 +23,8 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     // Received commands kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedCommandsKept = 1000;
 
-    private readonly string? _username;
-    private readonly string? _password;
+    // Swapped whole, so a login never meets a user name from one and a password from another.
+    private Credentials? _credentials;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _stopping = new();
     private readonly ConcurrentDictionary<Connection, byte> _connections = new();
@@ -35,6 +36,8 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private byte _outputs;
+    private int _poweredOff;
+    private long _answerDelayTicks;
     private byte _timerMask;
     private bool _input;
     private int _connectionCount;
@@ -55,8 +58,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
             throw new ArgumentException("Give both a user name and a password, or neither.", nameof(password));
         }
 
-        _username = username;
-        _password = password;
+        _credentials = username is null ? null : new Credentials(username, password!);
         _logger = logger;
     }
 
@@ -90,7 +92,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     /// <summary>The port it listens on, after <see cref="Start"/>.</summary>
     public int Port { get; private set; }
 
-    public bool HasLogin => _username is not null;
+    public bool HasLogin => Volatile.Read(ref _credentials) is not null;
 
     public SimulatedBoardState State => new(
         new ChannelMask(Outputs),
@@ -118,6 +120,13 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     /// When true, the board stops reading and sending without closing the socket, as on a half-open connection.
     /// </summary>
     public bool Unresponsive { get; set; }
+
+    /// <summary>The VM201's way to hang: <see cref="Unresponsive"/>.</summary>
+    bool ISimulatedBoardNoAnswer.NoAnswer
+    {
+        get => Unresponsive;
+        set => Unresponsive = value;
+    }
 
     /// <summary>The packets received from logged-in clients, in order: the newest 1,000.</summary>
     public IReadOnlyList<Vm201Packet> ReceivedCommands => [.. _receivedCommands];
@@ -192,6 +201,107 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         await ChangeAsync(() => _timerMask = turnOn ? (byte)(_timerMask | mask) : (byte)(_timerMask & ~mask)).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Changes the login while the board runs, as on its own web page: from then on the app's login no longer fits. A
+    /// session that is in already stays in. Only on a board with a login, and only to another login it takes.
+    /// </summary>
+    public void ChangeLogin(string username, string password)
+    {
+        ArgumentNullException.ThrowIfNull(username);
+        ArgumentNullException.ThrowIfNull(password);
+        if (!HasLogin)
+        {
+            throw new InvalidOperationException("The board has no login to change.");
+        }
+
+        if (Vm201Login.TryCreate(username, password, out var error) is null || username.Length == 0)
+        {
+            throw new ArgumentException(error?.ToString() ?? "The VM201 takes a user name and a password.", nameof(username));
+        }
+
+        Volatile.Write(ref _credentials, new Credentials(username, password));
+    }
+
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => "Every relay comes back off, and its timers stay (neither yet checked on a real VM201).";
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public async Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return;
+        }
+
+        DropConnections();
+        await ChangeAsync(() =>
+        {
+            Pulses.Cancel(ulong.MaxValue);
+            _outputs = (byte)0;
+        }, power: true).ConfigureAwait(false);
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public async Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return;
+        }
+
+        await ChangeAsync(
+            () =>
+            {
+                _outputs = (byte)0;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true).ConfigureAwait(false);
+    }
+
+    // A rule that switches on comes before the one that switches off.
+    private static readonly bool[] OnThenOff = [true, false];
+
+    /// <summary>
+    /// Each relay whose timer program is on, twice: its timer switching it on, and off. Velleman's description doesn't
+    /// say what a timer program switches; the simulator assumes it turns its relay on at one time and off at another
+    /// (README.md). The app learns of it as of any change at the board, from the status the board pushes.
+    /// </summary>
+    public IReadOnlyList<SimulatedRule> RunnableRules =>
+    [
+        .. Timers.Channels.SelectMany(relay => OnThenOff.Select(on => new SimulatedRule(
+            string.Create(CultureInfo.InvariantCulture, $"timer-{relay}-{(on ? "on" : "off")}"),
+            string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s timer: {(on ? "on" : "off")}"),
+            [new SimulatedRuleSwitch(relay, on)]))),
+    ];
+
+    public async Task<SimulatedRule?> RunRuleAsync(string id)
+    {
+        if (RunnableRules.FirstOrDefault(r => r.Id == id) is not { } rule)
+        {
+            return null;
+        }
+
+        foreach (var change in rule.Switches)
+        {
+            await SwitchRelayAsync(change.Relay, change.TurnOn).ConfigureAwait(false);
+        }
+
+        return rule;
+    }
+
     /// <summary>Closes every open connection, as if the network dropped.</summary>
     public void DropConnections()
     {
@@ -250,7 +360,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         RaiseChanged();
         try
         {
-            if (RejectConnections)
+            if (RejectConnections || IsPoweredOff)
             {
                 return;
             }
@@ -270,6 +380,8 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
                 return;
             }
 
+            // A slow board answers the login late, once, without holding the gate: other clients and pages go on.
+            await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -323,7 +435,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
 
     private async Task<bool> LoginAsync(Connection connection, Vm201PacketReader reader, CancellationToken cancellationToken)
     {
-        if (_username is null)
+        if (Volatile.Read(ref _credentials) is null)
         {
             return true;
         }
@@ -350,12 +462,14 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
             }
         }
 
-        if (username == _username && password == _password)
+        // The login of the moment the board checks it: a change since the session began counts.
+        if (Volatile.Read(ref _credentials) is { } credentials && username == credentials.Username && password == credentials.Password)
         {
             return true;
         }
 
         Interlocked.Increment(ref _deniedLoginCount);
+        await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
         await SendLockedAsync(connection, Vm201PacketCodec.Encode(Vm201Command.AccessDenied), cancellationToken).ConfigureAwait(false);
         await SendLockedAsync(connection, Vm201PacketCodec.Encode(Vm201Command.Closed), cancellationToken).ConfigureAwait(false);
         return false;
@@ -363,6 +477,8 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
 
     private async Task HandleCommandAsync(Connection connection, Vm201Packet packet, CancellationToken cancellationToken)
     {
+        // A slow board takes each command late, once, without holding the gate: other clients and pages go on.
+        await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
         if (packet.Command == Vm201Command.StatusRequest)
         {
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -449,7 +565,7 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
     /// Applies a change and pushes the status to every logged-in client, but only if something changed. Does nothing
     /// once the simulator is stopping or stopped, so a button pressed on a page as it shuts down is no error.
     /// </summary>
-    private async Task ChangeAsync(Action change)
+    private async Task ChangeAsync(Action change, bool power = false)
     {
         try
         {
@@ -463,6 +579,12 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         var changed = false;
         try
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = EncodeStatus();
             change();
             var after = EncodeStatus();
@@ -548,6 +670,13 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         Trace(new BoardTraceEntry(Now, BoardTraceDirection.None, text, null, IsError: false, IsRoutine: false));
     }
 
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
+    }
+
     // Each handler on its own, so one that throws can't stop the board or keep the step from the others.
     private void Trace(BoardTraceEntry entry)
     {
@@ -627,5 +756,19 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardTimers
         public NetworkStream Stream { get; }
 
         public volatile bool LoggedIn;
+    }
+
+    // A class rather than a record, so the password can't leak through a generated ToString.
+    private sealed class Credentials
+    {
+        public Credentials(string username, string password)
+        {
+            Username = username;
+            Password = password;
+        }
+
+        public string Username { get; }
+
+        public string Password { get; }
     }
 }

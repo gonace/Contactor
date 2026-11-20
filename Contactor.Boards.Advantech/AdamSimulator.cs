@@ -17,7 +17,7 @@ namespace Contactor.Boards.Advantech;
 /// connections, since the manual names no limit. It never tells the app anything by itself, as the real module. Used
 /// by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class AdamSimulator : ISimulatedBoard
+public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPower, ISimulatedBoardSlowAnswers
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -36,6 +36,8 @@ public sealed class AdamSimulator : ISimulatedBoard
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private ulong _relays;
+    private int _poweredOff;
+    private long _answerDelayTicks;
     private ulong _inputs;
     private ulong? _lastRelaysSent;
     private ulong? _lastInputsSent;
@@ -163,6 +165,56 @@ public sealed class AdamSimulator : ISimulatedBoard
         return Task.CompletedTask;
     }
 
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => "Every relay comes back off.";
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            _relays = 0UL;
+        }, power: true);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        Change(
+            () =>
+            {
+                _relays = 0UL;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
+        return Task.CompletedTask;
+    }
+
     public void DropConnections()
     {
         foreach (var connection in _connections.Keys)
@@ -213,7 +265,7 @@ public sealed class AdamSimulator : ISimulatedBoard
             }
 
             handlers.RemoveAll(h => h.IsCompleted);
-            if (RejectConnections)
+            if (RejectConnections || IsPoweredOff)
             {
                 tcp.Dispose();
                 continue;
@@ -223,6 +275,14 @@ public sealed class AdamSimulator : ISimulatedBoard
             {
                 var remote = RemoteOf(tcp);
                 _connections[tcp] = remote;
+                if (IsPoweredOff)
+                {
+                    // The power went just as it came: DropConnections may have missed it.
+                    _connections.TryRemove(tcp, out _);
+                    tcp.Dispose();
+                    continue;
+                }
+
                 RaiseChanged();
                 Trace(BoardTraceDirection.None, $"The app connected from {remote}", null);
                 handlers.Add(HandleConnectionAsync(tcp, remote, cancellationToken));
@@ -284,6 +344,7 @@ public sealed class AdamSimulator : ISimulatedBoard
                 }
 
                 Interlocked.Increment(ref _requestCount);
+                await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
                 await stream.WriteAsync(answer, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -526,11 +587,17 @@ public sealed class AdamSimulator : ISimulatedBoard
         }
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = (_relays, _inputs);
             change();
             changed = before != (_relays, _inputs);
@@ -540,6 +607,13 @@ public sealed class AdamSimulator : ISimulatedBoard
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

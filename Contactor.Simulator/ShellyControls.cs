@@ -159,6 +159,12 @@ public sealed class ShellyControls
 
     public void SetAutoOn(int relay, bool autoOn)
     {
+        // Without power the device takes no change.
+        if (_device.IsPoweredOff)
+        {
+            return;
+        }
+
         if (relay < 1 || relay > RelayCount)
         {
             return;
@@ -180,6 +186,12 @@ public sealed class ShellyControls
     /// <summary>Sets a relay's state after a power cut: one of <see cref="InitialStates"/>.</summary>
     public void SetInitialState(int relay, string? initialState)
     {
+        // Without power the device takes no change.
+        if (_device.IsPoweredOff)
+        {
+            return;
+        }
+
         if (relay < 1 || relay > RelayCount || initialState is null || !InitialStates.Contains(initialState))
         {
             return;
@@ -205,6 +217,11 @@ public sealed class ShellyControls
     /// </summary>
     public string? AddSchedule(int relay, bool turnOn, string? time)
     {
+        if (_device.IsPoweredOff)
+        {
+            return "The device has no power.";
+        }
+
         if (relay < 1 || relay > RelayCount)
         {
             return "Choose a relay.";
@@ -232,6 +249,146 @@ public sealed class ShellyControls
         var added = _device.Schedules.First(s => s.Id == id);
         _log(string.Create(CultureInfo.InvariantCulture, $"Schedule {id} added here: {Describe(added)}"));
         return null;
+    }
+
+    /// <summary>How the device answers <c>Switch.GetConfig</c> and <c>Switch.SetConfig</c> for a relay, as the page offers it.</summary>
+    public static IReadOnlyList<string> ConfigAnswers { get; } = [ConfigAnswered, ConfigRefused, ConfigUnreadable, ConfigSilent];
+
+    public const string ConfigAnswered = "answered";
+    public const string ConfigRefused = "refused";
+    public const string ConfigUnreadable = "cut short";
+    public const string ConfigSilent = "never answered";
+
+    /// <summary>Whether the device answers as a Gen1 device, which has no <c>/rpc</c>: the app sees the wrong model.</summary>
+    public bool IsGen1 => _device.Generation is null;
+
+    /// <summary>Whether <c>Schedule.List</c> is refused.</summary>
+    public bool FailSchedules => _device.FailSchedules;
+
+    /// <summary>How a schedule's <c>Schedule.Update</c> can be answered, as the page offers it.</summary>
+    public static IReadOnlyList<string> UpdateAnswers { get; } = [ConfigAnswered, ConfigRefused, ConfigSilent];
+
+    /// <summary>How one schedule's <c>Schedule.Update</c> is answered: one of <see cref="UpdateAnswers"/>.</summary>
+    public string UpdateAnswer(long id)
+    {
+        return _device.SilentScheduleUpdates.Contains(id) ? ConfigSilent
+            : _device.FailScheduleUpdates.Contains(id) ? ConfigRefused
+            : ConfigAnswered;
+    }
+
+    /// <summary>How a relay's <c>Switch.GetConfig</c> and <c>Switch.SetConfig</c> are answered: one of <see cref="ConfigAnswers"/>.</summary>
+    public string ConfigAnswer(int relay)
+    {
+        if (relay < 1 || relay > RelayCount)
+        {
+            return ConfigAnswered;
+        }
+
+        var bit = 1 << (relay - 1);
+        return (_device.SilentConfigRelays & bit) != 0 ? ConfigSilent
+            : (_device.UnreadableConfigRelays & bit) != 0 ? ConfigUnreadable
+            : (_device.FailConfigRelays & bit) != 0 ? ConfigRefused
+            : ConfigAnswered;
+    }
+
+    /// <summary>Answers as a Gen1 device, the wrong model, or as the Gen2+ device it is again.</summary>
+    public void SetGen1(bool gen1)
+    {
+        lock (_lock)
+        {
+            if (IsGen1 == gen1)
+            {
+                return;
+            }
+
+            _device.Generation = gen1 ? null : 2;
+        }
+
+        _log(gen1 ? "Answering as a Gen1 device here (the wrong model)" : "Answering as a Gen2+ device again here");
+    }
+
+    /// <summary>Lets every nonce expire, as an hour later: the app's next request gets a 401 with stale=true.</summary>
+    public void ExpireNonces()
+    {
+        _device.ExpireNonces();
+        _log("Nonces expired here");
+    }
+
+    /// <summary>Forgets every nonce, as after a reboot: the app's next request gets a plain 401.</summary>
+    public void ForgetNonces()
+    {
+        _device.ForgetNonces();
+        _log("Nonces forgotten here, as after a reboot");
+    }
+
+    /// <summary>Makes <c>Schedule.List</c> refused, or answered again.</summary>
+    public void SetFailSchedules(bool fail)
+    {
+        lock (_lock)
+        {
+            if (_device.FailSchedules == fail)
+            {
+                return;
+            }
+
+            _device.FailSchedules = fail;
+        }
+
+        _log(fail ? "Schedule.List refused here" : "Schedule.List answered again here");
+    }
+
+    /// <summary>
+    /// Sets how one schedule's <c>Schedule.Update</c> is answered: one of <see cref="UpdateAnswers"/>; nothing for a job
+    /// the device doesn't hold.
+    /// </summary>
+    public void SetUpdateAnswer(long id, string? answer)
+    {
+        if (answer is null || !UpdateAnswers.Contains(answer))
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            if (_device.Schedules.All(s => s.Id != id) || UpdateAnswer(id) == answer)
+            {
+                return;
+            }
+
+            var failing = new HashSet<long>(_device.FailScheduleUpdates);
+            var silent = new HashSet<long>(_device.SilentScheduleUpdates);
+            _ = answer == ConfigRefused ? failing.Add(id) : failing.Remove(id);
+            _ = answer == ConfigSilent ? silent.Add(id) : silent.Remove(id);
+            _device.FailScheduleUpdates = failing;
+            _device.SilentScheduleUpdates = silent;
+        }
+
+        _log(string.Create(CultureInfo.InvariantCulture, $"Schedule.Update of schedule {id} {answer} here"));
+    }
+
+    /// <summary>Sets how a relay's <c>Switch.GetConfig</c> and <c>Switch.SetConfig</c> are answered: one of <see cref="ConfigAnswers"/>.</summary>
+    public void SetConfigAnswer(int relay, string? answer)
+    {
+        if (relay < 1 || relay > RelayCount || answer is null || !ConfigAnswers.Contains(answer))
+        {
+            return;
+        }
+
+        var bit = (byte)(1 << (relay - 1));
+        lock (_lock)
+        {
+            if (ConfigAnswer(relay) == answer)
+            {
+                return;
+            }
+
+            byte Set(byte mask, bool on) => on ? (byte)(mask | bit) : (byte)(mask & ~bit);
+            _device.FailConfigRelays = Set(_device.FailConfigRelays, answer == ConfigRefused);
+            _device.UnreadableConfigRelays = Set(_device.UnreadableConfigRelays, answer == ConfigUnreadable);
+            _device.SilentConfigRelays = Set(_device.SilentConfigRelays, answer == ConfigSilent);
+        }
+
+        _log(string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s Switch.GetConfig and SetConfig {answer} here"));
     }
 
     /// <summary>Turns a job on or off; nothing for a job the device doesn't hold, or one already so.</summary>

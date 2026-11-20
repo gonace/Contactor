@@ -101,3 +101,100 @@ public interface ISimulatedBoardRelayModes
     /// </summary>
     Task SetModeAsync(int relay, int mode);
 }
+
+/// <summary>A simulated board on TCP that can be unreachable.</summary>
+public interface ISimulatedBoardRejectConnections
+{
+    /// <summary>When true, new connections are closed at once, as if the board were unreachable.</summary>
+    bool RejectConnections { get; set; }
+}
+
+/// <summary>A simulated board that can hang: it reads the app's requests and never answers them.</summary>
+public interface ISimulatedBoardNoAnswer
+{
+    /// <summary>When true, the board reads every request and answers none, keeping the connection open.</summary>
+    bool NoAnswer { get; set; }
+}
+
+/// <summary>A simulated board that can refuse to switch a relay, as the real one answers an error.</summary>
+public interface ISimulatedBoardFailRelays
+{
+    /// <summary>The relays (bit 0 = relay 1) whose switch command gets the board's error answer and isn't carried out.</summary>
+    ulong FailRelays { get; set; }
+}
+
+/// <summary>A simulated board that pulses relays (<see cref="SimulatedPulses"/>).</summary>
+public interface ISimulatedBoardPulses
+{
+    /// <summary>The relays whose pulse is still running.</summary>
+    ChannelMask Pulsing { get; }
+}
+
+/// <summary>
+/// A simulated board whose power can be cut, as a power cut or a restart would: while it is off, nothing answers the app
+/// and every relay is off; when the power comes back, each relay is as the board sets it after a power cut, as its
+/// manual says (or, where the manual doesn't say, as its README states the simulator assumes).
+/// </summary>
+public interface ISimulatedBoardPower
+{
+    /// <summary>Whether the power is cut.</summary>
+    bool IsPoweredOff { get; }
+
+    /// <summary>What the board does when the power comes back, in words for the page, e.g. "Every relay comes back off.".</summary>
+    string AfterPowerCut { get; }
+
+    /// <summary>
+    /// Cuts the power: open connections drop, new ones get nothing, running pulses end and every relay goes off. Nothing
+    /// while it is cut already.
+    /// </summary>
+    Task CutPowerAsync();
+
+    /// <summary>Gives the power back: each relay as the board sets it after a power cut, and it answers again. Nothing while it is on.</summary>
+    Task RestorePowerAsync();
+}
+
+/// <summary>
+/// One of a simulated board's own rules that the page can run now, as when its time comes: a timer program, a schedule
+/// or an auto-on. The board switches its relays as the rule says, and the app sees a change it didn't ask for.
+/// </summary>
+/// <param name="Id">Its id on this board, e.g. "timer-3-on".</param>
+/// <param name="Name">What it is, in words for the page, e.g. "Relay 3's timer: on".</param>
+/// <param name="Switches">What it does: each relay it switches, and whether on.</param>
+public sealed record SimulatedRule(string Id, string Name, IReadOnlyList<SimulatedRuleSwitch> Switches);
+
+/// <summary>One relay a rule switches.</summary>
+public readonly record struct SimulatedRuleSwitch(int Relay, bool TurnOn);
+
+/// <summary>A simulated board whose own rules the page can run now.</summary>
+public interface ISimulatedBoardRules
+{
+    /// <summary>The rules that are on, which the board would run when their time comes, in the board's order.</summary>
+    IReadOnlyList<SimulatedRule> RunnableRules { get; }
+
+    /// <summary>
+    /// Runs a rule now: switches its relays as it says, as the board's own switch would, and tells the app if anything
+    /// changed. Returns the rule it ran, or null for an id that isn't among <see cref="RunnableRules"/> (any more).
+    /// </summary>
+    Task<SimulatedRule?> RunRuleAsync(string id);
+}
+
+/// <summary>A simulated board that can answer slowly, as a busy or far board does.</summary>
+public interface ISimulatedBoardSlowAnswers
+{
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    TimeSpan AnswerDelay { get; set; }
+}
+
+/// <summary>
+/// A simulated board whose login can be changed while it runs, as a person would on the board's own web page: from
+/// then on the app's login no longer fits. Only on a board that has a login, and only to another login it takes.
+/// </summary>
+public interface ISimulatedBoardLogin
+{
+    /// <summary>
+    /// Changes the login; a model whose login is a password alone ignores <paramref name="username"/>. Throws
+    /// <see cref="InvalidOperationException"/> for a board without a login and <see cref="ArgumentException"/> for a
+    /// login the board doesn't take. Never logs the password.
+    /// </summary>
+    void ChangeLogin(string username, string password);
+}

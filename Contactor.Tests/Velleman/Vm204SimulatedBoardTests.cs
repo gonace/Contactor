@@ -36,6 +36,21 @@ public sealed class Vm204SimulatedBoardTests
         Assert.Equal(ChannelMask.Of([2, 4]), board.State.Relays);
     }
 
+    // The login changed on the board: the old one is refused, the new one gives the key, and the key the app has works.
+    [Fact]
+    public async Task Should_TakeOnlyTheNewLogin_AfterItChanged()
+    {
+        await using var board = new Vm204Simulator("admin", "VM204", NullLogger.Instance);
+        board.Start();
+
+        board.ChangeLogin("admin", "Pear1");
+
+        Assert.Equal("400", Code(await GetAsync(board.Port, "/api/auth?user=admin&password=VM204")));
+        Assert.EndsWith($"{{\"ApiKey\":\"{board.Key}\"}}", await GetAsync(board.Port, "/api/auth?user=admin&password=Pear1"), StringComparison.Ordinal);
+        Assert.Equal("200", Code(await GetAsync(board.Port, $"/api/status?key={board.Key}")));
+        Assert.Throws<ArgumentException>(() => board.ChangeLogin("", "Pear1"));
+    }
+
     [Fact]
     public async Task Should_TellWhoAskedRecently_AndWhatChangedAtTheBoard()
     {

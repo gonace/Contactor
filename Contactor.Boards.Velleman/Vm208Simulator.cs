@@ -19,7 +19,7 @@ namespace Contactor.Boards.Velleman;
 /// module's, which isn't simulated: no answer for either. It keeps the schedules but doesn't run them. Used by the
 /// tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
+public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardPower, ISimulatedBoardRules, ISimulatedBoardSlowAnswers
 {
     // The firmware's schedule table: the card's 4 relays and the extension modules' channels (config_vm208.cpp).
     private const int ScheduleTableSize = 268;
@@ -44,6 +44,8 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
     private Task? _acceptLoop;
     private readonly IReadOnlyList<Vm208Alarm>[] _alarms = [.. Enumerable.Range(0, Vm208Api.RelayCount).Select(_ => FactorySchedule)];
     private byte _relays;
+    private int _poweredOff;
+    private long _answerDelayTicks;
     private bool _input;
     private Vm208Status? _lastStatusSent;
     private int _requestCount;
@@ -245,6 +247,102 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
         return Task.CompletedTask;
     }
 
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => "Every relay comes back off (not yet checked on a real VM208). Its saved schedules stay.";
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            _relays = (byte)0;
+        }, power: true);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        Change(
+            () =>
+            {
+                _relays = (byte)0;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
+        return Task.CompletedTask;
+    }
+
+    // A rule that switches on comes before the one that switches off.
+    private static readonly bool[] OnThenOff = [true, false];
+
+    /// <summary>
+    /// Each relay's schedule that has an alarm on: an "on" alarm switching it on, an "off" alarm switching it off, as the
+    /// firmware does at their times.
+    /// </summary>
+    public IReadOnlyList<SimulatedRule> RunnableRules
+    {
+        get
+        {
+            List<SimulatedRule> rules = [];
+            for (var relay = 1; relay <= Vm208Api.RelayCount; relay++)
+            {
+                var alarms = Alarms(relay);
+                foreach (var on in OnThenOff)
+                {
+                    if (alarms.Any(a => a.Enabled && a.TurnsOn == on))
+                    {
+                        rules.Add(new SimulatedRule(
+                            string.Create(CultureInfo.InvariantCulture, $"alarm-{relay}-{(on ? "on" : "off")}"),
+                            string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s schedule: {(on ? "on" : "off")}"),
+                            [new SimulatedRuleSwitch(relay, on)]));
+                    }
+                }
+            }
+
+            return rules;
+        }
+    }
+
+    public async Task<SimulatedRule?> RunRuleAsync(string id)
+    {
+        if (RunnableRules.FirstOrDefault(r => r.Id == id) is not { } rule)
+        {
+            return null;
+        }
+
+        foreach (var change in rule.Switches)
+        {
+            await SwitchRelayAsync(change.Relay, change.TurnOn).ConfigureAwait(false);
+        }
+
+        return rule;
+    }
+
     public void DropConnections()
     {
         foreach (var connection in _connections.Keys)
@@ -296,7 +394,7 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
         _connections.TryAdd(tcp, 0);
         try
         {
-            if (RejectConnections)
+            if (RejectConnections || IsPoweredOff)
             {
                 return;
             }
@@ -334,6 +432,7 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
             }
 
             Interlocked.Increment(ref _requestCount);
+            await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
             await stream.WriteAsync(response, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
@@ -605,6 +704,22 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
         return null;
     }
 
+    /// <summary>
+    /// Makes one more of the next statuses come busy, at once against the board counting them down: from none (0 or
+    /// less), the next one.
+    /// </summary>
+    public void AddBusy()
+    {
+        while (true)
+        {
+            var left = Volatile.Read(ref _busyNext);
+            if (Interlocked.CompareExchange(ref _busyNext, Math.Max(left, 0) + 1, left) == left)
+            {
+                return;
+            }
+        }
+    }
+
     // Counts BusyNext down while it is above 0; 0 or less answers normally.
     private bool TakeBusy()
     {
@@ -686,6 +801,12 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
         bool changed;
         lock (_lock)
         {
+            // Without power the board takes no change of any kind, its schedules included.
+            if (IsPoweredOff)
+            {
+                return;
+            }
+
             var before = _alarms.ToArray();
             change();
             changed = !before.Zip(_alarms).All(p => p.First.SequenceEqual(p.Second));
@@ -697,11 +818,17 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
         }
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = (_relays, _input);
             change();
             changed = before != (_relays, _input);
@@ -711,6 +838,13 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardTimers
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

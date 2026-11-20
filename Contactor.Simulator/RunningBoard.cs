@@ -36,6 +36,7 @@ public sealed class RunningBoard : IAsyncDisposable
     private readonly TimeProvider _time;
     private readonly Lock _lock = new();
     private readonly Queue<TrafficItem> _items = new(Capacity);
+    private readonly CancellationTokenSource _stopping = new();
     private long _nextId = 1;
     private int _hiddenRoutine;
 
@@ -48,6 +49,7 @@ public sealed class RunningBoard : IAsyncDisposable
         FromSettings = fromSettings;
         _time = time;
         Shelly = board is ShellySimulator shelly ? new ShellyControls(shelly, text => Add(TrafficKind.AtBoard, text)) : null;
+        Switches = new BoardSwitches(board, text => Add(TrafficKind.AtBoard, text));
         Board.Traced += OnTraced;
         Board.Changed += OnChanged;
     }
@@ -60,11 +62,17 @@ public sealed class RunningBoard : IAsyncDisposable
 
     public ISimulatedBoard Board { get; }
 
+    /// <summary>Its short name on the page, its model's id in capitals, e.g. "VM201" or "SHELLY-2".</summary>
+    public string ShortName => Board.Model.Id.ToUpperInvariant();
+
     /// <summary>The user name it asks for, or null without a login. The password is never shown.</summary>
-    public string? Username { get; }
+    public string? Username { get; private set; }
 
     /// <summary>The controls for a Shelly's special cases, or null for any other board.</summary>
     public ShellyControls? Shelly { get; }
+
+    /// <summary>The switches for what the board can do wrong: unreachable, hung, a relay refused, and its model's own.</summary>
+    public BoardSwitches Switches { get; }
 
     /// <summary>Started from the settings, so it starts every time; otherwise added on the page.</summary>
     public bool FromSettings { get; }
@@ -98,6 +106,12 @@ public sealed class RunningBoard : IAsyncDisposable
     /// <summary>Switches a relay as the board's own button would.</summary>
     public Task SwitchRelayAsync(int relay, bool turnOn)
     {
+        // Without power nothing switches, not even the board's own buttons.
+        if (Power?.IsPoweredOff == true)
+        {
+            return Task.CompletedTask;
+        }
+
         Add(TrafficKind.AtBoard, string.Create(CultureInfo.InvariantCulture, $"Relay {relay} switched {(turnOn ? "on" : "off")} here"));
         return Board.SwitchRelayAsync(relay, turnOn);
     }
@@ -137,7 +151,7 @@ public sealed class RunningBoard : IAsyncDisposable
     /// </summary>
     public Task SetTimerAsync(int relay, bool turnOn)
     {
-        if (Board is not ISimulatedBoardTimers timers || relay < 1 || relay > Board.Model.Capabilities.RelayCount)
+        if (Power?.IsPoweredOff == true || Board is not ISimulatedBoardTimers timers || relay < 1 || relay > Board.Model.Capabilities.RelayCount)
         {
             return Task.CompletedTask;
         }
@@ -154,7 +168,7 @@ public sealed class RunningBoard : IAsyncDisposable
     /// </summary>
     public Task SetModeAsync(int relay, int mode)
     {
-        if (Board is not ISimulatedBoardRelayModes modes || relay < 1 || relay > modes.Modes.Count || mode < 0 || mode >= modes.ModeNames.Count)
+        if (Power?.IsPoweredOff == true || Board is not ISimulatedBoardRelayModes modes || relay < 1 || relay > modes.Modes.Count || mode < 0 || mode >= modes.ModeNames.Count)
         {
             return Task.CompletedTask;
         }
@@ -165,6 +179,137 @@ public sealed class RunningBoard : IAsyncDisposable
         return modes.SetModeAsync(relay, mode);
     }
 
+    /// <summary>How long the board waits before each answer; null for a board that can't be slow.</summary>
+    public TimeSpan? AnswerDelay => (Board as ISimulatedBoardSlowAnswers)?.AnswerDelay;
+
+    /// <summary>Makes the board wait this long before each answer, as a slow board; zero answers at once again.</summary>
+    public void SetAnswerDelay(TimeSpan delay)
+    {
+        if (Board is not ISimulatedBoardSlowAnswers slow || delay < TimeSpan.Zero || slow.AnswerDelay == delay)
+        {
+            return;
+        }
+
+        slow.AnswerDelay = delay;
+        Add(TrafficKind.AtBoard, delay == TimeSpan.Zero ? "Answering at once again here" : $"Answering after {Length(delay)} here");
+    }
+
+    /// <summary>Whether the board's login can be changed while it runs: a board that has one and can.</summary>
+    public bool CanChangeLogin => Board is ISimulatedBoardLogin && Username is not null;
+
+    /// <summary>
+    /// Changes the board's login while it runs, as on its own web page: from then on the app's login no longer fits.
+    /// Checked as when the board was added; the user name is ignored for a model whose login is a password alone.
+    /// Returns null when it is changed, otherwise why not, in words for the page. The password is never logged.
+    /// </summary>
+    public string? ChangeLogin(string? username, string? password)
+    {
+        if (Board is not ISimulatedBoardLogin login || Username is null)
+        {
+            return "The board has no login to change.";
+        }
+
+        var passwordOnly = Board.Model.PasswordOnly;
+        username = passwordOnly ? "" : username ?? "";
+        password ??= "";
+        if (password.Length == 0 || (!passwordOnly && username.Length == 0))
+        {
+            return passwordOnly ? "Write the new password." : "Write the new user name and password.";
+        }
+
+        if (SimulatorCatalogue.Find(Board.Model.Id)?.CheckLogin(username, password) is { } error)
+        {
+            return error;
+        }
+
+        try
+        {
+            login.ChangeLogin(username, password);
+        }
+        catch (ArgumentException ex)
+        {
+            // Its words only, without the parameter .NET adds.
+            return ex.ParamName is { } name ? ex.Message.Replace($" (Parameter '{name}')", "", StringComparison.Ordinal) : ex.Message;
+        }
+
+        Username = username;
+        Add(TrafficKind.AtBoard, passwordOnly ? "Password changed here: the app's no longer fits" : $"Login changed here to user {username}: the app's no longer fits");
+        return null;
+    }
+
+    /// <summary>The board's own rules the page can run now; empty for a board without (or with none on).</summary>
+    public IReadOnlyList<SimulatedRule> RunnableRules => (Board as ISimulatedBoardRules)?.RunnableRules ?? [];
+
+    /// <summary>
+    /// Runs one of the board's own rules now, as when its time comes: the board switches its relays, and the app sees a
+    /// change it didn't ask for. Nothing for a rule that isn't on (any more), or while the power is cut.
+    /// </summary>
+    public async Task RunRuleAsync(string id)
+    {
+        if (Board is not ISimulatedBoardRules rules || Power?.IsPoweredOff == true || rules.RunnableRules.All(r => r.Id != id))
+        {
+            return;
+        }
+
+        var rule = rules.RunnableRules.First(r => r.Id == id);
+        Add(TrafficKind.AtBoard, $"Run now here: {rule.Name} ({string.Join(", ", rule.Switches.Select(s => string.Create(CultureInfo.InvariantCulture, $"relay {s.Relay} {(s.TurnOn ? "on" : "off")}")))})");
+        await rules.RunRuleAsync(id).ConfigureAwait(false);
+    }
+
+    /// <summary>The board's power, which the page can cut; null for a board without (none today).</summary>
+    public ISimulatedBoardPower? Power => Board as ISimulatedBoardPower;
+
+    /// <summary>
+    /// Cuts the board's power for <paramref name="off"/> on the simulator's clock, as a power cut would: the app loses it,
+    /// then it comes back with its relays as after a power cut. Ends once the power is back. Nothing while it is cut
+    /// already, for a board without power, or for a length that isn't positive.
+    /// </summary>
+    public Task PowerCutAsync(TimeSpan off)
+    {
+        return CutAsync(off, string.Create(CultureInfo.InvariantCulture, $"Power cut for {Length(off)} here"));
+    }
+
+    /// <summary>Restarts the board: a power cut of <see cref="RestartLength"/>.</summary>
+    public Task RestartAsync()
+    {
+        return CutAsync(RestartLength, "Restarted here");
+    }
+
+    /// <summary>How long a restart is without power.</summary>
+    public static TimeSpan RestartLength { get; } = TimeSpan.FromSeconds(1);
+
+    private async Task CutAsync(TimeSpan off, string text)
+    {
+        if (Power is not { } power || power.IsPoweredOff || off <= TimeSpan.Zero || _stopping.IsCancellationRequested)
+        {
+            return;
+        }
+
+        Add(TrafficKind.AtBoard, text);
+        await power.CutPowerAsync().ConfigureAwait(false);
+        RaiseChanged();
+        try
+        {
+            await Task.Delay(off, _time, _stopping.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The board was removed or the simulator stops: it stays without power.
+            return;
+        }
+
+        await power.RestorePowerAsync().ConfigureAwait(false);
+        Add(TrafficKind.AtBoard, $"Power back here. {power.AfterPowerCut}");
+    }
+
+    // "5 s", "30 s" or "2 min".
+    private static string Length(TimeSpan length)
+    {
+        return length.TotalSeconds % 60 == 0 && length >= TimeSpan.FromMinutes(1)
+            ? string.Create(CultureInfo.InvariantCulture, $"{(int)length.TotalMinutes} min")
+            : string.Create(CultureInfo.InvariantCulture, $"{length.TotalSeconds:0.###} s");
+    }
+
     public void DropConnections()
     {
         Add(TrafficKind.AtBoard, "Connections dropped here");
@@ -173,9 +318,11 @@ public sealed class RunningBoard : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        await _stopping.CancelAsync().ConfigureAwait(false);
         await Board.DisposeAsync().ConfigureAwait(false);
         Board.Traced -= OnTraced;
         Board.Changed -= OnChanged;
+        _stopping.Dispose();
     }
 
     private void OnTraced(object? sender, BoardTraceEntry entry)

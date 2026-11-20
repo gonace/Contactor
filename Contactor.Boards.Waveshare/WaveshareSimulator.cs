@@ -17,7 +17,7 @@ namespace Contactor.Boards.Waveshare;
 /// board. Several clients may connect at once. Used by the tests and, in development, by Contactor.Simulator. It
 /// listens on the loopback interface only.
 /// </summary>
-public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRelayModes
+public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardRelayModes, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardSlowAnswers
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -32,6 +32,8 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRelayMo
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private ulong _relays;
+    private int _poweredOff;
+    private long _answerDelayTicks;
     private ulong _inputs;
     private ulong? _lastRelaysSent;
     private ulong? _lastInputsSent;
@@ -246,10 +248,67 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRelayMo
         ArgumentOutOfRangeException.ThrowIfGreaterThan(mode, WaveshareApi.ModeEdge);
         lock (_lock)
         {
+            // Without power the board takes no change of any kind, its relay modes included.
+            if (IsPoweredOff)
+            {
+                return Task.CompletedTask;
+            }
+
             _modes[relay - 1] = mode;
         }
 
         RaiseChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => "Every relay comes back off, and the relay modes stay (neither yet checked on a real board).";
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            Pulses.Cancel(ulong.MaxValue);
+            _relays = 0UL;
+        }, power: true);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        Change(
+            () =>
+            {
+                _relays = 0UL;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
         return Task.CompletedTask;
     }
 
@@ -302,7 +361,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRelayMo
 
     private async Task HandleConnectionAsync(TcpClient tcp, CancellationToken cancellationToken)
     {
-        if (RejectConnections)
+        if (RejectConnections || IsPoweredOff)
         {
             tcp.Dispose();
             return;
@@ -310,6 +369,14 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRelayMo
 
         var remote = tcp.Client.RemoteEndPoint?.ToString() ?? "unknown";
         _connections.TryAdd(tcp, remote);
+        if (IsPoweredOff)
+        {
+            // The power went just as it came: DropConnections may have missed it.
+            _connections.TryRemove(tcp, out _);
+            tcp.Dispose();
+            return;
+        }
+
         RaiseChanged();
         Trace(BoardTraceDirection.None, $"The app connected from {remote}", null);
         try
@@ -331,6 +398,7 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRelayMo
                 }
 
                 Interlocked.Increment(ref _requestCount);
+                await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
                 await stream.WriteAsync(answer, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -600,7 +668,11 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRelayMo
 
         lock (_lock)
         {
-            values.CopyTo(_modes, address - WaveshareApi.RelayModeRegister);
+            // A request read just before the power went changes nothing.
+            if (!IsPoweredOff)
+            {
+                values.CopyTo(_modes, address - WaveshareApi.RelayModeRegister);
+            }
         }
 
         RaiseChanged();
@@ -653,11 +725,17 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRelayMo
         }
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = (_relays, _inputs);
             change();
             changed = before != (_relays, _inputs);
@@ -667,6 +745,13 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRelayMo
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

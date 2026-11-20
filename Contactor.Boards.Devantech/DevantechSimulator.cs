@@ -19,7 +19,7 @@ namespace Contactor.Boards.Devantech;
 /// relay ends its pulse, or starts it again. It never tells the app anything by itself. Several clients may connect at
 /// once. Used by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class DevantechSimulator : ISimulatedBoard
+public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
@@ -30,7 +30,7 @@ public sealed class DevantechSimulator : ISimulatedBoard
 
     private readonly ILogger _logger;
     private readonly DevantechLayout _layout;
-    private readonly string? _password;
+    private volatile string? _password;
     private readonly CancellationTokenSource _stopping = new();
     private readonly ConcurrentDictionary<TcpClient, string> _connections = new();
     private readonly ConcurrentQueue<string> _receivedRequests = new();
@@ -45,6 +45,12 @@ public sealed class DevantechSimulator : ISimulatedBoard
     private TcpListener? _listener;
     private Task? _acceptLoop;
     private ulong _relays;
+    private int _poweredOff;
+    private long _answerDelayTicks;
+    private ulong _beforeCut;
+
+    // The relays as their last permanent change left them, which Latched Outputs saves: not a pulse, nor its end.
+    private ulong _permanent;
     private ulong _inputs;
     private ulong? _lastRelaysSent;
     private ulong? _lastInputsSent;
@@ -191,6 +197,7 @@ public sealed class DevantechSimulator : ISimulatedBoard
         {
             Pulses.Cancel(bit);
             _relays = turnOn ? _relays | bit : _relays & ~bit;
+            _permanent = turnOn ? _permanent | bit : _permanent & ~bit;
         });
         return Task.CompletedTask;
     }
@@ -223,6 +230,88 @@ public sealed class DevantechSimulator : ISimulatedBoard
             RaiseChanged();
         }
 
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Changes the login while the board runs, as on its own web page: from then on the app's login no longer fits. A
+    /// session that is in already stays in. Only on a board with a login, and only to another login it takes.
+    /// </summary>
+    /// <remarks>The board's login is a password alone: <paramref name="username"/> is ignored.</remarks>
+    public void ChangeLogin(string username, string password)
+    {
+        ArgumentNullException.ThrowIfNull(password);
+        if (!HasLogin)
+        {
+            throw new InvalidOperationException("The board has no password to change.");
+        }
+
+        if (password.Length == 0 || DevantechModels.CheckPassword(password) is not null)
+        {
+            throw new ArgumentException(DevantechModels.CheckPassword(password)?.ToString() ?? "Give the new password.", nameof(password));
+        }
+
+        _password = password;
+    }
+
+    /// <summary>How long the board waits, on its own clock, before each answer it sends; zero (the default) answers at once.</summary>
+    public TimeSpan AnswerDelay
+    {
+        get => TimeSpan.FromTicks(Volatile.Read(ref _answerDelayTicks));
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, TimeSpan.Zero);
+            Volatile.Write(ref _answerDelayTicks, value.Ticks);
+        }
+    }
+
+    /// <summary>Whether the power is cut: nothing answers, and every relay is off.</summary>
+    public bool IsPoweredOff => Volatile.Read(ref _poweredOff) != 0;
+
+    public string AfterPowerCut => LatchedOutputs ? "Latched Outputs is on: the relays come back as they were." : "Latched Outputs is off: every relay comes back off.";
+
+    /// <summary>
+    /// "Latched Outputs" ("Configuration", "Module Settings" in the ETH002-B and ETH008-B Technical Documentation): the
+    /// board saves every permanent change of a relay, not a pulsed one, and sets the relays so again after a power cut.
+    /// Off, the simulator brings them back off, which the documentation doesn't say. Off at start: it gives no factory value.
+    /// </summary>
+    public bool LatchedOutputs { get; set; }
+
+    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    public Task CutPowerAsync()
+    {
+        if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        DropConnections();
+        Change(() =>
+        {
+            // Latched Outputs saves the permanent changes only, not a pulse nor its end.
+            _beforeCut = _permanent;
+            Pulses.Cancel(ulong.MaxValue);
+            _relays = 0UL;
+        }, power: true);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Gives the power back: the relays as the board sets them after a power cut (<see cref="AfterPowerCut"/>), and it answers again.</summary>
+    public Task RestorePowerAsync()
+    {
+        if (!IsPoweredOff)
+        {
+            return Task.CompletedTask;
+        }
+
+        Change(
+            () =>
+            {
+                _relays = LatchedOutputs ? _beforeCut : 0UL;
+                _permanent = _relays;
+                Volatile.Write(ref _poweredOff, 0);
+            },
+            power: true);
         return Task.CompletedTask;
     }
 
@@ -275,7 +364,7 @@ public sealed class DevantechSimulator : ISimulatedBoard
 
     private async Task HandleConnectionAsync(TcpClient tcp, CancellationToken cancellationToken)
     {
-        if (RejectConnections)
+        if (RejectConnections || IsPoweredOff)
         {
             tcp.Dispose();
             return;
@@ -283,6 +372,14 @@ public sealed class DevantechSimulator : ISimulatedBoard
 
         var remote = tcp.Client.RemoteEndPoint?.ToString() ?? "unknown";
         _connections.TryAdd(tcp, remote);
+        if (IsPoweredOff)
+        {
+            // The power went just as it came: DropConnections may have missed it.
+            _connections.TryRemove(tcp, out _);
+            tcp.Dispose();
+            return;
+        }
+
         RaiseChanged();
         Trace(BoardTraceDirection.None, $"The app connected from {remote}", null);
         var session = new Session();
@@ -300,6 +397,7 @@ public sealed class DevantechSimulator : ISimulatedBoard
 
                 foreach (var answer in HandlePacket(packet.AsSpan(0, read), session))
                 {
+                    await DelayAnswerAsync(cancellationToken).ConfigureAwait(false);
                     await stream.WriteAsync(answer, cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -506,7 +604,11 @@ public sealed class DevantechSimulator : ISimulatedBoard
         {
             Pulses.Cancel(bit);
             _relays = on ? _relays | bit : _relays & ~bit;
-            if (pulse != DevantechApi.Permanent)
+            if (pulse == DevantechApi.Permanent)
+            {
+                _permanent = on ? _permanent | bit : _permanent & ~bit;
+            }
+            else
             {
                 Pulses.Start(bit, DevantechApi.PulseUnit * pulse, take => Change(() =>
                 {
@@ -532,6 +634,7 @@ public sealed class DevantechSimulator : ISimulatedBoard
         {
             Pulses.Cancel(Model.Capabilities.AllRelays.Bits);
             _relays = relays;
+            _permanent = relays;
         });
         return Answer([DevantechApi.Success], DevantechTraceText.Relays(relays, Model.Capabilities.RelayCount));
     }
@@ -569,11 +672,17 @@ public sealed class DevantechSimulator : ISimulatedBoard
         }
     }
 
-    private void Change(Action change)
+    private void Change(Action change, bool power = false)
     {
         bool changed;
         lock (_lock)
         {
+            // Without power nothing changes: not a command read before the cut, not a pulse's end. Only the power itself.
+            if (IsPoweredOff && !power)
+            {
+                return;
+            }
+
             var before = (_relays, _inputs);
             change();
             changed = before != (_relays, _inputs);
@@ -583,6 +692,13 @@ public sealed class DevantechSimulator : ISimulatedBoard
         {
             RaiseChanged();
         }
+    }
+
+    // Waits as long as AnswerDelay says before an answer goes out; at once without one.
+    private Task DelayAnswerAsync(CancellationToken cancellationToken)
+    {
+        var delay = AnswerDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay, TimeProvider, cancellationToken) : Task.CompletedTask;
     }
 
     private void Trace(BoardTraceDirection direction, string text, string? bytes, bool isError = false, bool isRoutine = false)

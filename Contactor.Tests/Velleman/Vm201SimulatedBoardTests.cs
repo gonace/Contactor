@@ -55,6 +55,19 @@ public sealed class Vm201SimulatedBoardTests : IAsyncDisposable
         Assert.Equal(3, Volatile.Read(ref _changes)); // connecting and both switches
     }
 
+    // "Run now" of a timer switches the relay at the board: the board pushes the status, and the app sees it.
+    [Fact]
+    public async Task Should_PushTheStatus_WhenATimerRunsNow()
+    {
+        var client = await ConnectAsync();
+        await _board.SetTimersAsync(ChannelMask.Of(4));
+        await WaitUntilAsync(() => client.State.TimerMask == 0x08);
+
+        await _board.RunRuleAsync("timer-4-on");
+
+        await WaitUntilAsync(() => client.State.Outputs == 0x08);
+    }
+
     [Fact]
     public async Task Should_SetTheInputAndTheTimers_AndTellTheApp()
     {

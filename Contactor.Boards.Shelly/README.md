@@ -310,6 +310,8 @@ The `Shelly` section applies to all four entries:
 - Relays can be switched "at the device", and connections can be dropped or refused. A request that is too long,
   cut short or not HTTP is closed without an answer. A request that isn't a request frame gets 400 (the docs don't
   say what the device does).
+- A power cut (`ISimulatedBoardPower`): each relay comes back as its `initial_state` says (`off`, `on`, `restore_last`). `match_input` follows the switch's input, which the simulator doesn't have, so it comes back off. `power_restore_delay_enable` isn't simulated. The device forgets its nonces, as after a reboot.
+- A new password while it runs (`ChangePassword`, or `ChangeLogin` with the user name ignored): a kept nonce still answers, but the old password is wrong from then on.
 
 ## To check on a real board
 

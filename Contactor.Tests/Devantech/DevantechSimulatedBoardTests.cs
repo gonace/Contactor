@@ -110,6 +110,53 @@ public sealed class DevantechSimulatedBoardTests
         Assert.Equal(0, time.PendingTimers);
     }
 
+    // A power cut ends the pulses; with Latched Outputs a relay comes back as it was before its pulse.
+    [Fact]
+    public async Task Should_EndThePulses_ThroughAPowerCut_AndLatchOnlyThePermanentStates()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, time: time);
+        simulator.LatchedOutputs = true;
+        using (var board = await Board.ConnectAsync(simulator))
+        {
+            Assert.Equal("00", await board.AskAsync("20 02 00", 1));
+            Assert.Equal("00", await board.AskAsync("20 01 0A", 1));
+            Assert.Equal("00", await board.AskAsync("21 02 0A", 1));
+        }
+
+        Assert.Equal(ChannelMask.Of([1, 2]), simulator.Pulsing);
+        await simulator.CutPowerAsync();
+
+        Assert.Equal(ChannelMask.None, simulator.Pulsing);
+        Assert.Equal(0, time.PendingTimers);
+        await simulator.RestorePowerAsync();
+
+        // Relay 2 was on for good before its off-pulse; relay 1 only in its pulse.
+        Assert.Equal(ChannelMask.Of(2), simulator.State.Relays);
+    }
+
+    // An off-pulse of a relay that is off is no permanent change: Latched Outputs brings it back off.
+    [Fact]
+    public async Task Should_LatchTheRelayOff_AfterAnOffPulseOfARelayThatWasOff()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, time: time);
+        simulator.LatchedOutputs = true;
+        using (var board = await Board.ConnectAsync(simulator))
+        {
+            Assert.Equal("00", await board.AskAsync("21 02 0A", 1));
+        }
+
+        // The pulse's end turns it on, as 0x21 does; still no permanent change.
+        time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(ChannelMask.Of(2), simulator.State.Relays);
+
+        await simulator.CutPowerAsync();
+        await simulator.RestorePowerAsync();
+
+        Assert.True(simulator.State.Relays.IsEmpty);
+    }
+
     [Fact]
     public async Task Should_EndAPulse_WhenTheRelayIsSwitchedForGood()
     {
@@ -250,6 +297,38 @@ public sealed class DevantechSimulatedBoardTests
         Assert.Equal(0b01UL, simulator.Relays);
         Assert.Contains(DevantechTraceText.HiddenPassword, simulator.ReceivedRequests);
         Assert.DoesNotContain(simulator.ReceivedRequests, r => r.Contains("61 70", StringComparison.Ordinal));
+    }
+
+    // A slow board answers after its delay on its own clock, not before.
+    [Fact]
+    public async Task Should_Answer_OnlyAfterItsAnswerDelay()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth008, time: time);
+        simulator.AnswerDelay = TimeSpan.FromSeconds(4);
+        using var board = await Board.ConnectAsync(simulator);
+
+        var answer = board.AskAsync("24", 1);
+        await Wait.UntilAsync(() => time.Waits(TimeSpan.FromSeconds(4)));
+        Assert.False(answer.IsCompleted);
+        time.Advance(TimeSpan.FromSeconds(4));
+
+        Assert.Equal("00", await answer);
+    }
+
+    // The password changed on the board while it runs: the old one no longer unlocks, the new one does.
+    [Fact]
+    public async Task Should_TakeOnlyTheNewPassword_AfterItChanged()
+    {
+        var time = new ManualTimeProvider();
+        await using var simulator = Started(DevantechModels.Eth002, "apple", time);
+        simulator.ChangeLogin("", "pear");
+        using var board = await Board.ConnectAsync(simulator);
+
+        Assert.Equal("02", await board.AskAsync("79 61 70 70 6C 65", 1));
+        Assert.Equal("01", await board.AskAsync("79 70 65 61 72", 1));
+        Assert.Equal("1E", await board.AskAsync("7A", 1));
+        Assert.Throws<ArgumentException>(() => simulator.ChangeLogin("", ""));
     }
 
     [Fact]

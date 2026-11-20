@@ -577,6 +577,20 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         Assert.Equal(("vm201", Vm201Model.DefaultPort, "", ""), (board.Type, board.Port, board.Username, board.Password));
     }
 
+    // The page's one switch for a hung board is the VM201's own: a half-open socket.
+    [Fact]
+    public async Task Should_HangTheVm201_ThroughTheCommonSwitch()
+    {
+        await using var vm201 = new Vm201Simulator();
+        var hung = (ISimulatedBoardNoAnswer)vm201;
+
+        hung.NoAnswer = true;
+        Assert.True(vm201.Unresponsive);
+
+        vm201.Unresponsive = false;
+        Assert.False(hung.NoAnswer);
+    }
+
     /// <summary>
     /// A port nothing listens on, never one handed out before in this test run: the system can give the same free port
     /// twice in a row, and a test that adds two boards would then see its second refused as taken.

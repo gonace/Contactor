@@ -36,15 +36,15 @@ public sealed class SimulatorPageTests
         Assert.Contains("from the settings", html, StringComparison.Ordinal);
         Assert.Contains($"Nothing yet. Set the app's board to 127.0.0.1, port {port}, user john.", html, StringComparison.Ordinal);
         Assert.Contains("RELAY 8", html, StringComparison.Ordinal);
-        Assert.Contains("Board's own timers: none on", html, StringComparison.Ordinal);
+        Assert.Contains("TIMERS · NONE ON", html, StringComparison.Ordinal);
         Assert.Matches("<input type=\"checkbox\"[^>]*/?>\\s*Relay 8\\s*</label>", html);
         Assert.DoesNotContain("secret", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Ask the app to wait", html, StringComparison.Ordinal);
 
-        // A new board's login in two fields, so either may hold ':'.
-        Assert.Matches("<label for=\"username\"[^>]*>User name</label>", html);
-        Assert.Matches("<label for=\"password\"[^>]*>Password</label>", html);
-        Assert.DoesNotContain("user:password", html, StringComparison.Ordinal);
+        // "Add a board" is a button that opens its panel in the board's place; it starts closed.
+        Assert.Matches("<button type=\"button\" class=\"add-board ?\" aria-expanded=\"false\" aria-controls=\"add\"[^>]*>\\+ Add a board</button>", html);
+        Assert.DoesNotContain("<form id=\"add\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<select id=\"model\"", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class SimulatorPageTests
 
         var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", TestContext.Current.CancellationToken));
 
-        Assert.Contains("Relay modes (the board's own rules)", html, StringComparison.Ordinal);
+        Assert.Contains("RELAY MODES", html, StringComparison.Ordinal);
         Assert.Equal(8, System.Text.RegularExpressions.Regex.Count(html, "<label class=\"mode\"[^>]*>\\s*<span[^>]*>Relay \\d</span>\\s*<select"));
         Assert.Matches("<span[^>]*>Relay 8</span>\\s*<select", html);
         Assert.Contains(">linkage</option>", html, StringComparison.Ordinal);
@@ -98,11 +98,11 @@ public sealed class SimulatorPageTests
         Assert.Matches("<span[^>]*>Firmware</span>\\s*<input class=\"mono firmware\" maxlength=\"32\"[^>]*value=\"1.6.0\"", html);
         Assert.Matches("<option value=\"cover\" selected[^>]*>cover</option>", html);
         Assert.Contains(">none</option>", html, StringComparison.Ordinal);
-        Assert.Contains("Switch.Set refused: relay 2", html, StringComparison.Ordinal);
-        Assert.Contains("Auto-on: relay 1", html, StringComparison.Ordinal);
-        Assert.Contains("After a power cut (initial_state)", html, StringComparison.Ordinal);
+        Assert.Contains("refused: relay 2", html, StringComparison.Ordinal);
+        Assert.Contains("AUTO-ON · RELAY 1", html, StringComparison.Ordinal);
+        Assert.Contains("AFTER A POWER CUT (INITIAL_STATE)", html, StringComparison.Ordinal);
         Assert.Matches("<option value=\"restore_last\" selected[^>]*>restore_last</option>", html);
-        Assert.Contains("Schedules (the device's own rules): 2 of 20", html, StringComparison.Ordinal);
+        Assert.Contains("SCHEDULES · 2 OF 20", html, StringComparison.Ordinal);
         Assert.Matches("<input type=\"checkbox\" checked[^>]*/?>\\s*<span class=\"schedule\"[^>]*>Schedule 1 · 06:30 every day · relay 2 on</span>", html);
         Assert.Matches("<input type=\"checkbox\"(?! checked)[^>]*/?>\\s*<span class=\"schedule\"[^>]*>Schedule 2 · 22:00 every day · relay 1 off</span>", html);
         Assert.Matches("<input id=\"schedule-time\" type=\"time\"[^>]*value=\"08:00\"", html);
@@ -209,7 +209,7 @@ public sealed class SimulatorPageTests
     }
 
     [Fact]
-    public async Task Should_FoldAddABoardAndTheTraffic_OnlyBelow1024Px()
+    public async Task Should_FoldTheTraffic_OnlyBelow1024Px()
     {
         var port = SimulatedBoardsTests.FreePort();
         await using var app = CreateApp(port);
@@ -219,31 +219,28 @@ public sealed class SimulatorPageTests
         var css = Regex.Replace(
             await http.GetStringAsync("/Contactor.Simulator.styles.css", TestContext.Current.CancellationToken), @"/\*.*?\*/", "", RegexOptions.Singleline);
 
-        // Both folds start closed, and say which part they show.
-        Assert.Matches("<button type=\"button\" class=\"fold add-fold\" aria-expanded=\"false\" aria-controls=\"add\"[^>]*>\\+ Add a board</button>", html);
+        // The fold starts closed, and says which part it shows.
         Assert.Matches("<button type=\"button\" class=\"fold traffic-fold\" aria-expanded=\"false\" aria-controls=\"traffic\"[^>]*>Traffic · newest first</button>", html);
 
         // Still drawn in full, so nothing is gone at 1024 px and wider.
-        Assert.Matches("<form id=\"add\" class=\"add ?\"", html);
         Assert.Matches("<section id=\"traffic\" class=\"card traffic ?\"", html);
-        Assert.Contains("Add board</button>", html, StringComparison.Ordinal);
         Assert.Contains("TIME", html, StringComparison.Ordinal);
 
-        // Only the folds' own buttons are hidden at 1024 px and wider; everything else is hidden only below it.
+        // Only the fold's own button, and the browser's marker on a section's title, are hidden at 1024 px and wider;
+        // everything else is hidden only below it.
         var narrow = css.IndexOf("@media (max-width: 1023.98px)", StringComparison.Ordinal);
         Assert.True(narrow > 0, "The page has no layout below 1024 px.");
         var hiddenWide = Regex.Matches(css[..narrow], @"([^{}]+)\{[^{}]*display:\s*none")
             .Select(m => m.Groups[1].Value.Trim())
             .ToList();
-        Assert.Equal([".fold"], hiddenWide.Select(selector => Regex.Replace(selector, @"\[b-[a-z0-9]+\]", "")));
+        Assert.Equal([".section > summary::-webkit-details-marker", ".fold"], hiddenWide.Select(selector => Regex.Replace(selector, @"\[b-[a-z0-9]+\]", "")));
         Assert.DoesNotContain("min-width: 1000px", css, StringComparison.Ordinal);
 
-        // Below 1024 px, "Add a board" and the traffic are hidden until their fold is opened.
+        // Below 1024 px, the traffic is hidden until its fold is opened; "+ Add a board" is never hidden.
         var narrowCss = Regex.Replace(css[narrow..], @"\[b-[a-z0-9]+\]", "");
-        Assert.Matches(@"\s\.add\s*\{[^{}]*display:\s*none", narrowCss);
-        Assert.Matches(@"\s\.add\.open\s*\{[^{}]*display:\s*flex", narrowCss);
         Assert.Matches(@"\s\.traffic\s*\{[^{}]*display:\s*none", narrowCss);
         Assert.Matches(@"\s\.traffic\.open\s*\{[^{}]*display:\s*flex", narrowCss);
+        Assert.DoesNotMatch(@"\.add[^{}]*\{[^{}]*display:\s*none", narrowCss);
     }
 
     [Fact]
