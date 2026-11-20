@@ -965,6 +965,13 @@ public sealed class SetupTests
         Assert.Equal(text, TestTexts.Setup.Capabilities(new BoardCapabilities(relays, inputs, ReportsChanges: true, analog == 0 ? null : new AnalogAbility(analog, 1023, 5m))));
     }
 
+    [Fact]
+    public void Should_SayTheInputsComeFromTheDevice_ForAShelly()
+    {
+        // Its catalogue entry's 4 inputs are only the most a device may have: not a number to show.
+        Assert.Equal("1 relay · inputs read from the device", TestTexts.Setup.Capabilities(Contactor.Boards.Shelly.ShellyModels.OneRelay.Capabilities));
+    }
+
     [Theory]
     [InlineData(6, 2, "6 in use, 2 hidden")]
     [InlineData(8, 0, "8 in use")]

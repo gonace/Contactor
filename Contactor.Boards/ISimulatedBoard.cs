@@ -16,6 +16,12 @@ public interface ISimulatedBoard : IAsyncDisposable
     /// <summary>Whether it asks for a login.</summary>
     bool HasLogin { get; }
 
+    /// <summary>
+    /// How many digital inputs it has, numbered 1 to this: its model's, unless the model's boards say their own
+    /// (<see cref="BoardCapabilities.InputCountFromBoard"/>), as a Shelly does.
+    /// </summary>
+    int InputCount => Model.Capabilities.InputCount;
+
     /// <summary>Its relays and inputs, and who is connected.</summary>
     SimulatedBoardState State { get; }
 

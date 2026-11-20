@@ -71,10 +71,12 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     private long _scheduleRevision;
     private long _nextJobId = 1;
     private byte _relays;
+    private byte _inputs;
+    private readonly string[] _inputTypes;
     private int _poweredOff;
     private long _answerDelayTicks;
     private byte _beforeCut;
-    private byte _lastStatusSent = byte.MaxValue;
+    private int _lastStatusSent = -1;
     private long _configRevision = 10;
     private int _deniedCount;
     private int _challengeCount;
@@ -104,7 +106,20 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         _deviceId = string.Create(CultureInfo.InvariantCulture, $"shellysim{model.Capabilities.RelayCount}-0a1b2c3d4e5f");
         _initialStates = [.. Enumerable.Repeat("off", model.Capabilities.RelayCount)];
         _autoOn = new bool[model.Capabilities.RelayCount];
+
+        // As the devices the docs list with this many switches: the Plus 1 has input:0, the Plus 2PM input:0 and 1, the
+        // Pro 3 input:0 to 2 and the Pro 4PM input:0 to 3 ("Devices"), each a switch at start.
+        _inputTypes = [.. Enumerable.Repeat(SwitchInput, model.Capabilities.RelayCount)];
     }
+
+    /// <summary>An input's type that has a state, true or false ("Input", "Configuration": <c>type</c>).</summary>
+    public const string SwitchInput = "switch";
+
+    /// <summary>An input's type without a state: its <c>state</c> is null ("Input", "Status").</summary>
+    public const string ButtonInput = "button";
+
+    /// <summary>An input's type that reads a value in percent (<c>percent</c>), no state ("Input", "Status").</summary>
+    public const string AnalogInput = "analog";
 
     public event EventHandler? Changed;
 
@@ -214,7 +229,16 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     /// </summary>
     public IReadOnlyList<string> Received => [.. _received];
 
-    /// <summary>Its relays; it has no inputs. The clients are the addresses that asked something within the last 10 s.</summary>
+    /// <summary>
+    /// How many inputs it has, <c>input:0</c> on: as many as its switches, as the devices the docs list
+    /// (<see cref="SwitchInput"/> at start, <see cref="SetInputType"/> makes one another type).
+    /// </summary>
+    public int InputCount => _inputTypes.Length;
+
+    /// <summary>
+    /// Its relays, and its inputs that are closed, of type <see cref="SwitchInput"/> or not. The clients are the
+    /// addresses that asked something within the last 10 s.
+    /// </summary>
     public SimulatedBoardState State
     {
         get
@@ -224,7 +248,7 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
             {
                 return new SimulatedBoardState(
                     new ChannelMask(_relays),
-                    ChannelMask.None,
+                    new ChannelMask(_inputs),
                     [.. _clients.Where(c => c.Value >= since).Select(c => c.Key).Order(StringComparer.Ordinal)]);
             }
         }
@@ -454,10 +478,55 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         return Task.CompletedTask;
     }
 
-    /// <summary>The app doesn't read a Shelly's inputs: there are none to set.</summary>
+    /// <summary>
+    /// Closes or opens an input's terminal, 1 being <c>input:0</c>. Its <c>state</c> shows it while its type is
+    /// <see cref="SwitchInput"/>. Nothing while the power is cut.
+    /// </summary>
     public Task SetInputAsync(int input, bool closed)
     {
-        throw new ArgumentOutOfRangeException(nameof(input), input, "The app reads no inputs of a Shelly.");
+        ArgumentOutOfRangeException.ThrowIfLessThan(input, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(input, InputCount);
+        var bit = (byte)(1 << (input - 1));
+        Change(() => _inputs = closed ? (byte)(_inputs | bit) : (byte)(_inputs & ~bit));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>An input's type, 1 being <c>input:0</c>: <see cref="SwitchInput"/> at start.</summary>
+    public string InputType(int input)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(input, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(input, InputCount);
+        lock (_lock)
+        {
+            return _inputTypes[input - 1];
+        }
+    }
+
+    /// <summary>
+    /// Sets an input's type "at the device", e.g. on its own web page: <see cref="SwitchInput"/>,
+    /// <see cref="ButtonInput"/> or <see cref="AnalogInput"/>. Grows <c>cfg_rev</c> when it changed.
+    /// </summary>
+    public void SetInputType(int input, string type)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(input, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(input, InputCount);
+        if (type is not (SwitchInput or ButtonInput or AnalogInput))
+        {
+            throw new ArgumentException($"Not an input type the simulator has: {type}.", nameof(type));
+        }
+
+        lock (_lock)
+        {
+            if (IsPoweredOff || _inputTypes[input - 1] == type)
+            {
+                return;
+            }
+
+            _inputTypes[input - 1] = type;
+            _configRevision++;
+        }
+
+        RaiseChanged();
     }
 
     /// <summary>Lets every nonce expire, as an hour later: the next request with one gets a 401 with <c>stale=true</c>.</summary>
@@ -1030,12 +1099,25 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     private byte[] RespondStatus(ShellyRequest rpc)
     {
         byte relays;
+        byte inputs;
+        string[] inputTypes;
         bool routine;
         lock (_lock)
         {
             relays = _relays;
-            routine = relays == _lastStatusSent;
-            _lastStatusSent = relays;
+            inputs = _inputs;
+            inputTypes = [.. _inputTypes];
+
+            // The inputs the app reads: the ones of type switch.
+            var read = 0;
+            for (var i = 0; i < inputTypes.Length; i++)
+            {
+                read |= inputTypes[i] == SwitchInput ? 1 << i : 0;
+            }
+
+            var sent = relays | ((inputs & read) << 8) | (read << 16);
+            routine = sent == _lastStatusSent;
+            _lastStatusSent = sent;
         }
 
         var cover = string.Equals(Profile, "cover", StringComparison.OrdinalIgnoreCase);
@@ -1053,6 +1135,27 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
             }
             else
             {
+                for (var i = 0; i < inputTypes.Length; i++)
+                {
+                    // As "Input", "Status": a switch's state, a button's null state, an analog input's percent.
+                    writer.WriteStartObject(string.Create(CultureInfo.InvariantCulture, $"{ShellyApi.InputKeyPrefix}{i}"));
+                    writer.WriteNumber("id", i);
+                    switch (inputTypes[i])
+                    {
+                        case SwitchInput:
+                            writer.WriteBoolean("state", (inputs & (1 << i)) != 0);
+                            break;
+                        case ButtonInput:
+                            writer.WriteNull("state");
+                            break;
+                        default:
+                            writer.WriteNumber("percent", (inputs & (1 << i)) != 0 ? 100 : 0);
+                            break;
+                    }
+
+                    writer.WriteEndObject();
+                }
+
                 for (var i = 0; i < _model.Capabilities.RelayCount; i++)
                 {
                     // As the docs' Shelly.GetStatus example: id, source, output, temperature.
@@ -1082,7 +1185,9 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
             }
             writer.WriteEndObject();
         });
-        var text = cover ? "Status: a cover, no relays" : ShellyTraceText.Status(new ShellyStatus(relays), _model.Capabilities.RelayCount);
+        var text = cover
+            ? "Status: a cover, no relays"
+            : ShellyTraceText.Status(new ShellyStatus(relays, Inputs: (byte)(inputs & ((1 << LeadingSwitches(inputTypes)) - 1)), InputCount: LeadingSwitches(inputTypes)), _model.Capabilities.RelayCount);
         return Respond(HttpStatusCode.OK, body, text, isRoutine: routine);
     }
 
@@ -1457,6 +1562,18 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         };
     }
 
+    // How many inputs of type switch from input:0 without a gap: the ones the app reads, for the trace.
+    private static int LeadingSwitches(string[] types)
+    {
+        var count = 0;
+        while (count < types.Length && types[count] == SwitchInput)
+        {
+            count++;
+        }
+
+        return count;
+    }
+
     private void Change(Action change, bool power = false)
     {
         bool changed;
@@ -1468,9 +1585,9 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
                 return;
             }
 
-            var before = _relays;
+            var before = (_relays, _inputs);
             change();
-            changed = before != _relays;
+            changed = before != (_relays, _inputs);
         }
 
         if (changed)

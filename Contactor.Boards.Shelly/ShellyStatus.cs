@@ -1,7 +1,8 @@
 namespace Contactor.Boards.Shelly;
 
 /// <summary>
-/// One answer to <c>Shelly.GetStatus</c>: which relays are on, with each switch's state after a power cut as last read.
+/// One answer to <c>Shelly.GetStatus</c>: which relays and inputs are on, with each switch's state after a power cut as
+/// last read.
 /// </summary>
 /// <param name="Relays">Bit per relay, bit 0 = relay 1 (<c>switch:0</c>); 1 = its <c>output</c> is true.</param>
 /// <param name="PowerOn">
@@ -13,25 +14,33 @@ namespace Contactor.Boards.Shelly;
 /// schedule, and an <c>AutoOn</c> rule on each relay whose switch has <c>auto_on</c>. Null before they were read, and
 /// when the last read of the schedules or of a switch's settings failed.
 /// </param>
-public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null, OwnRules? OwnRules = null)
+/// <param name="Inputs">Bit per input, bit 0 = input 1 (<c>input:0</c>); 1 = its <c>state</c> is true.</param>
+/// <param name="InputCount">
+/// How many inputs the device has for the app, 0 to <see cref="ShellyApi.MaxInputCount"/>: those with a state, from
+/// <c>input:0</c> without a gap, as the connection's first status gave them (<see cref="ShellySwitches.InputCount"/>).
+/// </param>
+public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null, OwnRules? OwnRules = null, byte Inputs = 0, int InputCount = 0)
 {
     /// <summary>
-    /// Compares the relays only, for the poller: a change in <see cref="PowerOn"/> or <see cref="OwnRules"/> alone isn't
-    /// a state change, and comes as <see cref="ShellyClient.PowerOnChanged"/> or <see cref="ShellyClient.OwnRulesChanged"/>.
+    /// Compares the relays and the inputs only, for the poller: a change in <see cref="PowerOn"/> or
+    /// <see cref="OwnRules"/> alone isn't a state change, and comes as <see cref="ShellyClient.PowerOnChanged"/> or
+    /// <see cref="ShellyClient.OwnRulesChanged"/>.
     /// </summary>
-    public static IEqualityComparer<ShellyStatus> RelaysComparer { get; } = new RelaysOnly();
+    public static IEqualityComparer<ShellyStatus> StateComparer { get; } = new RelaysAndInputs();
 
-    private sealed class RelaysOnly : IEqualityComparer<ShellyStatus>
+    private sealed class RelaysAndInputs : IEqualityComparer<ShellyStatus>
     {
         public bool Equals(ShellyStatus? x, ShellyStatus? y)
         {
-            return x is null ? y is null : y is not null && x.Relays == y.Relays;
+            return x is null
+                ? y is null
+                : y is not null && x.Relays == y.Relays && x.Inputs == y.Inputs && x.InputCount == y.InputCount;
         }
 
         public int GetHashCode(ShellyStatus obj)
         {
             ArgumentNullException.ThrowIfNull(obj);
-            return obj.Relays;
+            return HashCode.Combine(obj.Relays, obj.Inputs, obj.InputCount);
         }
     }
 }
@@ -51,6 +60,12 @@ public sealed record ShellyState(bool IsConnected, ShellyStatus? Status, DateTim
     public static ShellyState Initial { get; } = new(false, null, null);
 
     public byte Relays => Status?.Relays ?? 0;
+
+    /// <summary>The inputs that are on, bit 0 = input 1, kept while disconnected.</summary>
+    public byte Inputs => Status?.Inputs ?? 0;
+
+    /// <summary>How many inputs the device has for the app, kept while disconnected; 0 before it answered.</summary>
+    public int InputCount => Status?.InputCount ?? 0;
 
     /// <summary>Each switch's state after a power cut as last read, kept while disconnected; null before it was read.</summary>
     public PowerOnStates? PowerOn => Status?.PowerOn;

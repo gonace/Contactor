@@ -2558,6 +2558,9 @@
   <data name="Setup.Capabilities.Analog_Other" xml:space="preserve">
     <value>{0} analoga ingångar</value>
   </data>
+  <data name="Setup.Capabilities.InputsFromBoard" xml:space="preserve">
+    <value>ingångar läses från enheten</value>
+  </data>
   <data name="Setup.Capabilities.Inputs_One" xml:space="preserve">
     <value>{0} ingång</value>
   </data>

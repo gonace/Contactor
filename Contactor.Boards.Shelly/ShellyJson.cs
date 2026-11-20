@@ -22,7 +22,21 @@ public sealed record ShellyFrame(JsonElement? Result, ShellyRpcError? Error);
 /// <c>sys.schedule_rev</c>, which grows with every change of the schedules ("Sys", "Schedule"); null when the status has
 /// none, or one that isn't a whole number.
 /// </param>
-public sealed record ShellySwitches(int Count, uint Outputs, long? ConfigRevision = null, long? ScheduleRevision = null);
+/// <param name="Inputs">
+/// Bit per input, bit 0 = <c>input:0</c>: 1 for an input whose <c>state</c> is true or false, which the docs give only
+/// for type <c>switch</c> ("Input", "Status"). A <c>button</c> (state null), a disabled input (state null), an
+/// <c>analog</c> or <c>count</c> input (no state) and an input the app can't read are 0. Only <c>input:0</c> to
+/// <c>input:3</c> (<see cref="ShellyApi.MaxInputCount"/>).
+/// </param>
+/// <param name="InputsOn">Bit per input, as <paramref name="Inputs"/>: 1 when its <c>state</c> is true.</param>
+public sealed record ShellySwitches(int Count, uint Outputs, long? ConfigRevision = null, long? ScheduleRevision = null, byte Inputs = 0, byte InputsOn = 0)
+{
+    /// <summary>
+    /// How many inputs the device has for the app: those with a state, from <c>input:0</c> without a gap. An input
+    /// after a gap isn't counted, so an input keeps its number (<c>input:N</c> is input N+1).
+    /// </summary>
+    public int InputCount => System.Numerics.BitOperations.TrailingZeroCount(~(uint)Inputs);
+}
 
 /// <summary>A request frame as the simulator reads it.</summary>
 /// <param name="Id">The request's <c>id</c> as JSON text, to send back as it came: a number or a string.</param>
@@ -369,6 +383,7 @@ public static class ShellyJson
     /// <summary>
     /// Reads the switches in <c>Shelly.GetStatus</c>'s result ("Shelly", "Shelly.GetStatus"; "Switch", "Status"): every
     /// member <c>switch:N</c> must be an object with a boolean <c>output</c>, and their ids 0 to the count minus one.
+    /// The inputs (<c>input:N</c>) are read too, but never refuse the status (<see cref="ShellySwitches.Inputs"/>).
     /// Every other component is skipped.
     /// </summary>
     public static ShellySwitches ReadSwitches(JsonElement result)
@@ -418,7 +433,50 @@ public static class ShellyJson
             throw new ShellyProtocolException("The Shelly's switches aren't numbered from 0 without a gap.");
         }
 
-        return new ShellySwitches(count, outputs, SysRevision(result, ShellyApi.ConfigRevision), SysRevision(result, ShellyApi.ScheduleRevision));
+        var (inputs, inputsOn) = ReadInputs(result);
+        return new ShellySwitches(count, outputs, SysRevision(result, ShellyApi.ConfigRevision), SysRevision(result, ShellyApi.ScheduleRevision), inputs, inputsOn);
+    }
+
+    // The inputs in a status: input:0 to input:3 with a state that is true or false ("Input", "Status": "state ... (only
+    // for type switch, button) ... null if the input instance is stateless, i.e. for type button", and null for an input
+    // that isn't enabled). Never throws: an input the app can't read (a key or id it can't read, a state of another
+    // kind, the same input twice) is left out, so the inputs can never fail the poll.
+    private static (byte Inputs, byte On) ReadInputs(JsonElement result)
+    {
+        var seen = 0;
+        var twice = 0;
+        var inputs = 0;
+        var on = 0;
+        foreach (var component in result.EnumerateObject())
+        {
+            if (!component.Name.StartsWith(ShellyApi.InputKeyPrefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // input:0 to input:3 only, without a leading zero or sign.
+            var suffix = component.Name.AsSpan(ShellyApi.InputKeyPrefix.Length);
+            if (suffix.Length != 1 || suffix[0] < '0' || suffix[0] >= '0' + ShellyApi.MaxInputCount)
+            {
+                continue;
+            }
+
+            var index = suffix[0] - '0';
+            var bit = 1 << index;
+            twice |= seen & bit;
+            seen |= bit;
+            if (component.Value.ValueKind == JsonValueKind.Object
+                && component.Value.TryGetProperty("state", out var state)
+                && state.ValueKind is (JsonValueKind.True or JsonValueKind.False)
+                && (!component.Value.TryGetProperty("id", out var id) || (id.ValueKind == JsonValueKind.Number && id.TryGetInt32(out var number) && number == index)))
+            {
+                inputs |= bit;
+                on |= state.ValueKind == JsonValueKind.True ? bit : 0;
+            }
+        }
+
+        // An input given twice is ambiguous: left out.
+        return ((byte)(inputs & ~twice), (byte)(on & ~twice));
     }
 
     /// <summary>

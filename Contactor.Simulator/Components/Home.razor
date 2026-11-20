@@ -190,12 +190,12 @@
                                 }
                             </div>
                         </div>
-                        @if (capabilities.InputCount > 0)
+                        @if (current.Board.InputCount > 0)
                         {
                             <div class="inputs">
-                                <span class="hint">@(capabilities.InputCount == 1 ? "Input" : "Inputs")</span>
-                                <div class="input-list" style="--columns: @Math.Min(capabilities.InputCount, 4).ToString(CultureInfo.InvariantCulture)">
-                                    @for (var input = 1; input <= capabilities.InputCount; input++)
+                                <span class="hint">@(current.Board.InputCount == 1 ? "Input" : "Inputs")</span>
+                                <div class="input-list" style="--columns: @Math.Min(current.Board.InputCount, 4).ToString(CultureInfo.InvariantCulture)">
+                                    @for (var input = 1; input <= current.Board.InputCount; input++)
                                     {
                                         var number = input;
                                         var closed = state.Inputs.Contains(number);

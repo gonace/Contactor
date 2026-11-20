@@ -35,7 +35,41 @@ public sealed class ShellySimulatedBoardTests
 
         var status = Body(await PostAsync(device.Port, "{\"id\":2,\"method\":\"Shelly.GetStatus\"}"));
         var frame = ShellyJson.ReadFrame(Encoding.UTF8.GetBytes(status), 2);
-        Assert.Equal(new ShellySwitches(2, 0b10, 10, 0), ShellyJson.ReadSwitches(frame.Result!.Value));
+        Assert.Equal(new ShellySwitches(2, 0b10, 10, 0, Inputs: 0b11, InputsOn: 0), ShellyJson.ReadSwitches(frame.Result!.Value));
+    }
+
+    [Fact]
+    public async Task Should_ReportItsInputs_AsTheDocsShowThem()
+    {
+        await using var device = new ShellySimulator(ShellyModels.ThreeRelays) { TimeProvider = new ManualTimeProvider() };
+        var changes = 0;
+        device.Changed += (_, _) => Interlocked.Increment(ref changes);
+        device.Start();
+        Assert.Equal(3, device.InputCount);
+        Assert.Equal(ShellySimulator.SwitchInput, device.InputType(1));
+
+        await device.SetInputAsync(1, true);
+        await device.SetInputAsync(1, true);
+        await device.SetInputAsync(3, true);
+        device.SetInputType(2, ShellySimulator.ButtonInput);
+        device.SetInputType(3, ShellySimulator.AnalogInput);
+        device.SetInputType(3, ShellySimulator.AnalogInput);
+        Assert.Equal(4, Volatile.Read(ref changes));
+
+        // "Input", "Status": a switch's state, a button's null state, an analog input's percent.
+        var status = Body(await PostAsync(device.Port, "{\"id\":1,\"method\":\"Shelly.GetStatus\"}"));
+        Assert.Contains("\"input:0\":{\"id\":0,\"state\":true}", status, StringComparison.Ordinal);
+        Assert.Contains("\"input:1\":{\"id\":1,\"state\":null}", status, StringComparison.Ordinal);
+        Assert.Contains("\"input:2\":{\"id\":2,\"percent\":100}", status, StringComparison.Ordinal);
+        var switches = ShellyJson.ReadSwitches(ShellyJson.ReadFrame(Encoding.UTF8.GetBytes(status), 1).Result!.Value);
+        Assert.Equal((byte)0b001, switches.Inputs);
+        Assert.Equal((byte)0b001, switches.InputsOn);
+        Assert.Equal(ChannelMask.Of(1) | ChannelMask.Of(3), device.State.Inputs);
+        Assert.Equal(12, device.ConfigRevision);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => device.SetInputAsync(4, true));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => device.SetInputAsync(0, true));
+        Assert.Throws<ArgumentException>(() => device.SetInputType(1, "count"));
     }
 
     [Fact]
@@ -253,7 +287,7 @@ public sealed class ShellySimulatedBoardTests
         Assert.False(device.HasLogin);
         Assert.Same(ShellyModels.ThreeRelays, device.Model);
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => device.SwitchRelayAsync(4, true));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => device.SetInputAsync(1, true));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => device.SetInputAsync(4, true));
         Assert.Throws<ArgumentException>(() => new ShellySimulator(Contactor.Boards.Devantech.DevantechModels.Eth002));
     }
 

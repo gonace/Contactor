@@ -22,12 +22,20 @@ public sealed class SetupText
         _texts = texts;
     }
 
-    /// <summary>What a model has, for the list of boards: "8 relays · 1 input", "4 relays · 4 inputs · 1 analog input".</summary>
+    /// <summary>
+    /// What a model has, for the list of boards: "8 relays · 1 input", "4 relays · 4 inputs · 1 analog input", and
+    /// "1 relay · inputs read from the device" for a model whose inputs differ by device
+    /// (<see cref="BoardCapabilities.InputCountFromBoard"/>).
+    /// </summary>
     public string Capabilities(BoardCapabilities capabilities)
     {
         ArgumentNullException.ThrowIfNull(capabilities);
         var parts = new List<string> { _texts.Plural("Setup.Capabilities.Relays", capabilities.RelayCount) };
-        if (capabilities.InputCount > 0)
+        if (capabilities.InputCountFromBoard)
+        {
+            parts.Add(_texts["Setup.Capabilities.InputsFromBoard"]);
+        }
+        else if (capabilities.InputCount > 0)
         {
             parts.Add(_texts.Plural("Setup.Capabilities.Inputs", capabilities.InputCount));
         }

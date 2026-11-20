@@ -28,7 +28,7 @@ public sealed class ShellyClientTests
 
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        Assert.Equal(new ShellyStatus(0b0010, AllOff(4), OwnRules.Empty), run.Client.State.Status);
+        Assert.Equal(new ShellyStatus(0b0010, AllOff(4), OwnRules.Empty, Inputs: 0, InputCount: 4), run.Client.State.Status);
         Assert.True(run.Client.State.IsOn(2));
         Assert.Null(run.Client.State.Problem);
 
@@ -37,7 +37,40 @@ public sealed class ShellyClientTests
             [ShellyApi.GetDeviceInfo, ShellyApi.GetStatus, .. Enumerable.Repeat(ShellyApi.SwitchGetConfig, 4), ShellyApi.ScheduleList, ShellyApi.GetStatus],
             simulator.Received);
         Assert.Contains(run.Traces, t => t.Text == "Device SIM-4, generation 2, firmware 2.0.0");
-        Assert.Contains(run.Traces, t => t.Text == "Status: relay 2 on" && t.Direction == BoardTraceDirection.Received);
+        Assert.Contains(run.Traces, t => t.Text == "Status: relay 2 on · inputs off" && t.Direction == BoardTraceDirection.Received);
+    }
+
+    [Fact]
+    public async Task Should_ReadTheInputs_TheConnectionStartedWith()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        await simulator.SetInputAsync(2, true);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.Equal(2, run.Client.State.InputCount);
+        Assert.Equal(0b10, run.Client.State.Inputs);
+
+        // An input that changed is a state change, as a relay is.
+        await simulator.SetInputAsync(1, true);
+        await run.PollAsync();
+        Assert.Equal(0b11, run.Client.State.Inputs);
+        Assert.Contains(run.Changes, c => c.Inputs == 0b11);
+        Assert.Contains(run.Traces, t => t.Text == "Status: all off · input 1 and 2 on");
+
+        // Input 1 made a button at the device, which has no state: it keeps its last state until the next connection, so
+        // a change of the device's settings never looks like an input that opened. Input 2 is still read.
+        simulator.SetInputType(1, ShellySimulator.ButtonInput);
+        await simulator.SetInputAsync(1, false);
+        await simulator.SetInputAsync(2, false);
+        await run.PollAsync();
+        Assert.Equal(0b01, run.Client.State.Inputs);
+        Assert.Equal(2, run.Client.State.InputCount);
+
+        // The next connection reads which inputs the device has: none from input:0, as input:0 is a button.
+        run.Client.SetPassword("other");
+        await Wait.UntilAsync(() => run.Client.State is { IsConnected: true, InputCount: 0 });
+        Assert.Equal(0, run.Client.State.Inputs);
     }
 
     [Fact]

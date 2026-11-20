@@ -296,8 +296,36 @@ public sealed class ShellyJsonTests
     {
         using var document = System.Text.Json.JsonDocument.Parse(StatusExample);
 
-        // sys.cfg_rev is 26 and sys.schedule_rev 0 in the docs' example.
-        Assert.Equal(new ShellySwitches(4, 0b0001, 26, 0), ShellyJson.ReadSwitches(document.RootElement));
+        // sys.cfg_rev is 26 and sys.schedule_rev 0 in the docs' example, and input:0 to input:3 have the state false.
+        var switches = ShellyJson.ReadSwitches(document.RootElement);
+        Assert.Equal(new ShellySwitches(4, 0b0001, 26, 0, Inputs: 0b1111, InputsOn: 0), switches);
+        Assert.Equal(4, switches.InputCount);
+    }
+
+    // "Input", "Status": state "boolean or null (only for type switch, button)", null "for type button", and null when
+    // the input isn't enabled; percent for type analog, counts for type count. The Input.GetStatus example's
+    // {"id":0,"state":false} first. Input 2 is input:1.
+    [Theory]
+    [InlineData("{\"input:0\":{\"id\":0,\"state\":false}}", 0b1, 0b0, 1)]
+    [InlineData("{\"input:0\":{\"id\":0,\"state\":true},\"input:1\":{\"id\":1,\"state\":true}}", 0b11, 0b11, 2)]
+    [InlineData("{\"input:0\":{\"id\":0,\"state\":null},\"input:1\":{\"id\":1,\"state\":true}}", 0b10, 0b10, 0)]
+    [InlineData("{\"input:0\":{\"id\":0,\"state\":true},\"input:1\":{\"id\":1,\"percent\":42.5}}", 0b01, 0b01, 1)]
+    [InlineData("{\"input:0\":{\"id\":0,\"counts\":{\"total\":3},\"freq\":0}}", 0, 0, 0)]
+    [InlineData("{\"input:3\":{\"id\":3,\"state\":true},\"input:4\":{\"id\":4,\"state\":true},\"input:100\":{\"id\":100,\"state\":true}}", 0b1000, 0b1000, 0)]
+    [InlineData("{\"input:00\":{\"state\":true},\"input:-1\":{\"state\":true},\"input:\":{\"state\":true},\"input:1\":{\"id\":0,\"state\":true}}", 0, 0, 0)]
+    [InlineData("{\"input:0\":{\"id\":0,\"state\":\"on\"},\"input:1\":{\"id\":\"1\",\"state\":true},\"input:2\":[true]}", 0, 0, 0)]
+    [InlineData("{\"input:0\":{\"id\":0,\"state\":true},\"input:0\":{\"id\":0,\"state\":false}}", 0, 0, 0)]
+    [InlineData("{\"input:0\":{\"state\":true}}", 0b1, 0b1, 1)]
+    public void Should_ReadTheInputs_WithAStateOnly(string json, int inputs, int on, int count)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+
+        // Never refused: an input the app can't read is left out, and the switches are still read.
+        var switches = ShellyJson.ReadSwitches(document.RootElement);
+        Assert.Equal((byte)inputs, switches.Inputs);
+        Assert.Equal((byte)on, switches.InputsOn);
+        Assert.Equal(count, switches.InputCount);
+        Assert.Equal(0, switches.Count);
     }
 
     [Fact]

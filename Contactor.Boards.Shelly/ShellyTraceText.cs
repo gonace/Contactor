@@ -34,11 +34,31 @@ public static class ShellyTraceText
         return withDigest ? text + " · with the password's digest" : text;
     }
 
-    /// <summary>"Status: relay 1 and 3 on", "Status: all off".</summary>
+    /// <summary>
+    /// "Status: relay 1 and 3 on", "Status: all off", and the inputs of a device that has some: "Status: relay 2 on ·
+    /// input 1 on", "Status: all off · inputs off".
+    /// </summary>
     public static string Status(ShellyStatus status, int relayCount)
     {
         ArgumentNullException.ThrowIfNull(status);
-        return status.Relays == 0 ? "Status: all off" : $"Status: {Channels(status.Relays, relayCount)} on";
+        var relays = status.Relays == 0 ? "Status: all off" : $"Status: {Channels(status.Relays, relayCount)} on";
+        if (status.InputCount == 0)
+        {
+            return relays;
+        }
+
+        if (status.Inputs == 0)
+        {
+            return relays + (status.InputCount == 1 ? " · input off" : " · inputs off");
+        }
+
+        var on = Enumerable.Range(1, status.InputCount)
+            .Where(input => (status.Inputs & (1 << (input - 1))) != 0)
+            .Select(input => input.ToString(CultureInfo.InvariantCulture))
+            .ToList();
+        return on.Count == 1
+            ? $"{relays} · input {on[0]} on"
+            : $"{relays} · input {string.Join(", ", on[..^1])} and {on[^1]} on";
     }
 
     /// <summary>"Device SNSW-102P16EU, generation 2, firmware 1.7.1, profile switch".</summary>

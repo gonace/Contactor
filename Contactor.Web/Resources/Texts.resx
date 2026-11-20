@@ -2832,6 +2832,10 @@
   <data name="Setup.Capabilities.Analog_Other" xml:space="preserve">
     <value>{0} analog inputs</value>
   </data>
+  <data name="Setup.Capabilities.InputsFromBoard" xml:space="preserve">
+    <value>inputs read from the device</value>
+    <comment>After a model's relays, for a model whose inputs differ by device, e.g. a Shelly: "1 relay · inputs read from the device".</comment>
+  </data>
   <data name="Setup.Capabilities.Inputs_One" xml:space="preserve">
     <value>{0} input</value>
   </data>

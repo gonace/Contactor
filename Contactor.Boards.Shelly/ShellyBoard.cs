@@ -6,13 +6,16 @@ namespace Contactor.Boards.Shelly;
 /// A Shelly Gen2+ device as an <see cref="IRelayBoard"/>: its entry's 1 to 4 relays, which it never reports by itself
 /// over HTTP, so <see cref="ShellyClient"/> polls it, each relay's state after a power cut (its switch's
 /// <c>initial_state</c>), which the app sets only when a person saves it, and the device's own schedules and auto-on,
-/// which the app turns off only on a person's press. This only translates the client's state and
-/// commands.
+/// which the app turns off only on a person's press, and the inputs the device has, as it gave them at the connection
+/// (<see cref="BoardCapabilities.InputCountFromBoard"/>). This only translates the client's state and commands.
 /// </summary>
 public sealed class ShellyBoard : IRelayBoard
 {
     private readonly ShellyClient _client;
     private readonly ILogger<ShellyBoard> _logger;
+
+    // The entry's capabilities with each input count the device may give, 0 to the most: no new one on every call.
+    private readonly BoardCapabilities[] _byInputCount;
 
     public ShellyBoard(ShellyClient client, ILogger<ShellyBoard> logger)
     {
@@ -20,6 +23,7 @@ public sealed class ShellyBoard : IRelayBoard
         ArgumentNullException.ThrowIfNull(logger);
         _client = client;
         _logger = logger;
+        _byInputCount = [.. Enumerable.Range(0, client.Model.Capabilities.InputCount + 1).Select(count => client.Model.Capabilities with { InputCount = count })];
         _client.StateChanged += OnStateChanged;
         _client.PowerOnChanged += OnPowerOnChanged;
         _client.OwnRulesChanged += OnOwnRulesChanged;
@@ -33,7 +37,11 @@ public sealed class ShellyBoard : IRelayBoard
     /// <inheritdoc/>
     public event EventHandler<BoardState>? OwnRulesChanged;
 
-    public BoardCapabilities Capabilities => _client.Model.Capabilities;
+    /// <summary>
+    /// The entry's capabilities, with as many inputs as the device gave on its last connection: none before it answered
+    /// (<see cref="BoardCapabilities.InputCountFromBoard"/>).
+    /// </summary>
+    public BoardCapabilities Capabilities => _byInputCount[Math.Clamp(_client.State.InputCount, 0, _byInputCount.Length - 1)];
 
     public BoardState State => ToBoardState(_client.State);
 
@@ -77,12 +85,12 @@ public sealed class ShellyBoard : IRelayBoard
 
     /// <summary>
     /// The device's state as a <see cref="BoardState"/>: its relays, their states after a power cut and its own rules
-    /// (null while unknown), no inputs or analog readings.
+    /// (null while unknown), and its inputs; no analog readings.
     /// </summary>
     public static BoardState ToBoardState(ShellyState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), ChannelMask.None, state.LastContactUtc, state.Problem, OwnRules: state.OwnRules, PowerOn: state.PowerOn);
+        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc, state.Problem, OwnRules: state.OwnRules, PowerOn: state.PowerOn);
     }
 
     // Only relays the entry has; throws before anything is sent.

@@ -112,6 +112,11 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     private bool _schedulesFailed;
     private DateTimeOffset _schedulesReadUtc;
 
+    // Only used under the poller's lock: how many inputs the device has for the current connection, from the connect's
+    // status, and the inputs as last read. ConnectAsync starts them afresh.
+    private int _inputCount;
+    private byte _inputs;
+
     // The reading last reported, to tell which part of it changed when the poller's comparer sees no change.
     private ShellyStatus? _lastReported;
 
@@ -160,16 +165,17 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             // The requests time out with _timeProvider instead, see PostAsync.
             Timeout = Timeout.InfiniteTimeSpan,
         };
-        // A change of a power-on state alone is no state change: it comes as PowerOnChanged.
-        _poller = new BoardPoller<ShellyStatus>(this, timeProvider, ShellyStatus.RelaysComparer)
+        // A change of the power-on states or the own rules alone is no state change: it comes as PowerOnChanged or
+        // OwnRulesChanged.
+        _poller = new BoardPoller<ShellyStatus>(this, timeProvider, ShellyStatus.StateComparer)
         {
             PollInterval = TimeSpan.FromSeconds(settings.PollSeconds),
         };
     }
 
     /// <summary>
-    /// Raised when the relays change, and when the connection is lost or comes back; not on a poll that changed nothing.
-    /// On the poller's loop: handlers must be quick.
+    /// Raised when the relays or the inputs change, and when the connection is lost or comes back; not on a poll that
+    /// changed nothing. On the poller's loop: handlers must be quick.
     /// </summary>
     public event EventHandler<ShellyState>? StateChanged;
 
@@ -431,6 +437,11 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
         var switches = await GetSwitchesAsync(target, routine: false, cancellationToken).ConfigureAwait(false);
         CheckCount(switches);
+
+        // The inputs the device has, for this whole connection: a change of its settings while connected (an input made
+        // a button, or turned off) must never look like an input that changed, which would run its actions.
+        _inputCount = switches.InputCount;
+        _inputs = 0;
         var stopped = await ReadPowerOnAsync(target, switches.ConfigRevision, cancellationToken).ConfigureAwait(false);
         await ReadSchedulesAsync(target, switches.ScheduleRevision, skip: stopped, cancellationToken).ConfigureAwait(false);
     }
@@ -616,10 +627,21 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             await ReadSchedulesAsync(target, switches.ScheduleRevision, skip: stopped, cancellationToken).ConfigureAwait(false);
         }
 
-        var status = new ShellyStatus((byte)switches.Outputs, _powerOn, CurrentOwnRules());
+        var status = new ShellyStatus((byte)switches.Outputs, _powerOn, CurrentOwnRules(), ReadInputs(switches), _inputCount);
         var routine = Interlocked.Exchange(ref _lastTraced, status) == status;
         Trace(BoardTraceDirection.Received, ShellyTraceText.Status(status, _model.Capabilities.RelayCount), isRoutine: routine);
         return status;
+    }
+
+    // Under the poller's lock: the inputs of the connection's count. One that has no state now (made a button or turned
+    // off at the device since the connect) keeps its last state until the next connection, and one that has a state
+    // only now isn't read until then: a change of the device's settings never shows as an input that changed.
+    private byte ReadInputs(ShellySwitches switches)
+    {
+        var counted = (byte)((1 << _inputCount) - 1);
+        var read = (byte)(switches.Inputs & counted);
+        _inputs = (byte)((switches.InputsOn & read) | (_inputs & counted & ~read));
+        return _inputs;
     }
 
     // Under the poller's lock: each switch's initial_state, one Switch.GetConfig each, after the status that gave
