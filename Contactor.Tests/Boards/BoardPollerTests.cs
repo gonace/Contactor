@@ -998,16 +998,26 @@ public sealed class BoardPollerTests
         var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = poller.RunAsync(stop.Token);
-        await WaitUntilAsync(() => board.Connects == 1);
+        try
+        {
+            await WaitUntilAsync(() => board.Connects == 1);
 
-        poller.Forget();
-        connect.SetException(new ProblemException(Mismatch));
-        await WaitUntilAsync(() => board.Steps.Any(s => s.Kind == BoardPollStep.Lost));
+            poller.Forget();
+            connect.SetException(new ProblemException(Mismatch));
+            await WaitUntilAsync(() => board.Steps.Any(s => s.Kind == BoardPollStep.Lost));
 
-        Assert.Null(poller.State.Problem);
-        Assert.DoesNotContain(board.Changes, c => c.Problem is not null);
-        await stop.CancelAsync();
-        await run;
+            Assert.Null(poller.State.Problem);
+            Assert.DoesNotContain(board.Changes, c => c.Problem is not null);
+            await stop.CancelAsync();
+            await run;
+        }
+        finally
+        {
+            // On a failed test: stop first, then release the held connect, which ignores cancellation. The poller then
+            // reports Stopped and leaves its loop, instead of waiting on the connect or on a backoff the clock never ends.
+            await stop.CancelAsync();
+            connect.TrySetCanceled(Cancel);
+        }
     }
 
     // Issue #522: a refused login isn't tried again by itself, however long the clock runs. No timer even waits.
@@ -1019,38 +1029,47 @@ public sealed class BoardPollerTests
         var poller = new BoardPoller<int>(board, time) { PollInterval = Interval };
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
         var run = poller.RunAsync(stop.Token);
-
-        await WaitUntilAsync(() => board.Steps.Count(s => s.Kind == BoardPollStep.Held) == 1);
-        Assert.Equal(0, time.PendingTimers);
-        Assert.DoesNotContain(board.Steps, s => s.Kind == BoardPollStep.Waiting);
-        Assert.Equal(Refused, poller.State.Problem);
-        time.Advance(TimeSpan.FromDays(1));
-        Assert.Equal(1, board.Connects);
-
-        // "Check again": exactly one attempt, at once, with the problem cleared until the board answers.
-        // The attempt is held, so the board can't refuse it before the cleared problem is checked.
         var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        board.HeldConnect = held;
-        poller.TryAgain();
-        await WaitUntilAsync(() => board.Connects == 2);
-        Assert.Null(poller.State.Problem);
-        held.SetException(new ProblemException(Refused));
-        await WaitUntilAsync(() => board.Steps.Count(s => s.Kind == BoardPollStep.Held) == 2);
-        Assert.Equal(2, board.Connects);
-        Assert.Equal(Refused, poller.State.Problem);
-        time.Advance(TimeSpan.FromDays(1));
-        Assert.Equal(2, board.Connects);
+        try
+        {
+            await WaitUntilAsync(() => board.Steps.Count(s => s.Kind == BoardPollStep.Held) == 1);
+            Assert.Equal(0, time.PendingTimers);
+            Assert.DoesNotContain(board.Steps, s => s.Kind == BoardPollStep.Waiting);
+            Assert.Equal(Refused, poller.State.Problem);
+            time.Advance(TimeSpan.FromDays(1));
+            Assert.Equal(1, board.Connects);
 
-        // A new login: at once, and it connects.
-        board.HeldConnect = null;
-        board.ConnectError = null;
-        poller.Restart();
-        await WaitForPollAsync(board, time, reads: 1);
-        Assert.Equal(3, board.Connects);
-        Assert.Equal(new PolledState<int>(true, 1, time.GetUtcNow()), poller.State);
+            // "Check again": exactly one attempt, at once, with the problem cleared until the board answers.
+            // The attempt is held, so the board can't refuse it before the cleared problem is checked.
+            board.HeldConnect = held;
+            poller.TryAgain();
+            await WaitUntilAsync(() => board.Connects == 2);
+            Assert.Null(poller.State.Problem);
+            held.SetException(new ProblemException(Refused));
+            await WaitUntilAsync(() => board.Steps.Count(s => s.Kind == BoardPollStep.Held) == 2);
+            Assert.Equal(2, board.Connects);
+            Assert.Equal(Refused, poller.State.Problem);
+            time.Advance(TimeSpan.FromDays(1));
+            Assert.Equal(2, board.Connects);
 
-        await stop.CancelAsync();
-        await run;
+            // A new login: at once, and it connects.
+            board.HeldConnect = null;
+            board.ConnectError = null;
+            poller.Restart();
+            await WaitForPollAsync(board, time, reads: 1);
+            Assert.Equal(3, board.Connects);
+            Assert.Equal(new PolledState<int>(true, 1, time.GetUtcNow()), poller.State);
+
+            await stop.CancelAsync();
+            await run;
+        }
+        finally
+        {
+            // On a failed test: stop first, then release the held connect, which ignores cancellation. The poller then
+            // reports Stopped and leaves its loop, instead of waiting on the connect or on a backoff the clock never ends.
+            await stop.CancelAsync();
+            held.TrySetCanceled(Cancel);
+        }
     }
 
     // "Check again" on a board that answers changes nothing.

@@ -176,8 +176,9 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
     /// row above was deleted on the board's web page, an OFF row may stand where its ON row was). A row that is also behind
     /// an asked rule whose rows changed isn't written either, and its rules don't go, so no rule is left half off. A row's
     /// outputs code, state and time are never written. A refused write or one whose answer can't be read doesn't stop the
-    /// others. A rule given twice is taken once. Returns the rules asked whose rows all took it, in relay order; none, and
-    /// nothing sent, for none asked.
+    /// others. A rule given twice is taken once. Returns the rules asked whose rows all took it, in relay order, and a rule
+    /// whose relay has no rows as last read and still has none, with nothing written for it; none, and nothing sent, for
+    /// none asked.
     /// Throws <see cref="ArgumentOutOfRangeException"/> for another kind of rule or a relay the board doesn't have, and
     /// <see cref="BoardNotConnectedException"/> without a connection, both before anything is sent; and
     /// <see cref="BoardNotConnectedException"/> when the schedule isn't known or couldn't be read again, or every rule's
@@ -524,6 +525,8 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
                 throw new BoardNotConnectedException("The smartDEN board's week schedule changed; nothing was sent.");
             }
 
+            // Never null here: a row was sent and no timer is done, so a write was refused or unreadable. The fallback only
+            // keeps the message from being null should that change.
             var why = refusal ?? "no timer's rows all went off";
             throw unreadable ? new SmartDenProtocolException(why) : new BoardRefusedException(why);
         }

@@ -10,6 +10,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
 {
     private readonly Lock _lock = new();
     private BoardState _state;
+    private Action? _afterStateRead;
 
     public FakeRelayBoard(int relayCount = 8, bool connected = true, int inputCount = 1, PulseAbility? pulse = null, AnalogAbility? analog = null, OwnRulesAbility? ownRules = null, PowerOnAbility? powerOn = null)
     {
@@ -68,8 +69,6 @@ internal sealed class FakeRelayBoard : IRelayBoard
             return state;
         }
     }
-
-    private Action? _afterStateRead;
 
     /// <summary>
     /// Runs once, after the next read of <see cref="State"/> took the state and before it returns it: a status that

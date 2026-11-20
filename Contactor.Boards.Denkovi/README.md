@@ -188,6 +188,9 @@ The week schedule is the board's own rules (`SmartDenApi.OwnRules`: `Reads`, `Tu
 - A read that the board refuses, an answer that can't be read, an enable flag other than 0 or 1, or no answer at all
   makes the rules unknown (null). It never fails the poll: the relays are read first, and the poll keeps them. A change
   of the rules alone comes as `OwnRulesChanged`.
+- A schedule read with no answer holds the poll for the request timeout (5 s). The poll then reports the relays it read
+  before it as fresh contact, though they are up to 5 s old. The manual documents function 03, so a board that
+  answers the relays and not the schedule isn't expected.
 - `TurnOffOwnRulesAsync`, only on a person's press, writes 0 to the enable flag of every row that switches a relay
   asked, as last read, with one function 06 per row. A row is known only by its place, and the web page may move rows
   up when one is deleted, so the client first reads both blocks again in the same command. All or nothing per timer: it
@@ -198,7 +201,8 @@ The week schedule is the board's own rules (`SmartDenApi.OwnRules`: `Reads`, `Tu
   that isn't written isn't returned, and the next state shows the rules as they are now. When no timer's rows can go,
   nothing is written. It never writes the outputs code, so the row's other relays lose
   their timer too: a row is turned off whole. A refused write doesn't stop the others. It returns the timers whose rows
-  all took it, and reads the schedule back in the same command. When the schedule isn't known, it sends nothing.
+  all took it, and reads the schedule back in the same command. A timer whose relay has no rows, as read before and
+  again, is returned with nothing written for it. When the schedule isn't known, it sends nothing.
 - It doesn't read the pulse width of each relay (0x6000 to 0x600F): the board turns a relay off again after that time,
   but never on, so it isn't a rule. Nor "Save Outputs" (0x6800), which is what the relays do after a power cut.
 
@@ -234,6 +238,11 @@ rights that a developer doesn't have.
   factory value) and the six blocks of 30 rows, every row 0 at start. It answers function 03 and writes functions 06
   and 10 there, inside one block only (code 2 otherwise, also for a quantity of 0), each value in the range table 10.7
   gives (code 3 otherwise; function 10 then writes none). The other configuration registers get code 2.
+- A function 03 whose PDU has another length than 5 bytes gets code 3. The manual lists only codes 01 and 02 for
+  function 03 (section 10.2.1.3), so code 3 there is an assumption.
+- It refuses some requests that the real board takes, with code 2: function 10 at the pulse registers, and functions 03
+  and 06 at the configuration registers from 0x6000 outside the week schedule (e.g. the pulse widths, 0x6000 to 0x600F,
+  and "Save Outputs", 0x6800). The app uses none of them.
 - It keeps the rows over a power cut: the manual doesn't say what the board does. See below.
 - A row that is enabled and has relays can run now (`ISimulatedBoardRules`): its relays go on or off as its state
   says. The page shows each row with a checkbox, and adds a row (one or two relays, on or off, every day at a time).
