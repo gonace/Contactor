@@ -471,6 +471,8 @@ public sealed class GroupSequencerTests
         int Fan(int channel) => rig.SecondRelayId(channel);
         var id = await CreateAsync(rig, new GroupDraft("Barn fans", GroupIcons.Fan, 120, [new GroupStepDraft("Fans", [Fan(1), Fan(2)], 3, 180)]));
         await rig.Groups.StartGroupAsync(id, John, Cancel);
+        // The recorder uses up the start's ONs on its own loop. Until then the sequencer counts a fan as on its way.
+        await BoardTestRig.WaitUntilAsync(() => !rig.SecondLive.Expected.IsPending(1, on: true) && !rig.SecondLive.Expected.IsPending(2, on: true));
         await rig.Groups.StepAsync(Cancel);
         Assert.Null(await rig.Groups.SetMemberAsync(id, Fan(1), on: false, John, Cancel));
         await rig.Groups.StepAsync(Cancel);
@@ -507,6 +509,8 @@ public sealed class GroupSequencerTests
         int Fan(int channel) => rig.SecondRelayId(channel);
         var id = await CreateAsync(rig, new GroupDraft("Barn fans", GroupIcons.Fan, 120, [new GroupStepDraft("Fans", [Fan(1), Fan(2)], 3, 180)]));
         await rig.Groups.StartGroupAsync(id, John, Cancel);
+        // The recorder uses up the start's ONs on its own loop. Until then the sequencer counts a fan as on its way.
+        await BoardTestRig.WaitUntilAsync(() => !rig.SecondLive.Expected.IsPending(1, on: true) && !rig.SecondLive.Expected.IsPending(2, on: true));
         await rig.Groups.StepAsync(Cancel);
         Assert.Null(await rig.Groups.SetMemberAsync(id, Fan(1), on: false, John, Cancel));
         await rig.Groups.StepAsync(Cancel);
