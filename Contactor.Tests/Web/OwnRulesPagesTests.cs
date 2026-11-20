@@ -275,6 +275,21 @@ public sealed partial class OwnRulesPagesTests
         Assert.Contains("They can switch relays 3 and 5 without Contactor.", box, StringComparison.Ordinal);
         Assert.Contains(">Turn it off</button>", box, StringComparison.Ordinal);
 
+        // Relays' "Turn it off" sends only relay 5's: relay 3's stays, unlogged, and still warned about.
+        using (var relays = await PageRenderer.StartAsync<Relays>(app.Services, John, "John"))
+        {
+            await relays.ClickAsync(PageRenderer.WithText("Turn it off"));
+            Assert.Equal(new OwnRules([Timer3], null, [Timer3]), board.State.OwnRules);
+            Assert.Equal(1, board.OwnRulesTurnOffs);
+            var entry = (await EventsAsync(app)).Single(e => e.Action == EventActions.BoardOwnRulesTurnedOff);
+            Assert.Contains("\"relays\":[5]", entry.Details, StringComparison.Ordinal);
+            await Wait.UntilAsync(() => Service(app).Rows(BoardId).Count == 1);
+            Assert.Contains("It can switch relay 3 without Contactor.", Box(await PageAsync(app, "/")), StringComparison.Ordinal);
+            Assert.Empty(relays.Errors);
+        }
+
+        await RulesAsync(app, board, new OwnRules([Timer3, Timer5], null, [Timer3]));
+
         var card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
         Assert.Single(Regex.Matches(card, ">Turn off</button>"));
         Assert.Equal(2, Regex.Count(card, ">Keep</button>"));

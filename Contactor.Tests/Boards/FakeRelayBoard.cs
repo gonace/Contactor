@@ -333,7 +333,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
     }
 
     /// <summary>
-    /// Turns off the rules it has of those asked, and with them the rules that go with them (<see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/>),
+    /// Turns off the rules it has of those asked (never one it can't turn off), and with them the rules that go with them (<see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/>),
     /// and reports what is left, as a board that reads its rules does. Returns only the rules asked. Only on a board made
     /// with an ability that turns them off.
     /// </summary>
@@ -368,7 +368,8 @@ internal sealed class FakeRelayBoard : IRelayBoard
         lock (_lock)
         {
             var had = _state.OwnRules ?? OwnRules.Empty;
-            taken = [.. rules.Where(had.Contains).Distinct()];
+            // Never a rule it can't turn off (OwnRules.CantTurnOff), as the IRelayBoard contract says.
+            taken = [.. rules.Where(r => had.Contains(r) && had.CanTurnOff(r)).Distinct()];
             if (taken.Count == 0)
             {
                 throw new BoardNotConnectedException("The board has none of those rules.");
@@ -383,7 +384,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
             HashSet<OwnRule> gone = [.. taken, .. had.GoesWith(taken)];
             List<OwnRule> left = [.. had.Where(r => !gone.Contains(r))];
             var units = had.Units.Where(u => !u.Any(taken.Contains)).Select(IReadOnlyCollection<OwnRule> (u) => [.. u.Where(left.Contains)]);
-            state = _state = Stamp(_state with { OwnRules = new OwnRules(left, units) });
+            state = _state = Stamp(_state with { OwnRules = new OwnRules(left, units, had.CantTurnOff.Where(left.Contains)) });
         }
 
         OwnRulesChanged?.Invoke(this, state);

@@ -630,16 +630,19 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
                 return NoAnswer("No answer: the board would crash on this request");
             }
 
-            // Lines 85–132: the relay set, then its pulse and its timer stopped (pulseStopQueue, timerStopQueue), without
-            // the toggle at their end.
+            // Lines 85–132: the relay set, then its pulse and its timer stopped without the toggle at their end. The
+            // handler only queues the stops (pulseStopQueue, timerStopQueue) and answers at once; pulseTask and
+            // timerTask take them on their own loop (every 10 ms) and only then update the flags. So the answer still
+            // shows the run, and the next status doesn't.
             var mask = (byte)(1 << (command.Relay - 1));
+            Change(() => _relays = command.TurnOn ? (byte)(_relays | mask) : (byte)(_relays & ~mask));
+            var answer = RespondStatus();
             Change(() =>
             {
                 PulseRuns.Cancel(mask);
                 TimerRuns.Cancel(mask);
-                _relays = command.TurnOn ? (byte)(_relays | mask) : (byte)(_relays & ~mask);
             });
-            return RespondStatus();
+            return answer;
         }
 
         // server.on("/getalarms", HTTP_GET), lines 231–281: the first parameter by position, unchecked, as a 16-bit number;

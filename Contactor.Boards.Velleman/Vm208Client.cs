@@ -160,11 +160,13 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
     /// rule, its schedule is read (<c>GET /getalarms</c>), sent back with every alarm at its own time and disabled in one
     /// <c>POST /shedule_set</c>, which the board saves to its flash, and read again. Never <c>/setalarm</c>, which the
     /// board forgets at a restart, and never <c>/stoptimer</c> or <c>/stoppulse</c>, which toggle the relay. The others
-    /// still go when one relay's fails. A rule given twice is taken once. A relay with a pulse or a timer running, as the
-    /// last status said, is left (<see cref="OwnRules.CantTurnOff"/>): nothing is sent for it, and it isn't taken. Returns
-    /// the rules whose schedule the board took (answered 200), in relay order. Throws
-    /// <see cref="ArgumentOutOfRangeException"/> for a relay above 4 or another kind of rule, and <see cref="BoardNotConnectedException"/> without a connection, both before anything
-    /// is sent; and <see cref="BoardNotConnectedException"/> when the board took none of them or didn't answer.
+    /// still go when one relay's fails. A rule given twice is taken once. The status is read first in the same command: a
+    /// relay with a pulse or a timer running then is left (<see cref="OwnRules.CantTurnOff"/>), and every relay while
+    /// the status's flags can't be read, since one may run: nothing is sent for it, and it isn't taken; when that leaves
+    /// none, it throws <see cref="BoardNotConnectedException"/>, nothing sent but the status. Returns the rules whose
+    /// schedule the board took (answered 200), in relay order. Throws <see cref="ArgumentOutOfRangeException"/> for a
+    /// relay above 4 or another kind of rule, and <see cref="BoardNotConnectedException"/> without a connection, both
+    /// before anything is sent; and <see cref="BoardNotConnectedException"/> when the board took none of them or didn't answer.
     /// </summary>
     public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
@@ -587,29 +589,45 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
             : new OwnRules(rules, rules.Select(r => (IReadOnlyCollection<OwnRule>)[r]), cantTurnOff);
     }
 
-    // Under the poller's lock: for each relay asked, in relay order, its schedule read fresh (so each alarm keeps the
-    // time the board has now), one POST /shedule_set with every alarm disabled, and the schedule read back. Then the
-    // status, which the poller takes as a poll's answer. A relay whose read or save isn't answered 200 or can't be read
-    // is left, and the others still go; no answer at all stops the rest.
+    // Under the poller's lock: the status first, for the pulses and timers running now (one started since the last
+    // poll too). Then for each relay asked with none running, in relay order, its schedule read fresh (so each alarm
+    // keeps the time the board has now), one POST /shedule_set with every alarm disabled, and the schedule read back.
+    // Then the status, which the poller takes as a poll's answer. A relay whose read or save isn't answered 200 or can't
+    // be read is left, and the others still go; no answer at all stops the rest. A relay with a run, or every relay
+    // while the runs can't be read, gets nothing; when that leaves none, nothing was sent but the status.
     private async Task<CommandReading<Vm208Status>> TurnOffSchedulesAndReadAsync(
         IReadOnlyList<OwnRule> asked,
         StrongBox<IReadOnlyList<OwnRule>> taken,
         CancellationToken cancellationToken)
     {
         var target = Endpoint;
+        EnsureSameBoard(target, command: true);
+        try
+        {
+            // Sets _running, also to null for flags it can't read.
+            await ExchangeStatusAsync(HttpMethod.Get, $"{Vm208Api.StatusPath}?{Vm208Api.StatusQuery}", form: null, routine: false, target, command: true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Vm208ProtocolException)
+        {
+            // An answer it can't read, busy too: which relays have a run is unknown.
+            _running = null;
+        }
+
+        List<OwnRule> left = [.. asked.Where(r => _running is { } running && (running & (1 << (r.Relay - 1))) == 0)];
+        if (left.Count == 0)
+        {
+            // A pulse or a timer runs on each, or may: the rule would stay whatever the schedule.
+            throw new BoardNotConnectedException("Nothing was sent: a pulse or a timer started on the VM208's own page runs on these relays, or may.");
+        }
+
         List<OwnRule> done = [];
         ExceptionDispatchInfo? noAnswer = null;
         ExceptionDispatchInfo? unreadable = null;
         string? refusal = null;
-        foreach (var rule in asked)
+        foreach (var rule in left)
         {
             var relay = rule.Relay;
-            if (_running is { } running && (running & (1 << (relay - 1))) != 0)
-            {
-                // A pulse or a timer runs on it: the rule stays whatever the schedule, so nothing is sent for it.
-                refusal ??= string.Create(CultureInfo.InvariantCulture, $"relay {relay}: a pulse or a timer started on the board runs on it");
-                continue;
-            }
 
             var posted = false;
             try

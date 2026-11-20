@@ -339,10 +339,11 @@ public sealed class Vm208ScheduleTests
 
         Assert.Equal<OwnRule>([new OwnRule(2, OwnRuleKind.Timer)], taken);
 
-        // Read fresh, saved with each alarm at its own time and disabled, read back, then the status.
+        // The status first (for the pulses and timers running), read fresh, saved with each alarm at its own time and
+        // disabled, read back, then the status.
         var off = Vm208Api.ScheduleForm(2, [.. Weekdays.Select(a => a with { Enabled = false })]);
         Assert.Equal(
-            ["GET /getalarms?channel=2", $"POST /shedule_set {off}", "GET /getalarms?channel=2", StatusRequest],
+            [StatusRequest, "GET /getalarms?channel=2", $"POST /shedule_set {off}", "GET /getalarms?channel=2", StatusRequest],
             simulator.ReceivedRequests.Skip(before));
         Assert.Equal([.. Weekdays.Select(a => a with { Enabled = false })], simulator.Alarms(2));
         Assert.Equal(Weekdays, simulator.Alarms(3));
@@ -600,10 +601,12 @@ public sealed class Vm208ScheduleTests
         Assert.Equal(run.Client.State.OwnRules, run.Changes[^1].OwnRules);
         Assert.Contains(run.Traces, t => t.Text == "Status: relay 3 on · input off · timer running on relay 3" && !t.IsRoutine);
 
-        // Nothing is sent for it, and nothing is taken.
+        // Nothing is sent for it but the status, and nothing is taken. (The poller also reads the status at once after
+        // a command that took nothing.)
         var before = simulator.ReceivedRequests.Count;
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([timer], Cancel));
-        Assert.Equal(before, simulator.ReceivedRequests.Count);
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+        Assert.All(simulator.ReceivedRequests.Skip(before), r => Assert.Equal(StatusRequest, r));
         Assert.True(run.Client.State.IsConnected);
 
         // At its end the board toggles the relay back, and the rule is gone at the next poll.
@@ -640,15 +643,49 @@ public sealed class Vm208ScheduleTests
         Assert.Equal(Weekdays, simulator.Alarms(2));
         Assert.Equal<OwnRule>([two], run.Client.State.OwnRules);
 
-        // Relay 2 is on by the pulse: turning it on changes no relay, only the rules, which come alone.
+        // Relay 2 is on by the pulse: turning it on changes no relay. The board stops the pulse after its answer, so the
+        // next status shows the rules changed, and that change comes alone.
         var ruleChanges = run.RuleChanges;
         await run.Client.TurnOnAsync(0b0010, Cancel);
         Assert.Equal(ChannelMask.None, simulator.RunningPulses);
-        Assert.Empty(run.Client.State.OwnRules!.CantTurnOff);
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Client.State.OwnRules is { CantTurnOff.Count: 0 });
         Assert.Equal(ruleChanges + 1, run.RuleChanges);
         boardTime.Advance(TimeSpan.FromSeconds(5));
         Assert.Equal(ChannelMask.Of(2), simulator.State.Relays);
         AssertOnlySafeRequests(simulator);
+    }
+
+    // While the status's flags can't be read, any relay may have a run: nothing is sent but the status, and the rules
+    // are unknown, while the polls still count as answered.
+    [Fact]
+    public async Task Should_SendNothing_WhileTheRunsCantBeRead()
+    {
+        await using var board = FakeBoard.Start();
+        board.Fixed = true;
+        board.StatusBody = Vm208Json.WriteStatus(new Vm208Status(0, false, 0)).Replace("\"pulseActive\":false", "\"pulseActive\":1", StringComparison.Ordinal);
+        await using var run = Run.Start(board.Port, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Null(run.Client.State.OwnRules);
+
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => board.StatusRequests == 2 && run.Time.WaitsOnly(run.PollInterval));
+        Assert.True(run.Client.State.IsConnected);
+
+        var scheduleReads = board.ScheduleRequests;
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
+        Assert.Equal(0, board.Saves);
+        Assert.Equal(scheduleReads, board.ScheduleRequests);
+
+        // Readable again: relay 1's schedule is a rule the app can turn off. (A refused command reads at once, so the
+        // poll after it waits on the clock first.)
+        board.StatusBody = null;
+        await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
+        run.Time.Advance(run.PollInterval);
+        await Wait.UntilAsync(() => run.Client.State.OwnRules is not null);
+        Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer)], run.Client.State.OwnRules);
+        Assert.Empty(run.Client.State.OwnRules!.CantTurnOff);
     }
 
     // As src/PulseAndTimer.cpp runs them: the relay toggled at the start and at the end, the status showing it meanwhile,
@@ -903,6 +940,9 @@ public sealed class Vm208ScheduleTests
 
         public bool BreakAfterSave { get; set; }
 
+        // The status it answers; null for all off, as the firmware writes it.
+        public string? StatusBody { get; set; }
+
         public HashSet<int> Timers { get; } = [1];
 
         public int Saves => Volatile.Read(ref _saves);
@@ -980,7 +1020,7 @@ public sealed class Vm208ScheduleTests
                         Interlocked.Increment(ref _statusRequests);
                     }
 
-                    var (status, body) = isSchedule ? Schedule(request) : (200, Vm208Json.WriteStatus(new Vm208Status(0, false, 0)));
+                    var (status, body) = isSchedule ? Schedule(request) : (200, StatusBody ?? Vm208Json.WriteStatus(new Vm208Status(0, false, 0)));
                     await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status} X\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"), _stop.Token);
                 }
             }

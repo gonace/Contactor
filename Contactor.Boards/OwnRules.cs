@@ -64,7 +64,7 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
         {
             if (rule is null || !_rules.Contains(rule))
             {
-                throw new ArgumentException("The app can't turn off only the board's own rules.", nameof(cantTurnOff));
+                throw new ArgumentException("Rules the app can't turn off must be among the board's rules.", nameof(cantTurnOff));
             }
 
             fixedRules.Add(rule);
