@@ -190,6 +190,10 @@ changes them on its own:
    every minute (`WaveshareClient.ModesInterval`). The modes go in the status (`WaveshareStatus.Modes`).
 2. A read the board refuses, whose answer can't be read, or that holds a mode other than 0 to 3, gives no modes (null):
    the app then knows no rules for the board, and guesses none. A read with no answer fails the poll, as any read does.
+   The relays the last read that worked showed in linkage mode stay unavailable meanwhile (`WaveshareStatus.Linkage`,
+   `BoardState.KeptUnavailable`, issue #567), also on a new connection: the board still ignores commands for them. Only a
+   read that works changes them, a relay set back to normal whose write the board echoed (step 5) leaves them, and a
+   new address or model starts with none.
 3. The poller compares only the relays and the inputs, so a change in the modes alone is raised as
    `OwnRulesChanged`, never as `StateChanged`: the safety services aren't woken by it.
 4. `WaveshareBoard` maps mode 1 to `InputLinkage`, 2 to `InputToggle` and 3 to `InputEdge`; 0 is no rule.

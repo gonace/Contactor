@@ -30,7 +30,14 @@ namespace Contactor.Boards;
 /// while disconnected as the relays are; null for a board that can't read it or before it reported it. A change in it
 /// alone comes as <see cref="IRelayBoard.PowerOnChanged"/>.
 /// </param>
-public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null, AnalogReadings? Analog = null, OwnRules? OwnRules = null, PowerOnStates? PowerOn = null)
+/// <param name="KeptUnavailable">
+/// While <see cref="OwnRules"/> is null: the relays the board last showed it controls by itself
+/// (<see cref="Boards.OwnRules.Unavailable"/>), from its last read of its rules that worked (issue #567). A read that
+/// fails says nothing about them, so they stay unavailable until a read shows them otherwise; never more relays than that
+/// read showed. None for a board that never read them, and once its state is forgotten (another address or model).
+/// Ignored while <see cref="OwnRules"/> is known.
+/// </param>
+public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null, AnalogReadings? Analog = null, OwnRules? OwnRules = null, PowerOnStates? PowerOn = null, ChannelMask KeptUnavailable = default)
 {
     public static BoardState Initial { get; } = new(false, ChannelMask.None, ChannelMask.None, null);
 
@@ -42,9 +49,9 @@ public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMas
 
     /// <summary>
     /// The relays the board controls by itself and ignores the app's commands for (<see cref="Boards.OwnRules.Unavailable"/>);
-    /// none while its rules aren't known.
+    /// while its rules aren't known, the ones it last showed (<see cref="KeptUnavailable"/>).
     /// </summary>
-    public ChannelMask Unavailable => OwnRules?.Unavailable ?? ChannelMask.None;
+    public ChannelMask Unavailable => OwnRules is { } rules ? rules.Unavailable : KeptUnavailable;
 
     /// <summary>Whether a relay is on, 1 being the first.</summary>
     public bool IsOn(int relay)

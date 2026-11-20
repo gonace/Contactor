@@ -51,6 +51,11 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     private IReadOnlyList<ushort>? _modes;
     private DateTimeOffset? _modesReadUtc;
 
+    // The relays the board confirmed set back to normal (the echo of FC 06, TurnOffModesAsync) since the last read of the
+    // modes that worked: the board said they left linkage mode, so they are taken out of the kept linkage relays while
+    // the modes can't be read (issue #567). A read that works clears it. Only under the poller's lock.
+    private ulong _linkageCleared;
+
     public WaveshareClient(IOptions<WaveshareOptions> options, BoardModel model, TimeProvider timeProvider, ILogger<WaveshareClient> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -163,7 +168,8 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     /// Sets the control mode of the relays in <paramref name="mask"/> (bit 0 = relay 1) back to normal, as a person
     /// asked: one FC 06 per relay, writing 0 to its own register, never the others'. Every relay in the mask is sent
     /// for, also when the board refuses one, and the modes are read back in the same command, so the state after it
-    /// shows what the board did. Returns the relays the board took; throws as <see cref="TurnOnAsync"/> does when it
+    /// shows what the board did. A relay whose write the board echoed is no longer kept in linkage mode while the modes
+    /// can't be read (<see cref="WaveshareStatus.Linkage"/>). Returns the relays the board took; throws as <see cref="TurnOnAsync"/> does when it
     /// took none. Throws <see cref="NotSupportedException"/> on a model without modes, before anything is sent.
     /// </summary>
     public Task<ulong> TurnOffModesAsync(ulong mask, CancellationToken cancellationToken = default)
@@ -294,7 +300,7 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
     }
 
     // Sends request(relay) for every relay in the mask: an ON, an OFF, a pulse or a mode back to normal (readModes: the
-    // read after it reads the modes too).
+    // read after it reads the modes too, and a relay whose write the board echoed leaves the kept linkage relays).
     private async Task<ulong> CommandAsync(ulong mask, Func<int, WaveshareRequest> request, CancellationToken cancellationToken, bool readModes = false)
     {
         if (!_model.Capabilities.AllRelays.ContainsAll(new ChannelMask(mask)))
@@ -350,6 +356,11 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
                 var echo = await ExchangeAsync(request, routine: false, cancellationToken).ConfigureAwait(false);
                 Trace(BoardTraceDirection.Received, WaveshareTraceText.Confirmed(echo), WaveshareModbus.Hex(echo));
                 taken.Value |= 1UL << (relay - 1);
+                if (readModes)
+                {
+                    // A mode written to normal, and the board echoed it: the relay is no longer in linkage mode.
+                    _linkageCleared |= 1UL << (relay - 1);
+                }
             }
             catch (Exception ex) when (ex is WaveshareRefusedException or WaveshareProtocolException)
             {
@@ -399,6 +410,10 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
         {
             _modes = await ReadModesAsync(last?.Modes, cancellationToken).ConfigureAwait(false);
             _modesReadUtc = _timeProvider.GetUtcNow();
+            if (_modes is not null)
+            {
+                _linkageCleared = 0;
+            }
         }
 
         var relayCount = _model.Capabilities.RelayCount;
@@ -417,9 +432,28 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
             Trace(BoardTraceDirection.Received, WaveshareTraceText.Inputs(inputs, inputCount), WaveshareModbus.Hex(inputAnswer), isRoutine: last?.Inputs == inputs);
         }
 
-        var status = new WaveshareStatus(relays, inputs, _modes);
+        // The relays in linkage mode: from the modes when they were read, otherwise as the last reading that knew them
+        // (kept while disconnected, gone once the poller forgets the board), less those the board confirmed set back to
+        // normal since: a read that failed says nothing about them (issue #567).
+        var linkage = _modes is { } modes ? Linkage(modes) : (_poller.State.Reading?.Linkage ?? 0) & ~_linkageCleared;
+        var status = new WaveshareStatus(relays, inputs, _modes, linkage);
         Volatile.Write(ref _lastTraced, status);
         return status;
+    }
+
+    // Bit per relay whose mode is linkage, bit 0 = relay 1.
+    private static ulong Linkage(IReadOnlyList<ushort> modes)
+    {
+        ulong mask = 0;
+        for (var i = 0; i < modes.Count && i < WaveshareApi.RelayModeCount; i++)
+        {
+            if (modes[i] == WaveshareApi.ModeLinkage)
+            {
+                mask |= 1UL << i;
+            }
+        }
+
+        return mask;
     }
 
     // The 8 mode registers, read with one FC 03; never written here. A read the board refuses, or whose answer can't be

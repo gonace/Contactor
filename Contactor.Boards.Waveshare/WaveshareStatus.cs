@@ -8,7 +8,12 @@ namespace Contactor.Boards.Waveshare;
 /// last read on this connection; null on a model without them, before they were read, and when the board refused the
 /// read or its answer couldn't be read: never a guess.
 /// </param>
-public sealed record WaveshareStatus(ulong Relays, ulong Inputs, IReadOnlyList<ushort>? Modes = null)
+/// <param name="Linkage">
+/// Bit per relay in linkage mode (<see cref="WaveshareApi.ModeLinkage"/>), bit 0 = relay 1, from the last read of the
+/// modes that worked: while <see cref="Modes"/> is null after a read that failed, the relays the read before showed,
+/// kept until a read shows them otherwise (issue #567). 0 before any read worked and once the state is forgotten.
+/// </param>
+public sealed record WaveshareStatus(ulong Relays, ulong Inputs, IReadOnlyList<ushort>? Modes = null, ulong Linkage = 0)
 {
     /// <summary>
     /// Compares only the relays and the inputs: a change in the modes alone isn't a change the safety services must
@@ -21,6 +26,7 @@ public sealed record WaveshareStatus(ulong Relays, ulong Inputs, IReadOnlyList<u
         return other is not null
             && Relays == other.Relays
             && Inputs == other.Inputs
+            && Linkage == other.Linkage
             && (Modes is null ? other.Modes is null : other.Modes is not null && Modes.SequenceEqual(other.Modes));
     }
 
@@ -29,6 +35,7 @@ public sealed record WaveshareStatus(ulong Relays, ulong Inputs, IReadOnlyList<u
         var hash = new HashCode();
         hash.Add(Relays);
         hash.Add(Inputs);
+        hash.Add(Linkage);
         foreach (var mode in Modes ?? [])
         {
             hash.Add(mode);
@@ -68,6 +75,9 @@ public sealed record WaveshareState(bool IsConnected, WaveshareStatus? Status, D
 
     /// <summary>The relays' control modes as last read (<see cref="WaveshareStatus.Modes"/>); null when not known.</summary>
     public IReadOnlyList<ushort>? Modes => Status?.Modes;
+
+    /// <summary>The relays in linkage mode as last read, kept while the modes are unknown (<see cref="WaveshareStatus.Linkage"/>).</summary>
+    public ulong Linkage => Status?.Linkage ?? 0;
 
     public bool IsOn(int relay)
     {

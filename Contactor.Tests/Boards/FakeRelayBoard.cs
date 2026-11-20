@@ -316,13 +316,17 @@ internal sealed class FakeRelayBoard : IRelayBoard
 
     private int _ownRulesTurnOffs;
 
-    /// <summary>Only the board's own rules change, and the board reports them as rules, not as a state.</summary>
-    public void SetOwnRules(OwnRules? rules)
+    /// <summary>
+    /// Only the board's own rules change, and the board reports them as rules, not as a state. With the rules unknown
+    /// (null), <paramref name="keptUnavailable"/> are the relays it last showed it controls by itself
+    /// (<see cref="BoardState.KeptUnavailable"/>).
+    /// </summary>
+    public void SetOwnRules(OwnRules? rules, ChannelMask keptUnavailable = default)
     {
         BoardState state;
         lock (_lock)
         {
-            state = _state = Stamp(_state with { OwnRules = rules });
+            state = _state = Stamp(_state with { OwnRules = rules, KeptUnavailable = keptUnavailable });
         }
 
         OwnRulesChanged?.Invoke(this, state);
