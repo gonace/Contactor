@@ -282,6 +282,21 @@ public sealed class Vm208ScheduleTests
         Assert.Equal(1 + (3 * 1) + (2 * Vm208Api.RelayCount), simulator.RequestCount);
     }
 
+    // The schedules are read before the board's first connected state, so unknown rules while it answers mean they
+    // couldn't be read, which the screens say (issue #551); a refused read is in the test below.
+    [Fact]
+    public async Task Should_ReadTheSchedules_BeforeTheFirstConnectedState()
+    {
+        await using var simulator = new Vm208Simulator();
+        simulator.Start();
+        await simulator.SetAlarmsAsync(2, Weekdays);
+        await using var run = Run.Start(simulator.Port);
+
+        await Wait.UntilAsync(() => run.Changes.Any(s => s.IsConnected));
+
+        Assert.Equal<OwnRule>([new OwnRule(2, OwnRuleKind.Timer)], run.Changes.First(s => s.IsConnected).OwnRules);
+    }
+
     // A schedule the app can't read never loses the board: the rules are unknown until a read works.
     [Fact]
     public async Task Should_StayConnected_WhenTheSchedulesCantBeRead()

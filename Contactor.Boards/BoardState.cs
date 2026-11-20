@@ -21,7 +21,9 @@ namespace Contactor.Boards;
 /// <param name="OwnRules">
 /// The rules of its own the board last reported (<see cref="OwnRulesAbility.Reads"/>), kept while disconnected as the
 /// relays are; empty when it has none, and null for a board that can't read them or before it reported them. A change in
-/// it alone comes as <see cref="IRelayBoard.OwnRulesChanged"/>.
+/// it alone comes as <see cref="IRelayBoard.OwnRulesChanged"/>. A board that reads them tries to before it reports its
+/// first connected state on each connection, so null while <see cref="IsConnected"/> means it couldn't read them (another
+/// firmware, a refusal, an answer it can't read), and the screens say so (issue #551).
 /// </param>
 /// <param name="PowerOn">
 /// Each relay's state after a power cut as the board last reported it (<see cref="BoardCapabilities.PowerOn"/>), kept
