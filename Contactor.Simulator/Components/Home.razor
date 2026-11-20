@@ -101,7 +101,7 @@
                                         <input type="radio" name="model" value="@id" checked="@on" @onchange="() => _add.ChooseModel(id)" />
                                         <span class="name">@model.Model.ModelName</span>
                                         <span data-label="relays">@capabilities.RelayCount.ToString(CultureInfo.InvariantCulture)</span>
-                                        <span data-label="inputs">@Count(capabilities.InputCount)</span>
+                                        <span data-label="inputs">@(capabilities.InputCountFromBoard ? "as relays" : Count(capabilities.InputCount))</span>
                                         <span data-label="analog">@Count(capabilities.AnalogInputCount)</span>
                                         <span>@model.Talks</span>
                                         <span class="mono" data-label="port">@model.PortText</span>
