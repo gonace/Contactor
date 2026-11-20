@@ -16,11 +16,21 @@ public sealed class Vm204Board : IRelayBoard
     /// </summary>
     public static readonly AnalogAbility Vm204Analog = new(Vm204Api.AnalogInputCount, Vm204Api.AnalogMaxCounts, Vm204Api.AnalogFullScaleVolts);
 
+    /// <summary>
+    /// The pulse (<see cref="Vm204Api.RelayPulsePath"/>): whole seconds, 1 s to 2,147,483 s, where the firmware's
+    /// <c>seconds * 1000</c> still fits its 32-bit <c>int</c>.
+    /// </summary>
+    public static readonly PulseAbility Vm204Pulse = new(
+        TimeSpan.FromSeconds(Vm204Api.PulseShortestSeconds),
+        TimeSpan.FromSeconds(Vm204Api.PulseLongestSeconds),
+        TimeSpan.FromSeconds(1));
+
     public static readonly BoardCapabilities Vm204Capabilities = new(
         Vm204Api.RelayCount,
         InputCount: Vm204Api.InputCount,
         ReportsChanges: false,
         Analog: Vm204Analog,
+        Pulse: Vm204Pulse,
         OwnRules: OwnRulesAbility.None);
 
     private readonly Vm204Client _client;
@@ -60,10 +70,20 @@ public sealed class Vm204Board : IRelayBoard
         return relays;
     }
 
-    // No pulse yet (Issue #182).
-    public Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Pulses the relays in one request, as <see cref="TurnOnAsync"/>: the board takes the mask at once, or the command
+    /// fails. A length that isn't whole seconds from 1 s to 2,147,483 s (<see cref="Vm204Pulse"/>) gets
+    /// <see cref="ArgumentOutOfRangeException"/> before anything is sent.
+    /// </summary>
+    public async Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException("This board can't pulse a relay.");
+        if (!Vm204Pulse.CanDo(length))
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, "The VM204 pulses for whole seconds, 1 s to 2,147,483 s.");
+        }
+
+        await _client.PulseAsync(ToMask(relays), (int)length.TotalSeconds, cancellationToken).ConfigureAwait(false);
+        return relays;
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default)

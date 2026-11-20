@@ -36,6 +36,34 @@ public sealed class Vm204SimulatedBoardTests
         Assert.Equal(ChannelMask.Of([2, 4]), board.State.Relays);
     }
 
+    // As startPulse and vTimerCallback: on at once, off when the time is up, the pulse flag meanwhile. A second pulse while
+    // one runs changes nothing, and on or off doesn't stop the timer, so a relay turned on again still goes off at its end.
+    [Fact]
+    public async Task Should_PulseAsTheFirmware()
+    {
+        var time = new ManualTimeProvider();
+        await using var board = new Vm204Simulator { TimeProvider = time };
+        board.Start();
+
+        var pulse = await GetAsync(board.Port, $"/api/relay/pulse?key={board.Key}&relay=1&time=10");
+        Assert.EndsWith("{\"relays\": [true,false,false,false],\"pulse\": [true,false,false,false],\"inputs\": [false,false,false,false],\"analog\": 0}", pulse, StringComparison.Ordinal);
+        Assert.Equal("400", Code(await GetAsync(board.Port, "/api/relay/pulse?key=wrong&relay=2&time=10")));
+        await GetAsync(board.Port, $"/api/relay/pulse?key={board.Key}&relay=2&time=0");
+        await GetAsync(board.Port, $"/api/relay/pulse?key={board.Key}&relay=3");
+        Assert.Equal(ChannelMask.Of(1), board.State.Relays);
+
+        time.Advance(TimeSpan.FromSeconds(4));
+        await GetAsync(board.Port, $"/api/relay/off?key={board.Key}&relay=1");
+        await GetAsync(board.Port, $"/api/relay/pulse?key={board.Key}&relay=1&time=60");
+        Assert.Equal(ChannelMask.None, board.State.Relays);
+        await GetAsync(board.Port, $"/api/relay/on?key={board.Key}&relay=1");
+        Assert.Equal(ChannelMask.Of(1), board.Pulsing);
+
+        time.Advance(TimeSpan.FromSeconds(6));
+        Assert.Equal(ChannelMask.None, board.State.Relays);
+        Assert.Equal(ChannelMask.None, board.Pulsing);
+    }
+
     // The login changed on the board: the old one is refused, the new one gives the key, and the key the app has works.
     [Fact]
     public async Task Should_TakeOnlyTheNewLogin_AfterItChanged()

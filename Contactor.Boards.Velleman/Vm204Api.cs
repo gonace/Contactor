@@ -29,6 +29,28 @@ public static class Vm204Api
     /// <summary><c>GET /api/relay/off?key=K&amp;relay=1,3</c>: as <see cref="RelayOnPath"/>, turning them off.</summary>
     public const string RelayOffPath = "/api/relay/off";
 
+    /// <summary>
+    /// <c>GET /api/relay/pulse?key=K&amp;relay=1,3&amp;time=S</c>: turns the listed relays on and the board turns each off
+    /// again by itself after S seconds; answers the status JSON, or 400 for a wrong key. <c>Main/main.c</c>
+    /// <c>httpServerUriNotFoundCallback</c> (the <c>"pulse"</c> branch, lines 1065–1091), <c>Main/api.c</c>
+    /// <c>parsePulseAPICommand</c> (lines 109–160: <c>time</c> by <c>atoi</c>, in any order), <c>pulse.c</c>
+    /// <c>startPulse</c> (lines 31–55: a relay whose pulse already runs is left as it is, else its one-shot FreeRTOS timer
+    /// gets <c>periodInSeconds * 1000</c> ticks of 1 ms and the relay goes on), <c>Main/main.c</c> <c>vTimerCallback</c>
+    /// (lines 459–470: at the end the relay goes off and its <c>pulse</c> flag false). <c>/api/relay/on</c> and
+    /// <c>/off</c> don't stop the timer (<c>Main/relays.c</c> <c>setRelayValue</c>). Not on the board's own API reference
+    /// page (<c>resources/www/api_reference.shtml</c>), which lists only auth, on, off, toggle, status and names.
+    /// </summary>
+    public const string RelayPulsePath = "/api/relay/pulse";
+
+    /// <summary>The shortest pulse in seconds: the board's settings page takes 1 and more (<c>resources/www/settings.shtml</c>), and 0 is a timer period FreeRTOS doesn't take.</summary>
+    public const int PulseShortestSeconds = 1;
+
+    /// <summary>
+    /// The longest pulse in seconds: <c>startPulse</c> multiplies the seconds by 1000 in a 32-bit <c>int</c>
+    /// (<c>pulse.c</c> line 40), which overflows above 2,147,483 s, although the settings page offers up to 4,000,000.
+    /// </summary>
+    public const int PulseLongestSeconds = 2_147_483;
+
     /// <summary>The port the board's web server listens on unless someone changed it (<c>Main/VM204.c</c> LoadDefaultSettings).</summary>
     public const int DefaultPort = 80;
 

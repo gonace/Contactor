@@ -56,13 +56,16 @@ public static class Vm204Json
         return key;
     }
 
-    /// <summary>A status as the firmware writes it, with its spaces; for the simulator.</summary>
-    public static string WriteStatus(Vm204Status status)
+    /// <summary>
+    /// A status as the firmware writes it, with its spaces, and <paramref name="pulses"/> (bit 0 = relay 1) the relays
+    /// whose pulse runs; for the simulator.
+    /// </summary>
+    public static string WriteStatus(Vm204Status status, byte pulses = 0)
     {
         ArgumentNullException.ThrowIfNull(status);
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{{\"relays\": [{Bits(status.Relays, Vm204Api.RelayCount)}],\"pulse\": [{Bits(0, Vm204Api.RelayCount)}],\"inputs\": [{Bits(status.Inputs, Vm204Api.InputCount)}],\"analog\": {status.Analog ?? 0}}}");
+            $"{{\"relays\": [{Bits(status.Relays, Vm204Api.RelayCount)}],\"pulse\": [{Bits(pulses, Vm204Api.RelayCount)}],\"inputs\": [{Bits(status.Inputs, Vm204Api.InputCount)}],\"analog\": {status.Analog ?? 0}}}");
     }
 
     /// <summary>A login answer as the firmware writes it; for the simulator.</summary>

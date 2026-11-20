@@ -160,6 +160,19 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
         return CommandAsync(Vm204Api.RelayOffPath, mask, cancellationToken);
     }
 
+    /// <summary>
+    /// Pulses the relays in <paramref name="mask"/> (bit 0 = relay 1, relays 1–4) for <paramref name="seconds"/>, in one
+    /// request: the board turns them on, and off again by itself (<see cref="Vm204Api.RelayPulsePath"/>). A length
+    /// outside <see cref="Vm204Api.PulseShortestSeconds"/>–<see cref="Vm204Api.PulseLongestSeconds"/> throws
+    /// <see cref="ArgumentOutOfRangeException"/> before anything is sent.
+    /// </summary>
+    public Task PulseAsync(byte mask, int seconds, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(seconds, Vm204Api.PulseShortestSeconds);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(seconds, Vm204Api.PulseLongestSeconds);
+        return CommandAsync(Vm204Api.RelayPulsePath, mask, cancellationToken, string.Create(CultureInfo.InvariantCulture, $"&time={seconds}"));
+    }
+
     /// <summary>Polls at once; the answer comes as <see cref="StateChanged"/> if anything changed.</summary>
     public void Refresh()
     {
@@ -269,7 +282,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
         }
     }
 
-    private async Task CommandAsync(string path, byte mask, CancellationToken cancellationToken)
+    private async Task CommandAsync(string path, byte mask, CancellationToken cancellationToken, string extra = "")
     {
         if (mask > (1 << Vm204Api.RelayCount) - 1)
         {
@@ -300,7 +313,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
 
                     // Every failure is thrown as it is, so the poller counts it as a failed poll, as it would a poll's.
                     // A refused key is dropped: the poll the poller asks for at once logs in again.
-                    var answer = await SendAsync($"{path}?key={key}&relay={Vm204TraceText.RelayParameter(mask)}", routine: false, token)
+                    var answer = await SendAsync($"{path}?key={key}&relay={Vm204TraceText.RelayParameter(mask)}{extra}", routine: false, token)
                         .ConfigureAwait(false);
                     return ReadStatusAnswer(answer, key);
                 },
