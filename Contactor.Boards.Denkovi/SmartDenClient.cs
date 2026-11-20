@@ -170,13 +170,16 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
     /// Turns off the board's own <paramref name="rules"/>, as a person asked, and reads the week schedule back in the same
     /// command. Each <see cref="OwnRuleKind.Timer"/> rule turns off every row that switches its relay as last read, with
     /// one FC 06 writing 0 to that row's enable flag, each row once: the other relays such a row switches lose their
-    /// timer too, as <see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/> says. A row's outputs code, state and time are
-    /// never written. A refused write or one whose answer can't be read doesn't stop the others. A rule given twice is
-    /// taken once. Returns the rules asked whose rows all took it (also when, as last read, no row switches its relay any
-    /// more), in relay order; none, and nothing sent, for none asked. Throws <see cref="ArgumentOutOfRangeException"/>
-    /// for another kind of rule or a relay the board doesn't have, and <see cref="BoardNotConnectedException"/> without a
-    /// connection, both before anything is sent; and <see cref="BoardNotConnectedException"/> when the schedule isn't
-    /// known (nothing sent), the board took none of them or didn't answer.
+    /// timer too, as <see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/> says. A row is known only by its place, so the
+    /// schedule is read again first, in the same command, and a row is written only while it still switches the same
+    /// relays: a row that changed (e.g. moved up when one before it was deleted on the board's web page) is left. A row's
+    /// outputs code, state and time are never written. A refused write or one whose answer can't be read doesn't stop the
+    /// others. A rule given twice is taken once. Returns the rules asked whose rows all took it, the rows as last read and as
+    /// read again (also when no row switches its relay), in relay order; a rule with a row that changed isn't among them; none, and nothing sent, for none asked.
+    /// Throws <see cref="ArgumentOutOfRangeException"/> for another kind of rule or a relay the board doesn't have, and
+    /// <see cref="BoardNotConnectedException"/> without a connection, both before anything is sent; and
+    /// <see cref="BoardNotConnectedException"/> when the schedule isn't known or couldn't be read again, or every row
+    /// changed (nothing sent), the board took none of them or didn't answer.
     /// </summary>
     public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
@@ -428,12 +431,12 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
         }
     }
 
-    // Under the poller's lock: one FC 06 per row behind the timers asked, then the board's state read back with the
-    // schedule. Puts the rules the board took in taken.
+    // Under the poller's lock: the schedule read again, then one FC 06 per row behind the timers asked that is still as
+    // the person saw it, then the board's state read back with the schedule. Puts the rules the board took in taken.
     private async Task<CommandReading<SmartDenStatus>> TurnOffRowsAndReadAsync(IReadOnlyList<OwnRule> asked, StrongBox<IReadOnlyList<OwnRule>> taken, CancellationToken cancellationToken)
     {
         // The schedule as last read, which the person saw.
-        if (_schedule is not { } schedule)
+        if (_schedule is not { } seen)
         {
             // Nothing went out: not an answer, and not a failure of the board.
             throw new BoardNotConnectedException("The smartDEN board's week schedule isn't known yet; nothing was sent.");
@@ -442,7 +445,32 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
         // Whatever comes of it, the next read reads the schedule again.
         _scheduleReadUtc = null;
 
-        List<SmartDenRow> rows = [.. asked.SelectMany(r => schedule.Switching(r.Relay)).Distinct().OrderBy(r => r.Row)];
+        // A row is known only by its place, and the board's web page may move rows up when one is deleted: read the rows
+        // again, and write only a row that still switches the relays the person saw. A row that changed is left, and its
+        // timers aren't taken: the next state shows the rules as they are now.
+        var fresh = await ReadScheduleAsync(cancellationToken).ConfigureAwait(false);
+        _schedule = fresh;
+        if (fresh is null)
+        {
+            throw new BoardNotConnectedException("The smartDEN board's week schedule couldn't be read again; nothing was sent.");
+        }
+
+        List<SmartDenRow> rows = [];
+        foreach (var row in asked.SelectMany(r => seen.Switching(r.Relay)).Distinct().OrderBy(r => r.Row))
+        {
+            if (fresh.Rows.Contains(row))
+            {
+                rows.Add(row);
+            }
+            else
+            {
+                Trace(
+                    BoardTraceDirection.None,
+                    string.Create(CultureInfo.InvariantCulture, $"Week schedule row {row.Row} changed since it was read: not turned off"),
+                    isError: true);
+            }
+        }
+
         HashSet<int> off = [];
         string? refusal = null;
         var unreadable = false;
@@ -470,10 +498,18 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
             }
         }
 
-        List<OwnRule> done = [.. asked.Where(r => schedule.Switching(r.Relay).All(row => off.Contains(row.Row)))];
+        // A timer is taken when every row behind it went off: those the person saw, and those the board has now. A timer
+        // with a row that changed isn't, also when that row no longer switches it.
+        List<OwnRule> done = [.. asked.Where(r => seen.Switching(r.Relay).Concat(fresh.Switching(r.Relay)).All(row => off.Contains(row.Row)))];
         if (done.Count == 0)
         {
-            throw unreadable ? new SmartDenProtocolException(refusal!) : new BoardRefusedException(refusal!);
+            if (refusal is null)
+            {
+                // Nothing went out: the rows changed since the person saw them.
+                throw new BoardNotConnectedException("The smartDEN board's week schedule changed; nothing was sent.");
+            }
+
+            throw unreadable ? new SmartDenProtocolException(refusal) : new BoardRefusedException(refusal);
         }
 
         taken.Value = [.. done.OrderBy(r => r.Relay)];

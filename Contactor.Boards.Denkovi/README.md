@@ -189,7 +189,10 @@ The week schedule is the board's own rules (`SmartDenApi.OwnRules`: `Reads`, `Tu
   makes the rules unknown (null). It never fails the poll: the relays are read first, and the poll keeps them. A change
   of the rules alone comes as `OwnRulesChanged`.
 - `TurnOffOwnRulesAsync`, only on a person's press, writes 0 to the enable flag of every row that switches a relay
-  asked, as last read, with one function 06 per row. It never writes the outputs code, so the row's other relays lose
+  asked, as last read, with one function 06 per row. A row is known only by its place, and the web page may move rows
+  up when one is deleted, so the client first reads both blocks again in the same command. It writes a row only while
+  it still switches the same relays. A row that changed is left, its timers aren't returned, and the next state shows
+  the rules as they are now. When every row asked changed, nothing is written. It never writes the outputs code, so the row's other relays lose
   their timer too: a row is turned off whole. A refused write doesn't stop the others. It returns the timers whose rows
   all took it, and reads the schedule back in the same command. When the schedule isn't known, it sends nothing.
 - It doesn't read the pulse width of each relay (0x6000 to 0x600F): the board turns a relay off again after that time,

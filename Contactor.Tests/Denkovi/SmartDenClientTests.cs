@@ -217,6 +217,7 @@ public sealed class SmartDenClientTests
         await using var simulator = Started();
         await using var run = ClientRun.Start(simulator.Port);
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var readAt = run.Time.GetUtcNow();
         var noAnswer = $"The smartDEN board did not answer within {SmartDenClient.RequestTimeout.TotalSeconds} s.";
 
         simulator.NoAnswer = true;
@@ -235,10 +236,16 @@ public sealed class SmartDenClientTests
         Assert.Contains(run.Traces, t => t.Text == $"Connection lost: {noAnswer}" && t.IsError);
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
 
+        // A row added while the board was lost, less than a minute after the last read: the first poll on the new
+        // connection reads the schedule again.
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(0, Enabled: true, Relays: 0b10, TurnOn: true, Hour: 6, Minute: 0, WeekDays: 0x7F));
         simulator.NoAnswer = false;
         await Wait.UntilAsync(() => run.Traces.Any(t => t.Text == "Trying again in 1 s") && run.Time.WaitsOnly(TimeSpan.FromSeconds(1)));
         run.Time.Advance(TimeSpan.FromSeconds(1));
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        Assert.True(run.Time.GetUtcNow() - readAt < SmartDenClient.RulesInterval);
+        Assert.Equal(new SmartDenSchedule([new SmartDenRow(0, 0b10)]), run.Client.State.Schedule);
+        Assert.Equal(2, simulator.ReceivedRequests.Count(r => r.EndsWith("00 03 62 00 00 1E", StringComparison.Ordinal)));
         Assert.Equal(1UL, await run.Client.TurnOnAsync(0b0001, Cancel));
         Assert.Equal(1UL, simulator.Relays);
     }
@@ -711,12 +718,90 @@ public sealed class SmartDenClientTests
 
         Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], taken);
         Assert.Equal(
-            [.. FirstPoll, "00 04 00 00 00 06 00 06 62 00 00 00", ReadRelays(5), ReadSchedule(6, SmartDenApi.RowEnableRegister), ReadSchedule(7, SmartDenApi.RowOutputsRegister)],
+            [
+                .. FirstPoll,
+                ReadSchedule(4, SmartDenApi.RowEnableRegister),
+                ReadSchedule(5, SmartDenApi.RowOutputsRegister),
+                "00 06 00 00 00 06 00 06 62 00 00 00",
+                ReadRelays(7),
+                ReadSchedule(8, SmartDenApi.RowEnableRegister),
+                ReadSchedule(9, SmartDenApi.RowOutputsRegister),
+            ],
             simulator.ReceivedRequests);
         Assert.Equal(0b0011, simulator.Register(SmartDenApi.RowOutputsRegister));
         Assert.Equal(new SmartDenSchedule([new SmartDenRow(3, 0b0010), new SmartDenRow(5, 0b1000)]), run.Client.State.Schedule);
         Assert.Contains(run.Traces, t => t.Text == "Turn off week schedule row 0" && t.Direction == BoardTraceDirection.Sent);
         Assert.Contains(run.Traces, t => t.Text == "Week schedule row 0 turned off" && t.Direction == BoardTraceDirection.Received);
+    }
+
+    [Fact]
+    public async Task Should_WriteOnlyTheRowsStillAsSeen_WhenTheScheduleChangedBeforeThePress()
+    {
+        await using var simulator = Started();
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(0, Enabled: true, Relays: 0b0001, TurnOn: true, Hour: 6, Minute: 0, WeekDays: 0x7F));
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(1, Enabled: true, Relays: 0b0010, TurnOn: false, Hour: 22, Minute: 0, WeekDays: 0x7F));
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(5, Enabled: true, Relays: 0b1000, TurnOn: true, Hour: 7, Minute: 0, WeekDays: 0x7F));
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // On the board's web page row 0 is deleted, and row 1 moves up into its place.
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(0, Enabled: true, Relays: 0b0010, TurnOn: false, Hour: 22, Minute: 0, WeekDays: 0x7F));
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(1, Enabled: false, Relays: 0, TurnOn: false, Hour: 0, Minute: 0, WeekDays: 0));
+
+        var taken = await run.Client.TurnOffOwnRulesAsync(
+            [new OwnRule(1, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.Timer), new OwnRule(4, OwnRuleKind.Timer)],
+            Cancel);
+
+        // Row 5 is as seen and goes off. Row 0 now holds relay 2's OFF timer, which the person never saw at that place:
+        // it isn't written. Relay 1's and relay 2's timers aren't taken: their rows changed.
+        Assert.Equal([new OwnRule(4, OwnRuleKind.Timer)], taken);
+        Assert.Equal(
+            [
+                .. FirstPoll,
+                ReadSchedule(4, SmartDenApi.RowEnableRegister),
+                ReadSchedule(5, SmartDenApi.RowOutputsRegister),
+                "00 06 00 00 00 06 00 06 62 05 00 00",
+                ReadRelays(7),
+                ReadSchedule(8, SmartDenApi.RowEnableRegister),
+                ReadSchedule(9, SmartDenApi.RowOutputsRegister),
+            ],
+            simulator.ReceivedRequests);
+        Assert.Equal(SmartDenApi.RowEnabled, simulator.Register(SmartDenApi.RowEnableRegister));
+        Assert.Equal(new SmartDenSchedule([new SmartDenRow(0, 0b0010)]), run.Client.State.Schedule);
+        Assert.Contains(run.Traces, t => t.Text == "Week schedule row 1 changed since it was read: not turned off" && t.IsError);
+    }
+
+    [Fact]
+    public async Task Should_SendNoWrite_WhenEveryRowAskedChangedBeforeThePress()
+    {
+        await using var simulator = Started();
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(3, Enabled: true, Relays: 0b01, TurnOn: true, Hour: 6, Minute: 0, WeekDays: 0x7F));
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        // Row 3 now switches relay 2 instead.
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(3, Enabled: true, Relays: 0b10, TurnOn: false, Hour: 22, Minute: 0, WeekDays: 0x7F));
+
+        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
+
+        Assert.Equal("The smartDEN board's week schedule changed; nothing was sent.", error.Message);
+        Assert.DoesNotContain(simulator.ReceivedRequests, r => r.Contains(" 00 06 62 ", StringComparison.Ordinal));
+        Assert.Equal(SmartDenApi.RowEnabled, simulator.Register((ushort)(SmartDenApi.RowEnableRegister + 3)));
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    [Fact]
+    public async Task Should_ReadOnlyTheRelaysAfterASwitch_EvenWhenTheScheduleIsDue()
+    {
+        await using var simulator = Started();
+        await using var run = ClientRun.Start(simulator.Port, pollSeconds: 120);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        // More than a minute since the schedule was read, and no poll yet.
+        run.Time.Advance(SmartDenClient.RulesInterval + TimeSpan.FromSeconds(1));
+        Assert.Equal(1UL, await run.Client.TurnOnAsync(1, Cancel));
+
+        Assert.Equal([.. FirstPoll, "00 04 00 00 00 06 00 05 00 00 FF 00", ReadRelays(5)], simulator.ReceivedRequests);
     }
 
     [Fact]
@@ -808,11 +893,10 @@ public sealed class SmartDenClientTests
         Assert.Contains(run.Traces, t => t.Text == trace && t.IsError);
         Assert.Contains(run.Traces, t => t.Text.StartsWith("Couldn't read the week schedule", StringComparison.Ordinal) || t.Text.StartsWith("Week schedule enable flags", StringComparison.Ordinal));
 
-        // Nothing is known to turn off: nothing goes.
-        var requests = board.Requests;
+        // Nothing is known to turn off: nothing goes. The poll the poller makes after it may come, but no write.
         var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
         Assert.Equal("The smartDEN board's week schedule isn't known yet; nothing was sent.", error.Message);
-        Assert.Equal(requests, board.Requests);
+        Assert.DoesNotContain(SmartDenApi.WriteSingleRegister, board.Functions);
         Assert.True(run.Client.State.IsConnected);
     }
 
@@ -827,7 +911,9 @@ public sealed class SmartDenClientTests
         // A minute later the relays come, the schedule doesn't: the poll still counts, and the rules are unknown.
         board.AnswersSchedule = false;
         run.Time.Advance(run.PollInterval);
-        await Wait.UntilAsync(() => run.Time.WaitsOnly(SmartDenClient.RequestTimeout));
+
+        // The schedule's read has reached the board: the timeout that waits now is its own, not the relays' read's.
+        await Wait.UntilAsync(() => board.Functions.Contains(SmartDenApi.ReadHoldingRegisters) && run.Time.WaitsOnly(SmartDenClient.RequestTimeout));
         run.Time.Advance(SmartDenClient.RequestTimeout);
         await Wait.UntilAsync(() => run.Client.State.Schedule is null && run.Time.WaitsOnly(run.PollInterval));
 
@@ -984,6 +1070,7 @@ public sealed class SmartDenClientTests
         private readonly CancellationTokenSource _stop = new();
         private readonly Func<byte[], byte[]?> _answer;
         private readonly Task _loop;
+        private readonly System.Collections.Concurrent.ConcurrentQueue<byte> _functions = new();
         private int _requests;
         private int _connections;
 
@@ -999,6 +1086,9 @@ public sealed class SmartDenClientTests
         public int Requests => Volatile.Read(ref _requests);
 
         public int Connections => Volatile.Read(ref _connections);
+
+        /// <summary>The function code of each request passed to the test's function, in order.</summary>
+        public IReadOnlyList<byte> Functions => [.. _functions];
 
         /// <summary>
         /// Whether it answers FC 03 by itself with a week schedule that has no row on, not counted in <see cref="Requests"/>
@@ -1067,6 +1157,7 @@ public sealed class SmartDenClientTests
                         }
 
                         Interlocked.Increment(ref _requests);
+                        _functions.Enqueue(request[7]);
                         if (_answer(request) is { } answer)
                         {
                             await stream.WriteAsync(answer, _stop.Token);
