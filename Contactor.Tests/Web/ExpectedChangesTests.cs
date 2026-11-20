@@ -153,4 +153,57 @@ public sealed class ExpectedChangesTests
             Assert.False(_expected.TryConsume(relayId, on: false, _time.GetUtcNow().UtcDateTime));
         }
     }
+
+    // Issue #588: no longer on its way once a status shows the change, before the recorder handles that status, which
+    // then still uses it up, once.
+    [Fact]
+    public void Should_NoLongerBePending_OnceAStatusShowsTheChange_AndStillBeUsedUpOnce()
+    {
+        _expected.Observe(Status(ChannelMask.None));
+        _expected.Expect(ChannelMask.Of(1), on: true);
+
+        _expected.Observe(Status(ChannelMask.Of(1)));
+
+        Assert.False(_expected.IsPending(1, on: true));
+        Assert.True(_expected.TryConsume(1, on: true, Received));
+        Assert.False(_expected.TryConsume(1, on: true, Received));
+    }
+
+    // Relay 1 on; one person turns it off and another on again. A status that still shows it on is from before the OFF:
+    // it marks neither. Only the change to off marks the OFF, and the change back to on the ON.
+    [Fact]
+    public void Should_StayPending_WhenAStatusFromBeforeTheCommandShowsTheRelayThatWay()
+    {
+        _expected.Observe(Status(ChannelMask.Of(1)));
+        _expected.Expect(ChannelMask.Of(1), on: false);
+        _expected.Expect(ChannelMask.Of(1), on: true);
+
+        _expected.Observe(Status(ChannelMask.Of(1)));
+        Assert.True(_expected.IsPending(1, on: false));
+        Assert.True(_expected.IsPending(1, on: true));
+
+        _expected.Observe(Status(ChannelMask.None));
+        Assert.False(_expected.IsPending(1, on: false));
+        Assert.True(_expected.IsPending(1, on: true));
+
+        _expected.Observe(Status(ChannelMask.Of(1)));
+        Assert.False(_expected.IsPending(1, on: true));
+    }
+
+    // A change the recorder used up for a status it failed to save is expected again, as already shown.
+    [Fact]
+    public void Should_ExpectAgain_AsAlreadyShown()
+    {
+        _expected.ExpectAgain(1, on: true);
+
+        Assert.False(_expected.IsPending(1, on: true));
+        Assert.True(_expected.TryConsume(1, on: true, Received));
+    }
+
+    private DateTime Received => _time.GetUtcNow().UtcDateTime;
+
+    private BoardState Status(ChannelMask relays)
+    {
+        return new BoardState(IsConnected: true, relays, ChannelMask.None, _time.GetUtcNow());
+    }
 }

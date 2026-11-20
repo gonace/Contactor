@@ -10,6 +10,9 @@ namespace Contactor.Web.Features.Events;
 /// command that changed nothing gets no status at all, so its expectation must not linger and hide a later
 /// external change. Expiry is judged by when statuses arrived, not by the clock when one is handled: the recorder may
 /// still be behind, and an expectation it hasn't reached yet must not be thrown away by a newer command.
+/// An expectation is on its way (<see cref="IsPending"/>) until a status shows the change (<see cref="Observe"/>, called
+/// by <c>LiveBoard</c> before it raises the status), and the recorder uses it up (<see cref="TryConsume"/>) when it
+/// handles that status, which may be later.
 /// </summary>
 public sealed class ExpectedChanges
 {
@@ -20,7 +23,10 @@ public sealed class ExpectedChanges
 
     private readonly Func<DateTime> _utcNow;
     private readonly Lock _lock = new();
-    private readonly List<(int Channel, bool On, DateTime ExpiresUtc)> _expected = [];
+    private readonly List<Entry> _expected = [];
+
+    // The relays of the last connected status observed; null at start and once the board's state is forgotten.
+    private ChannelMask? _shown;
 
     public ExpectedChanges(LocalClock clock)
     {
@@ -45,7 +51,7 @@ public sealed class ExpectedChanges
         {
             foreach (var channel in mask.Channels)
             {
-                _expected.Add((channel, on, expires));
+                _expected.Add(new Entry(channel, on, expires, Seen: false));
             }
 
             if (_expected.Count > MaxExpected)
@@ -89,6 +95,64 @@ public sealed class ExpectedChanges
         lock (_lock)
         {
             _expected.Clear();
+            _shown = null;
+        }
+    }
+
+    /// <summary>
+    /// Adds an expectation the board has already shown, for the usual <see cref="Lifetime"/>: one the recorder used up
+    /// for a status it failed to save, so the next try matches it again. It is not on its way.
+    /// </summary>
+    public void ExpectAgain(int channel, bool on)
+    {
+        var expires = _utcNow() + Lifetime;
+        lock (_lock)
+        {
+            _expected.Add(new Entry(channel, on, expires, Seen: true));
+            if (_expected.Count > MaxExpected)
+            {
+                _expected.RemoveRange(0, _expected.Count - MaxExpected);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Takes in a status the board raised, before anything else handles it: each relay it shows change since the last
+    /// connected status marks the expectation for that change as shown, the same one <see cref="TryConsume"/> takes
+    /// for it, so it is no longer on its way. Only a change marks one, never a status that merely shows the relay that
+    /// way: a status from before the command shows the relay as it was. The first status after start or after the
+    /// board's state was forgotten marks nothing. A lost connection keeps the last status, as the recorder does.
+    /// </summary>
+    public void Observe(BoardState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        lock (_lock)
+        {
+            if (!state.IsConnected)
+            {
+                if (state.LastContactUtc is null)
+                {
+                    _shown = null;
+                }
+
+                return;
+            }
+
+            if (_shown is { } shown)
+            {
+                var received = state.LastContactUtc?.UtcDateTime ?? _utcNow();
+                foreach (var channel in (shown.Except(state.Relays) | state.Relays.Except(shown)).Channels)
+                {
+                    var on = state.Relays.Contains(channel);
+                    var index = _expected.FindIndex(e => !e.Seen && e.Channel == channel && e.On == on && e.ExpiresUtc > received);
+                    if (index >= 0)
+                    {
+                        _expected[index] = _expected[index] with { Seen = true };
+                    }
+                }
+            }
+
+            _shown = state.Relays;
         }
     }
 
@@ -101,13 +165,13 @@ public sealed class ExpectedChanges
         var now = _utcNow();
         lock (_lock)
         {
-            return _expected.Exists(e => e.Channel == channel && e.On == on && e.ExpiresUtc > now);
+            return _expected.Exists(e => !e.Seen && e.Channel == channel && e.On == on && e.ExpiresUtc > now);
         }
     }
 
     /// <summary>
     /// Whether the app asked for this change; if so the expectation is used up, so a second identical change is
-    /// external.
+    /// external. One a status showed (<see cref="Observe"/>) first, so the recorder takes the same one.
     /// </summary>
     /// <param name="channel">The relay's channel that changed.</param>
     /// <param name="on">What it changed to.</param>
@@ -119,7 +183,12 @@ public sealed class ExpectedChanges
     {
         lock (_lock)
         {
-            var index = _expected.FindIndex(e => e.Channel == channel && e.On == on && e.ExpiresUtc > receivedUtc);
+            var index = _expected.FindIndex(e => e.Seen && e.Channel == channel && e.On == on && e.ExpiresUtc > receivedUtc);
+            if (index < 0)
+            {
+                index = _expected.FindIndex(e => e.Channel == channel && e.On == on && e.ExpiresUtc > receivedUtc);
+            }
+
             if (index >= 0)
             {
                 _expected.RemoveAt(index);
@@ -131,4 +200,7 @@ public sealed class ExpectedChanges
             return index >= 0;
         }
     }
+
+    // Seen: a status showed the change, so it is no longer on its way; the recorder still uses it up.
+    private readonly record struct Entry(int Channel, bool On, DateTime ExpiresUtc, bool Seen);
 }

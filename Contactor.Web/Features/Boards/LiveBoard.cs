@@ -491,7 +491,9 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         replaced!.TrySetResult();
         lock (_stateLock)
         {
-            Raise(StateChanged, board.Board.State);
+            var state = board.Board.State;
+            Expected.Observe(state);
+            Raise(StateChanged, state);
         }
 
         if (disposeOld)
@@ -614,13 +616,15 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         }
     }
 
-    // Only the current model's: one replaced may still be in the middle of telling.
+    // Only the current model's: one replaced may still be in the middle of telling. The expectations see the status
+    // first, so no subscriber counts a change the board shows as still on its way.
     private void OnStateChanged(object? sender, BoardState state)
     {
         lock (_stateLock)
         {
             if (ReferenceEquals(sender, Active?.Board))
             {
+                Expected.Observe(state);
                 Raise(StateChanged, state);
             }
         }
