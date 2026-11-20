@@ -268,6 +268,85 @@ public sealed class SmartDenSimulatedBoardTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => simulator.SwitchRelayAsync(0, true));
     }
 
+    [Fact]
+    public async Task Should_AnswerTheManualsRegisterExamples_ByteForByte()
+    {
+        await using var simulator = Started();
+        using var tcp = await ConnectAsync(simulator);
+        var stream = tcp.GetStream();
+
+        // Tables 10.21 and 10.22: the start date it holds, 10/09/2020.
+        Assert.Equal("00 04 00 00 00 09 00 03 06 00 0A 00 09 07 E4", await AskAsync(stream, "00 04 00 00 00 06 00 03 61 00 00 03"));
+
+        // Tables 10.27 and 10.28: the same date written with FC 10, then read back.
+        Assert.Equal("00 06 00 00 00 06 00 10 61 00 00 03", await AskAsync(stream, "00 06 00 00 00 0D 00 10 61 00 00 03 06 00 0A 00 09 07 E4"));
+        Assert.Equal("00 07 00 00 00 05 00 03 02 07 E4", await AskAsync(stream, "00 07 00 00 00 06 00 03 61 02 00 01"));
+    }
+
+    [Theory]
+    [InlineData("00 01 00 00 00 06 00 03 62 00 00 1F", "00 01 00 00 00 03 00 83 02")]
+    [InlineData("00 01 00 00 00 06 00 03 62 1D 00 02", "00 01 00 00 00 03 00 83 02")]
+    [InlineData("00 01 00 00 00 06 00 03 61 03 00 01", "00 01 00 00 00 03 00 83 02")]
+    [InlineData("00 01 00 00 00 06 00 03 62 00 00 00", "00 01 00 00 00 03 00 83 02")]
+    [InlineData("00 02 00 00 00 06 00 06 62 1E 00 00", "00 02 00 00 00 03 00 86 02")]
+    [InlineData("00 02 00 00 00 06 00 06 62 00 00 02", "00 02 00 00 00 03 00 86 03")]
+    [InlineData("00 02 00 00 00 06 00 06 65 00 00 18", "00 02 00 00 00 03 00 86 03")]
+    [InlineData("00 02 00 00 00 06 00 06 66 00 00 3C", "00 02 00 00 00 03 00 86 03")]
+    [InlineData("00 02 00 00 00 06 00 06 67 00 00 80", "00 02 00 00 00 03 00 86 03")]
+    [InlineData("00 02 00 00 00 06 00 06 61 01 00 0D", "00 02 00 00 00 03 00 86 03")]
+    [InlineData("00 03 00 00 00 0B 00 10 62 1D 00 02 04 00 00 00 00", "00 03 00 00 00 03 00 90 02")]
+    [InlineData("00 03 00 00 00 0B 00 10 62 00 00 02 04 00 01 00 05", "00 03 00 00 00 03 00 90 03")]
+    [InlineData("00 03 00 00 00 0B 00 10 62 00 00 02 03 00 01 00 05", "00 03 00 00 00 03 00 90 03")]
+    public async Task Should_RefuseARegisterRequest_OutsideABlockOrItsRange(string request, string answer)
+    {
+        await using var simulator = Started();
+
+        Assert.Equal(answer, await AskAsync(simulator, request));
+
+        // An FC 10 with one bad value writes none of them.
+        Assert.Equal(0, simulator.Register(SmartDenApi.RowEnableRegister));
+    }
+
+    [Fact]
+    public async Task Should_HoldTheRows_AndTurnOneOff_WithOneWriteToItsEnableFlag()
+    {
+        await using var simulator = Started();
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(2, Enabled: true, Relays: 0x8001, TurnOn: true, Hour: 6, Minute: 30, WeekDays: 0x3E));
+        using var tcp = await ConnectAsync(simulator);
+        var stream = tcp.GetStream();
+
+        // Each block read whole, a row per register: row 2's flag, its relays 1 and 16, its hour.
+        var flags = await AskAsync(stream, "00 01 00 00 00 06 00 03 62 00 00 1E");
+        Assert.Equal("00 01 00 00 00 3F 00 03 3C 00 00 00 00 00 01", flags[..44]);
+        Assert.StartsWith("00 02 00 00 00 05 00 03 02 80 01", await AskAsync(stream, "00 02 00 00 00 06 00 03 63 02 00 01"), StringComparison.Ordinal);
+        Assert.Equal("00 03 00 00 00 05 00 03 02 00 06", await AskAsync(stream, "00 03 00 00 00 06 00 03 65 02 00 01"));
+
+        Assert.Equal("00 04 00 00 00 06 00 06 62 02 00 00", await AskAsync(stream, "00 04 00 00 00 06 00 06 62 02 00 00"));
+
+        var row = Assert.Single(simulator.ScheduleRows);
+        Assert.Equal(new SmartDenSimulatedRow(2, Enabled: false, Relays: 0x8001, TurnOn: true, Hour: 6, Minute: 30, WeekDays: 0x3E), row);
+        Assert.Empty(simulator.RunnableRules);
+    }
+
+    [Fact]
+    public async Task Should_RefuseScheduleReadsAndWrites_WhenToldTo_AndKeepTheRowsOverAPowerCut()
+    {
+        await using var simulator = Started();
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(0, Enabled: true, Relays: 1, TurnOn: true, Hour: 6, Minute: 0, WeekDays: 0x7F));
+        simulator.RefuseScheduleReads = true;
+        simulator.RefuseScheduleWrites = true;
+
+        Assert.Equal("00 01 00 00 00 03 00 83 01", await AskAsync(simulator, "00 01 00 00 00 06 00 03 62 00 00 1E"));
+        Assert.Equal("00 02 00 00 00 03 00 86 01", await AskAsync(simulator, "00 02 00 00 00 06 00 06 62 00 00 00"));
+        Assert.Equal(SmartDenApi.RowEnabled, simulator.Register(SmartDenApi.RowEnableRegister));
+
+        // Nothing changes while the power is cut; the rows are there when it comes back.
+        await simulator.CutPowerAsync();
+        await simulator.SetRowEnabledAsync(0, false);
+        await simulator.RestorePowerAsync();
+        Assert.Equal(["row-0"], simulator.RunnableRules.Select(r => r.Id));
+    }
+
     private static SmartDenSimulator Started(TimeProvider? time = null)
     {
         var simulator = new SmartDenSimulator { TimeProvider = time ?? TimeProvider.System };

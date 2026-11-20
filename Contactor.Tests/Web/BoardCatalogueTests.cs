@@ -239,7 +239,7 @@ public sealed class BoardCatalogueTests
             ["waveshare-8c"] = reads,
             ["waveshare-16"] = none,
             ["waveshare-30"] = none,
-            ["denkovi-smartden-ip-16r-mt"] = cantTell,
+            ["denkovi-smartden-ip-16r-mt"] = readsMayHaveUnseen,
             ["denkovi-daenetip2-v2-16"] = cantTell,
             ["denkovi-daenetip2-v2-8"] = cantTell,
             ["denkovi-daenetip2-v2-2"] = cantTell,

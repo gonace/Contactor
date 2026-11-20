@@ -25,6 +25,9 @@ public sealed class SmartDenBoardTests
         Assert.False(model.Capabilities.ReportsChanges);
         Assert.Equal(502, model.DefaultPort);
         Assert.Equal(0, model.LoginMaxLength);
+
+        // The week schedule it reads and turns off; the auto-reboot's pulses it can't see (section 8.7).
+        Assert.Equal(new OwnRulesAbility(Reads: true, TurnsOff: true, MayHaveUnseen: true), model.Capabilities.OwnRules);
         Assert.True(SmartDenModels.IsSmartDen(model));
         Assert.False(SmartDenModels.IsSmartDen(Vm201Model.Model));
     }
@@ -48,8 +51,57 @@ public sealed class SmartDenBoardTests
 
         var state = SmartDenBoard.ToBoardState(new SmartDenState(true, new SmartDenStatus((1UL << 15) | 1UL), at));
 
-        Assert.Equal(new BoardState(true, ChannelMask.Of([1, 16]), ChannelMask.None, at), state);
+        Assert.Equal(new BoardState(true, ChannelMask.Of([1, 16]), ChannelMask.None, at, OwnRules: null), state);
         Assert.Equal(BoardState.Initial, SmartDenBoard.ToBoardState(SmartDenState.Initial));
+    }
+
+    [Fact]
+    public void Should_ShowTheWeekSchedule_AsATimerPerRelay_WithARowAsAUnit()
+    {
+        // Row 0 switches relays 1 and 2, row 4 relays 2 and 3, row 9 relay 16.
+        var schedule = new SmartDenSchedule([new SmartDenRow(0, 0b011), new SmartDenRow(4, 0b110), new SmartDenRow(9, 0x8000)]);
+
+        var rules = SmartDenBoard.ToBoardState(new SmartDenState(true, new SmartDenStatus(0, schedule), null)).OwnRules!;
+
+        OwnRule Timer(int relay) => new(relay, OwnRuleKind.Timer);
+        Assert.Equal([Timer(1), Timer(2), Timer(3), Timer(16)], rules);
+        Assert.Equal([[Timer(1), Timer(2)], [Timer(2), Timer(3)], [Timer(16)]], rules.Units.Select(u => u.ToList()));
+
+        // Relay 1's timer takes row 0 off, and relay 2's stays with row 4; relays 1 and 3 together take relay 2's too.
+        Assert.Empty(rules.GoesWith(Timer(1)));
+        Assert.Equal([Timer(2)], rules.GoesWith([Timer(1), Timer(3)]));
+        Assert.Equal([Timer(1), Timer(3)], rules.GoesWith(Timer(2)));
+
+        Assert.Equal(OwnRules.Empty, SmartDenBoard.ToOwnRules(SmartDenSchedule.Empty));
+        Assert.Null(SmartDenBoard.ToBoardState(new SmartDenState(true, new SmartDenStatus(0), null)).OwnRules);
+    }
+
+    [Fact]
+    public async Task Should_TurnOffARow_AndTellOfTheRulesChangeAlone()
+    {
+        await using var simulator = new SmartDenSimulator { TimeProvider = new ManualTimeProvider() };
+        await simulator.SetRowAsync(new SmartDenSimulatedRow(7, Enabled: true, Relays: 0b11, TurnOn: true, Hour: 6, Minute: 0, WeekDays: 0x7F));
+        simulator.Start();
+        using var client = CreateClient(simulator.Port);
+        var board = new SmartDenBoard(client, NullLogger<SmartDenBoard>.Instance);
+        List<BoardState> rulesChanges = [];
+        List<BoardState> stateChanges = [];
+        board.OwnRulesChanged += (_, state) => rulesChanges.Add(state);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await Wait.UntilAsync(() => board.State.IsConnected);
+        board.StateChanged += (_, state) => stateChanges.Add(state);
+
+        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.Timer)], board.State.OwnRules);
+
+        Assert.Equal([new OwnRule(2, OwnRuleKind.Timer)], await board.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.Timer)], Cancel));
+
+        Assert.Equal(OwnRules.Empty, board.State.OwnRules);
+        Assert.Equal(OwnRules.Empty, Assert.Single(rulesChanges).OwnRules);
+        Assert.Empty(stateChanges);
+
+        await stop.CancelAsync();
+        await run.WaitAsync(Cancel);
     }
 
     [Fact]

@@ -13,14 +13,29 @@ namespace Contactor.Boards.Denkovi;
 /// its 16 relays (FC 01, 05, 0F) and their pulses (FC 06 at 0x0000 + relay − 1), which turn a relay off again after
 /// its time on <see cref="TimeProvider"/>. A request with a bad address, quantity, value or length gets a Modbus
 /// exception answer; one for another protocol gets none. A frame whose header gives a length no Modbus frame has
-/// closes the connection, as nothing after it can be read in step. It has no configuration registers: FC 03 and FC 10
-/// are refused as "no such address". It takes one connection at a time, as the manual says the board does: a new one is
+/// closes the connection, as nothing after it can be read in step. Of the configuration registers (table 10.7) it holds
+/// the week schedule's: the start date and the rows' six blocks, read with FC 03 and written with FC 06 and FC 10, a
+/// request inside one block only. It keeps them over a power cut. A row that is on can run now
+/// (<see cref="ISimulatedBoardRules"/>), as when its time comes. It takes one connection at a time, as the manual says the board does: a new one is
 /// closed at once while another is open, or, with <see cref="NewConnectionTakesOver"/>, closes the one before (the manual
 /// doesn't say which; see README.md). It never tells the app anything by itself, as the real board. Used by the tests and, in
 /// development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardSlowAnswers
+public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardSlowAnswers, ISimulatedBoardRules
 {
+    // The week schedule's register blocks (table 10.7): where each starts, and the values each register takes. A
+    // request must stay inside one block (section 10.2.1.3).
+    private static readonly (ushort Start, ushort Min, ushort Max)[][] BlockRanges =
+    [
+        [(SmartDenApi.ScheduleStartDateRegister, 1, 31), (0, 1, 12), (0, 2000, 2099)],
+        Block(SmartDenApi.RowEnableRegister, 0, 1),
+        Block(SmartDenApi.RowOutputsRegister, 0, ushort.MaxValue),
+        Block(SmartDenApi.RowStateRegister, 0, 1),
+        Block(SmartDenApi.RowHourRegister, 0, 23),
+        Block(SmartDenApi.RowMinuteRegister, 0, 59),
+        Block(SmartDenApi.RowWeekDaysRegister, 0, 127),
+    ];
+
     // Requests kept for the tests; a long-running simulator keeps only the newest.
     private const int ReceivedRequestsKept = 1000;
 
@@ -40,6 +55,10 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
     private ulong? _lastRelaysSent;
     private int _requestCount;
     private int _unansweredCount;
+
+    // The week schedule's registers, by address; only under _lock. The start date as in the manual's example (table
+    // 10.22, 10/09/2020), as the manual gives no factory value; every row 0.
+    private readonly Dictionary<ushort, ushort> _registers = NewRegisters();
 
     public SmartDenSimulator()
         : this(NullLogger.Instance)
@@ -136,6 +155,101 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
     /// the tests of a refused command.
     /// </summary>
     public ulong FailRelays { get; set; }
+
+    /// <summary>When true, FC 03 is refused with code 1, as by a firmware without it: the app can't read the schedule.</summary>
+    public bool RefuseScheduleReads { get; set; }
+
+    /// <summary>When true, FC 06 and FC 10 at the week schedule are refused with code 1: the app can't turn a row off.</summary>
+    public bool RefuseScheduleWrites { get; set; }
+
+    /// <summary>The rows that are enabled or have relays, in row order.</summary>
+    public IReadOnlyList<SmartDenSimulatedRow> ScheduleRows
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. Enumerable.Range(0, SmartDenApi.ScheduleRows).Select(RowAt).Where(r => r.Enabled || r.Relays != 0)];
+            }
+        }
+    }
+
+    /// <summary>A register as the board holds it; throws for an address it doesn't hold.</summary>
+    public ushort Register(ushort address)
+    {
+        lock (_lock)
+        {
+            return _registers.TryGetValue(address, out var value)
+                ? value
+                : throw new ArgumentOutOfRangeException(nameof(address), address, "Not a register the simulator holds.");
+        }
+    }
+
+    /// <summary>
+    /// Sets a whole row as the board's own web page would (section 8.9), and tells the page. Nothing while the power is
+    /// cut. Throws <see cref="ArgumentOutOfRangeException"/> for a row or a value the board doesn't take.
+    /// </summary>
+    public Task SetRowAsync(SmartDenSimulatedRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentOutOfRangeException.ThrowIfLessThan(row.Row, 0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(row.Row, SmartDenApi.ScheduleRows);
+        ArgumentOutOfRangeException.ThrowIfLessThan(row.Hour, 0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(row.Hour, 23);
+        ArgumentOutOfRangeException.ThrowIfLessThan(row.Minute, 0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(row.Minute, 59);
+        ArgumentOutOfRangeException.ThrowIfLessThan(row.WeekDays, 0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(row.WeekDays, 127);
+        ChangeSchedule(() =>
+        {
+            var n = (ushort)row.Row;
+            _registers[(ushort)(SmartDenApi.RowEnableRegister + n)] = row.Enabled ? SmartDenApi.RowEnabled : SmartDenApi.RowDisabled;
+            _registers[(ushort)(SmartDenApi.RowOutputsRegister + n)] = row.Relays;
+            _registers[(ushort)(SmartDenApi.RowStateRegister + n)] = (ushort)(row.TurnOn ? 1 : 0);
+            _registers[(ushort)(SmartDenApi.RowHourRegister + n)] = (ushort)row.Hour;
+            _registers[(ushort)(SmartDenApi.RowMinuteRegister + n)] = (ushort)row.Minute;
+            _registers[(ushort)(SmartDenApi.RowWeekDaysRegister + n)] = (ushort)row.WeekDays;
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Turns one row on or off, leaving its relays and time; nothing while the power is cut.</summary>
+    public Task SetRowEnabledAsync(int row, bool enabled)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(row, 0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(row, SmartDenApi.ScheduleRows);
+        ChangeSchedule(() => _registers[(ushort)(SmartDenApi.RowEnableRegister + row)] = enabled ? SmartDenApi.RowEnabled : SmartDenApi.RowDisabled);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The first row that is off and has no relays, for a new one; null when all 30 are used.</summary>
+    public int? FreeRow => Enumerable.Range(0, SmartDenApi.ScheduleRows).Cast<int?>().FirstOrDefault(r => ScheduleRows.All(row => row.Row != r));
+
+    /// <summary>The rows that are on and switch a relay, which the board runs when their time comes.</summary>
+    public IReadOnlyList<SimulatedRule> RunnableRules => [.. ScheduleRows
+        .Where(r => r.Enabled && r.Relays != 0)
+        .Select(r => new SimulatedRule(
+            string.Create(CultureInfo.InvariantCulture, $"row-{r.Row}"),
+            string.Create(CultureInfo.InvariantCulture, $"Row {r.Row}: {r.Text}"),
+            [.. new ChannelMask(r.Relays).Channels.Select(relay => new SimulatedRuleSwitch(relay, r.TurnOn))]))];
+
+    /// <summary>Runs a row now: its relays on or off as its state says, as at its time.</summary>
+    public Task<SimulatedRule?> RunRuleAsync(string id)
+    {
+        if (IsPoweredOff || RunnableRules.FirstOrDefault(r => r.Id == id) is not { } rule)
+        {
+            return Task.FromResult<SimulatedRule?>(null);
+        }
+
+        var mask = ChannelMask.Of(rule.Switches.Select(s => s.Relay)).Bits;
+        var on = rule.Switches.All(s => s.TurnOn);
+        Change(() =>
+        {
+            Pulses.Cancel(mask);
+            _relays = on ? _relays | mask : _relays & ~mask;
+        });
+        return Task.FromResult<SimulatedRule?>(rule);
+    }
 
     /// <summary>The requests received, as hex, e.g. "00 01 00 00 00 06 00 05 00 00 FF 00". The newest 1,000.</summary>
     public IReadOnlyList<string> ReceivedRequests => [.. _receivedRequests];
@@ -493,7 +607,8 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
             SmartDenApi.WriteSingleCoil => WriteCoil(request, pdu),
             SmartDenApi.WriteSingleRegister => WriteRegister(request, pdu),
             SmartDenApi.WriteMultipleCoils => WriteCoils(request, pdu),
-            SmartDenApi.ReadHoldingRegisters or SmartDenApi.WriteMultipleRegisters => Refuse(request, SmartDenApi.IllegalDataAddress),
+            SmartDenApi.ReadHoldingRegisters => ReadRegisters(request, pdu),
+            SmartDenApi.WriteMultipleRegisters => WriteRegisters(request, pdu),
             _ => Refuse(request, SmartDenApi.IllegalFunction),
         };
     }
@@ -578,8 +693,8 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
         return Answer(request, pdu.ToArray(), SmartDenTraceText.Confirmed(request.Frame(pdu)), routine: false);
     }
 
-    // FC 06: only the pulse registers. The relay on now, off again after value × 100 ms; echo. A later FC 05 for the
-    // relay ends the pulse, a later pulse starts it again.
+    // FC 06: a pulse register, or a week schedule register. A pulse turns the relay on now, off again after value × 100
+    // ms; echo. A later FC 05 for the relay ends the pulse, a later pulse starts it again.
     private byte[] WriteRegister(Request request, ReadOnlySpan<byte> pdu)
     {
         if (pdu.Length != 5)
@@ -591,7 +706,7 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
         var value = BinaryPrimitives.ReadUInt16BigEndian(pdu[3..]);
         if (!SmartDenModbus.IsPulse(address))
         {
-            return Refuse(request, SmartDenApi.IllegalDataAddress);
+            return WriteScheduleRegisters(request, pdu, address, [value], echo: pdu.ToArray());
         }
 
         if (value < 1)
@@ -656,6 +771,177 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
             _relays = (_relays & ~mask) | values;
         });
         return Answer(request, pdu[..5].ToArray(), "Relays set", routine: false);
+    }
+
+    // FC 03: the function, address and quantity, inside one block (section 10.2.1.3: code 2 otherwise).
+    private byte[] ReadRegisters(Request request, ReadOnlySpan<byte> pdu)
+    {
+        if (pdu.Length != 5)
+        {
+            return Refuse(request, SmartDenApi.IllegalDataValue);
+        }
+
+        if (RefuseScheduleReads)
+        {
+            return Refuse(request, SmartDenApi.IllegalFunction);
+        }
+
+        var address = BinaryPrimitives.ReadUInt16BigEndian(pdu[1..]);
+        var count = BinaryPrimitives.ReadUInt16BigEndian(pdu[3..]);
+        if (count < 1 || count > SmartDenApi.MaxReadRegisters || BlockOf(address, count) is null)
+        {
+            return Refuse(request, SmartDenApi.IllegalDataAddress);
+        }
+
+        var answer = new byte[2 + (2 * count)];
+        answer[0] = SmartDenApi.ReadHoldingRegisters;
+        answer[1] = (byte)(2 * count);
+        lock (_lock)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                BinaryPrimitives.WriteUInt16BigEndian(answer.AsSpan(2 + (2 * i)), _registers[(ushort)(address + i)]);
+            }
+        }
+
+        return Answer(request, answer, string.Create(CultureInfo.InvariantCulture, $"{count} registers from {address:X4}"), routine: true);
+    }
+
+    // FC 10: the function, address, quantity, byte count and two bytes per register, inside one block; answers the
+    // address and quantity (table 10.28).
+    private byte[] WriteRegisters(Request request, ReadOnlySpan<byte> pdu)
+    {
+        if (pdu.Length < 6)
+        {
+            return Refuse(request, SmartDenApi.IllegalDataValue);
+        }
+
+        var address = BinaryPrimitives.ReadUInt16BigEndian(pdu[1..]);
+        var count = BinaryPrimitives.ReadUInt16BigEndian(pdu[3..]);
+        if (count < 1 || pdu[5] != 2 * count || pdu.Length != 6 + (2 * count))
+        {
+            return Refuse(request, SmartDenApi.IllegalDataValue);
+        }
+
+        var values = new ushort[count];
+        for (var i = 0; i < count; i++)
+        {
+            values[i] = BinaryPrimitives.ReadUInt16BigEndian(pdu[(6 + (2 * i))..]);
+        }
+
+        return WriteScheduleRegisters(request, pdu, address, values, echo: pdu[..5].ToArray());
+    }
+
+    // Writes values from address, all or none: code 2 outside one block, code 3 for a value out of its range (table
+    // 10.7), code 1 while RefuseScheduleWrites.
+    private byte[] WriteScheduleRegisters(Request request, ReadOnlySpan<byte> pdu, ushort address, ushort[] values, byte[] echo)
+    {
+        if (BlockOf(address, values.Length) is not { } block)
+        {
+            return Refuse(request, SmartDenApi.IllegalDataAddress);
+        }
+
+        if (RefuseScheduleWrites)
+        {
+            return Refuse(request, SmartDenApi.IllegalFunction);
+        }
+
+        for (var i = 0; i < values.Length; i++)
+        {
+            var (_, min, max) = block[address - block[0].Start + i];
+            if (values[i] < min || values[i] > max)
+            {
+                return Refuse(request, SmartDenApi.IllegalDataValue);
+            }
+        }
+
+        ChangeSchedule(() =>
+        {
+            for (var i = 0; i < values.Length; i++)
+            {
+                _registers[(ushort)(address + i)] = values[i];
+            }
+        });
+        var frame = request.Frame(pdu);
+        var text = request.Function == SmartDenApi.WriteSingleRegister
+            ? SmartDenTraceText.Confirmed(frame)
+            : string.Create(CultureInfo.InvariantCulture, $"{values.Length} registers from {address:X4} written");
+        return Answer(request, echo, text, routine: false);
+    }
+
+    // The block that holds count registers from address, each register's range; null when they aren't all in one.
+    private static (ushort Start, ushort Min, ushort Max)[]? BlockOf(ushort address, int count)
+    {
+        foreach (var block in BlockRanges)
+        {
+            var start = block[0].Start;
+            if (address >= start && address + count <= start + block.Length)
+            {
+                return block;
+            }
+        }
+
+        return null;
+    }
+
+    private static (ushort Start, ushort Min, ushort Max)[] Block(ushort start, ushort min, ushort max)
+    {
+        return [.. Enumerable.Range(0, SmartDenApi.ScheduleRows).Select(i => (i == 0 ? start : (ushort)0, min, max))];
+    }
+
+    private static Dictionary<ushort, ushort> NewRegisters()
+    {
+        Dictionary<ushort, ushort> registers = new()
+        {
+            [SmartDenApi.ScheduleStartDateRegister] = 10,
+            [SmartDenApi.ScheduleStartDateRegister + 1] = 9,
+            [SmartDenApi.ScheduleStartDateRegister + 2] = 2020,
+        };
+        foreach (var block in BlockRanges.Skip(1))
+        {
+            for (var i = 0; i < block.Length; i++)
+            {
+                registers[(ushort)(block[0].Start + i)] = 0;
+            }
+        }
+
+        return registers;
+    }
+
+    // A row as its registers hold it; under _lock.
+    private SmartDenSimulatedRow RowAt(int row)
+    {
+        var n = (ushort)row;
+        return new SmartDenSimulatedRow(
+            row,
+            _registers[(ushort)(SmartDenApi.RowEnableRegister + n)] == SmartDenApi.RowEnabled,
+            _registers[(ushort)(SmartDenApi.RowOutputsRegister + n)],
+            _registers[(ushort)(SmartDenApi.RowStateRegister + n)] == 1,
+            _registers[(ushort)(SmartDenApi.RowHourRegister + n)],
+            _registers[(ushort)(SmartDenApi.RowMinuteRegister + n)],
+            _registers[(ushort)(SmartDenApi.RowWeekDaysRegister + n)]);
+    }
+
+    // A change of the schedule: nothing without power, as the relays; the page is told.
+    private void ChangeSchedule(Action change)
+    {
+        bool changed;
+        lock (_lock)
+        {
+            if (IsPoweredOff)
+            {
+                return;
+            }
+
+            var before = _registers.ToDictionary();
+            change();
+            changed = _registers.Any(r => before[r.Key] != r.Value);
+        }
+
+        if (changed)
+        {
+            RaiseChanged();
+        }
     }
 
     private byte[] Refuse(Request request, byte code)

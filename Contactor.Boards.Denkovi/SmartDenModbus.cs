@@ -11,14 +11,17 @@ namespace Contactor.Boards.Denkovi;
 /// <param name="Unit">The unit id the answer must carry.</param>
 /// <param name="Function">The function code.</param>
 /// <param name="Address">The first address.</param>
-/// <param name="Quantity">How many coils; for FC 05 and FC 06 the value written.</param>
+/// <param name="Quantity">How many coils (FC 01) or registers (FC 03); for FC 05 and FC 06 the value written.</param>
 public sealed record SmartDenRequest(byte[] Frame, ushort TransactionId, byte Unit, byte Function, ushort Address, ushort Quantity)
 {
-    /// <summary>Whether the answer carries a byte count and data (FC 01), rather than an echo.</summary>
-    public bool IsRead => Function == SmartDenApi.ReadCoils;
+    /// <summary>Whether the answer carries a byte count and data (FC 01, FC 03), rather than an echo.</summary>
+    public bool IsRead => Function is SmartDenApi.ReadCoils or SmartDenApi.ReadHoldingRegisters;
 
-    /// <summary>The byte count a read's answer must have: a bit per coil, rounded up to whole bytes.</summary>
-    public int AnswerDataBytes => (Quantity + 7) / 8;
+    /// <summary>
+    /// The byte count a read's answer must have: for FC 01 a bit per coil, rounded up to whole bytes; for FC 03 two
+    /// bytes per register (table 10.22).
+    /// </summary>
+    public int AnswerDataBytes => Function == SmartDenApi.ReadHoldingRegisters ? Quantity * 2 : (Quantity + 7) / 8;
 }
 
 /// <summary>
@@ -38,6 +41,59 @@ public static class SmartDenModbus
         ArgumentOutOfRangeException.ThrowIfLessThan(count, (ushort)1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(count, (ushort)MaxReadBits);
         return Simple(transaction, unit, SmartDenApi.ReadCoils, address, count);
+    }
+
+    /// <summary>
+    /// FC 03: read <paramref name="count"/> holding registers from <paramref name="address"/> (section 10.2.1.3, table
+    /// 10.21). The board refuses a read past the end of the block it starts in.
+    /// </summary>
+    public static SmartDenRequest ReadHoldingRegisters(ushort transaction, ushort address, ushort count, byte unit = SmartDenApi.UnitId)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, (ushort)1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(count, (ushort)SmartDenApi.MaxReadRegisters);
+        return Simple(transaction, unit, SmartDenApi.ReadHoldingRegisters, address, count);
+    }
+
+    /// <summary>
+    /// FC 06 at the enable flag of week schedule row <paramref name="row"/> (0 to 29): 0 turns the row off, 1 on (tables
+    /// 10.4 and 10.7). Only this one register: the row's relays, state and time stay as they are.
+    /// </summary>
+    public static SmartDenRequest WriteRowEnable(ushort transaction, int row, bool enable, byte unit = SmartDenApi.UnitId)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(row, 0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(row, SmartDenApi.ScheduleRows);
+        return Simple(
+            transaction,
+            unit,
+            SmartDenApi.WriteSingleRegister,
+            (ushort)(SmartDenApi.RowEnableRegister + row),
+            enable ? SmartDenApi.RowEnabled : SmartDenApi.RowDisabled);
+    }
+
+    /// <summary>Whether a register address is a row's enable flag.</summary>
+    public static bool IsRowEnable(ushort address)
+    {
+        return address is >= SmartDenApi.RowEnableRegister and < SmartDenApi.RowEnableRegister + SmartDenApi.ScheduleRows;
+    }
+
+    /// <summary>The registers of an FC 03 answer, in order: two bytes each, big-endian (table 10.22).</summary>
+    public static ushort[] Registers(ReadOnlySpan<byte> answer)
+    {
+        if (answer.Length < SmartDenApi.HeaderBytes + 2
+            || answer[SmartDenApi.HeaderBytes] != SmartDenApi.ReadHoldingRegisters
+            || answer[8] % 2 != 0
+            || answer.Length != SmartDenApi.HeaderBytes + 2 + answer[8])
+        {
+            throw new SmartDenProtocolException("The answer doesn't carry whole registers.", answer.ToArray());
+        }
+
+        var registers = new ushort[answer[8] / 2];
+        for (var i = 0; i < registers.Length; i++)
+        {
+            registers[i] = BinaryPrimitives.ReadUInt16BigEndian(answer[(SmartDenApi.HeaderBytes + 2 + (2 * i))..]);
+        }
+
+        return registers;
     }
 
     /// <summary>FC 05: switch relay <paramref name="relay"/> (1-based) on (0xFF00) or off (0x0000).</summary>

@@ -2,7 +2,8 @@ namespace Contactor.Boards.Denkovi;
 
 /// <summary>
 /// The Denkovi smartDEN IP-16R-MT in the board catalogue: 16 relays and no inputs, Modbus TCP on port 502, and no login:
-/// Modbus has none, and the password of the board's web page doesn't guard Modbus. From Denkovi's manual only, not yet
+/// Modbus has none, and the password of the board's web page doesn't guard Modbus. It reads its week schedule and turns
+/// rows off on a person's press (<see cref="SmartDenApi.OwnRules"/>). From Denkovi's manual only, not yet
 /// checked on a real board.
 /// </summary>
 public static class SmartDenModels
@@ -17,7 +18,7 @@ public static class SmartDenModels
         "denkovi-smartden-ip-16r-mt",
         DenkoviBrand.Name,
         "smartDEN IP-16R-MT",
-        new BoardCapabilities(SmartDenApi.RelayCount, 0, ReportsChanges: false, Pulse: Pulse, OwnRules: OwnRulesAbility.CantTell),
+        new BoardCapabilities(SmartDenApi.RelayCount, 0, ReportsChanges: false, Pulse: Pulse, OwnRules: SmartDenApi.OwnRules),
         SmartDenApi.DefaultPort,
         LoginMaxLength: 0);
 
