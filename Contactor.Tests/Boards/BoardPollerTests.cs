@@ -1028,8 +1028,13 @@ public sealed class BoardPollerTests
         Assert.Equal(1, board.Connects);
 
         // "Check again": exactly one attempt, at once, with the problem cleared until the board answers.
+        // The attempt is held, so the board can't refuse it before the cleared problem is checked.
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        board.HeldConnect = held;
         poller.TryAgain();
+        await WaitUntilAsync(() => board.Connects == 2);
         Assert.Null(poller.State.Problem);
+        held.SetException(new ProblemException(Refused));
         await WaitUntilAsync(() => board.Steps.Count(s => s.Kind == BoardPollStep.Held) == 2);
         Assert.Equal(2, board.Connects);
         Assert.Equal(Refused, poller.State.Problem);
@@ -1037,6 +1042,7 @@ public sealed class BoardPollerTests
         Assert.Equal(2, board.Connects);
 
         // A new login: at once, and it connects.
+        board.HeldConnect = null;
         board.ConnectError = null;
         poller.Restart();
         await WaitForPollAsync(board, time, reads: 1);
