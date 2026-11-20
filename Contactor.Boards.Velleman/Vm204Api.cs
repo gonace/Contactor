@@ -94,14 +94,33 @@ public static class Vm204Api
     /// </summary>
     public const string CredentialSymbols = "-._~!$'()*+,;:@";
 
-    /// <summary>The longest key the app takes. The firmware makes 32 letters and digits (<c>Main/main.c</c> gen_random).</summary>
-    public const int KeyMaxLength = 64;
+    /// <summary>
+    /// The longest key the app takes: the firmware always makes 32 letters and digits (<c>Main/main.c</c>
+    /// <c>gen_random(appSettings.key, 32)</c>). A longer one isn't the firmware's, and its queries wouldn't fit
+    /// <see cref="MaxQueryLength"/>.
+    /// </summary>
+    public const int KeyMaxLength = 32;
+
+    /// <summary>
+    /// The longest query the app sends: the firmware's parsers <c>strcpy</c> the whole query into a 64-byte
+    /// <c>queryString</c> (<c>Main/api.c</c> lines 16, 75, 117 and 216), so 63 characters and the terminating zero. A
+    /// longer one would overflow the board's stack.
+    /// </summary>
+    public const int MaxQueryLength = 63;
 
     /// <summary>
     /// The largest answer the app reads. The firmware's longest API answer, the status, is about 120 bytes; anything far
     /// bigger isn't a VM204.
     /// </summary>
     public const int MaxResponseBytes = 4096;
+
+    /// <summary>Whether a request's query fits the firmware's 64-byte copy of it (<see cref="MaxQueryLength"/>).</summary>
+    public static bool QueryFits(string pathAndQuery)
+    {
+        ArgumentNullException.ThrowIfNull(pathAndQuery);
+        var question = pathAndQuery.IndexOf('?', StringComparison.Ordinal);
+        return question < 0 || pathAndQuery.Length - question - 1 <= MaxQueryLength;
+    }
 
     /// <summary>Whether a character can go in a user name or password, see <see cref="CredentialSymbols"/>.</summary>
     public static bool IsCredentialCharacter(char c)

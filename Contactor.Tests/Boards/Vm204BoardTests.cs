@@ -246,6 +246,35 @@ public sealed class Vm204BoardTests
         await run;
     }
 
+    // The firmware ignores a pulse of a running one, and a pulse of a relay that is on would end by turning it off: the
+    // status is read first, and only the relays off with no pulse running are pulsed, and returned.
+    [Fact]
+    public async Task Should_PulseOnlyRelaysThatAreOff_WithNoPulseRunning()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new Vm204Simulator { TimeProvider = boardTime };
+        simulator.Start();
+        var options = Options.Create(new Vm204Options { Host = "127.0.0.1", Port = simulator.Port, PollSeconds = 2 });
+        using var client = new Vm204Client(options, new ManualTimeProvider(), NullLogger<Vm204Client>.Instance);
+        var board = new Vm204Board(client, NullLogger<Vm204Board>.Instance);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await Wait.UntilAsync(() => board.State.IsConnected);
+        await board.PulseAsync(ChannelMask.Of(1), TimeSpan.FromSeconds(10), Cancel);
+        await simulator.SwitchRelayAsync(2, true);
+
+        Assert.Equal(ChannelMask.Of(3), await board.PulseAsync(ChannelMask.Of([1, 2, 3]), TimeSpan.FromSeconds(2), Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => board.PulseAsync(ChannelMask.Of([1, 2]), TimeSpan.FromSeconds(2), Cancel));
+
+        var pulses = simulator.ReceivedTargets.Where(t => t.StartsWith(Vm204Api.RelayPulsePath, StringComparison.Ordinal)).ToList();
+        Assert.Equal([$"{Vm204Api.RelayPulsePath}?key={simulator.Key}&relay=1&time=10", $"{Vm204Api.RelayPulsePath}?key={simulator.Key}&relay=3&time=2"], pulses);
+        Assert.True(board.State.IsConnected);
+        boardTime.Advance(TimeSpan.FromSeconds(2));
+        Assert.Equal(ChannelMask.Of([1, 2]), simulator.State.Relays);
+        await stop.CancelAsync();
+        await run;
+    }
+
     // The longest pulse with all four relays and the firmware's 32-letter key still fits parsePulseAPICommand's
     // 64-byte copy of the query (Main/api.c line 117) with its terminating zero.
     [Fact]

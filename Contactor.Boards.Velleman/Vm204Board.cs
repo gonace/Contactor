@@ -71,8 +71,9 @@ public sealed class Vm204Board : IRelayBoard
     }
 
     /// <summary>
-    /// Pulses the relays in one request, as <see cref="TurnOnAsync"/>: the board takes the mask at once, or the command
-    /// fails. A length that isn't whole seconds from 1 s to 2,147,483 s (<see cref="Vm204Pulse"/>) gets
+    /// Pulses the relays that are off with no pulse running, in one request (<see cref="Vm204Client.PulseAsync"/>), and
+    /// returns those whose pulse the answer shows; when none, it throws <see cref="BoardNotConnectedException"/>. A length
+    /// that isn't whole seconds from 1 s to 2,147,483 s (<see cref="Vm204Pulse"/>) gets
     /// <see cref="ArgumentOutOfRangeException"/> before anything is sent.
     /// </summary>
     public async Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
@@ -82,8 +83,7 @@ public sealed class Vm204Board : IRelayBoard
             throw new ArgumentOutOfRangeException(nameof(length), length, "The VM204 pulses for whole seconds, 1 s to 2,147,483 s.");
         }
 
-        await _client.PulseAsync(ToMask(relays), (int)length.TotalSeconds, cancellationToken).ConfigureAwait(false);
-        return relays;
+        return new ChannelMask(await _client.PulseAsync(ToMask(relays), (int)length.TotalSeconds, cancellationToken).ConfigureAwait(false));
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default)

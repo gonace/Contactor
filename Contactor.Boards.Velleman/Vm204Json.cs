@@ -15,8 +15,9 @@ public static class Vm204Json
 
     /// <summary>
     /// Reads a status answer, as <c>createJsonData</c> (<c>Main/main.c</c>) writes it:
-    /// <c>{"relays": [b,b,b,b],"pulse": [b,b,b,b],"inputs": [b,b,b,b],"analog": n}</c>. <c>pulse</c> is ignored; an
-    /// <c>analog</c> that is missing or not a whole number reads as null.
+    /// <c>{"relays": [b,b,b,b],"pulse": [b,b,b,b],"inputs": [b,b,b,b],"analog": n}</c>. A <c>pulse</c> that isn't four
+    /// true or false reads as null (unknown), and so does an <c>analog</c> that is missing or not a whole number; neither
+    /// makes the status unreadable.
     /// </summary>
     public static Vm204Status ReadStatus(ReadOnlySpan<byte> json)
     {
@@ -32,7 +33,17 @@ public static class Vm204Json
         int? analog = root.TryGetProperty("analog", out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)
             ? number
             : null;
-        return new Vm204Status(relays, inputs, analog);
+        byte? pulses;
+        try
+        {
+            pulses = ReadSwitches(root, "pulse", Vm204Api.RelayCount);
+        }
+        catch (Vm204ProtocolException)
+        {
+            pulses = null;
+        }
+
+        return new Vm204Status(relays, inputs, analog, pulses);
     }
 
     /// <summary>Reads a login answer, <c>{"ApiKey":"…"}</c> (<c>Main/api.c</c> createAPIKeyJson): letters and digits only.</summary>
@@ -56,16 +67,13 @@ public static class Vm204Json
         return key;
     }
 
-    /// <summary>
-    /// A status as the firmware writes it, with its spaces, and <paramref name="pulses"/> (bit 0 = relay 1) the relays
-    /// whose pulse runs; for the simulator.
-    /// </summary>
-    public static string WriteStatus(Vm204Status status, byte pulses = 0)
+    /// <summary>A status as the firmware writes it, with its spaces (no pulse flags read as none running); for the simulator.</summary>
+    public static string WriteStatus(Vm204Status status)
     {
         ArgumentNullException.ThrowIfNull(status);
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{{\"relays\": [{Bits(status.Relays, Vm204Api.RelayCount)}],\"pulse\": [{Bits(pulses, Vm204Api.RelayCount)}],\"inputs\": [{Bits(status.Inputs, Vm204Api.InputCount)}],\"analog\": {status.Analog ?? 0}}}");
+            $"{{\"relays\": [{Bits(status.Relays, Vm204Api.RelayCount)}],\"pulse\": [{Bits(status.Pulses ?? 0, Vm204Api.RelayCount)}],\"inputs\": [{Bits(status.Inputs, Vm204Api.InputCount)}],\"analog\": {status.Analog ?? 0}}}");
     }
 
     /// <summary>A login answer as the firmware writes it; for the simulator.</summary>

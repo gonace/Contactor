@@ -161,16 +161,48 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
     }
 
     /// <summary>
-    /// Pulses the relays in <paramref name="mask"/> (bit 0 = relay 1, relays 1–4) for <paramref name="seconds"/>, in one
-    /// request: the board turns them on, and off again by itself (<see cref="Vm204Api.RelayPulsePath"/>). A length
-    /// outside <see cref="Vm204Api.PulseShortestSeconds"/>–<see cref="Vm204Api.PulseLongestSeconds"/> throws
-    /// <see cref="ArgumentOutOfRangeException"/> before anything is sent.
+    /// Pulses the relays in <paramref name="mask"/> (bit 0 = relay 1, relays 1–4) for <paramref name="seconds"/>: the board
+    /// turns them on, and off again by itself (<see cref="Vm204Api.RelayPulsePath"/>). The firmware ignores a pulse of a
+    /// relay whose pulse already runs, and a pulse of a relay that is on would end by turning it off. So the command reads
+    /// the status first and pulses, in one request, only the relays that are off with no pulse running; while the
+    /// <c>pulse</c> flags can't be read, none. Returns the relays whose pulse the answer shows running. When that is none,
+    /// it throws <see cref="BoardNotConnectedException"/>, sending no pulse when none could go. A length outside
+    /// <see cref="Vm204Api.PulseShortestSeconds"/>–<see cref="Vm204Api.PulseLongestSeconds"/> throws
+    /// <see cref="ArgumentOutOfRangeException"/> before anything is sent. A pulse started on the board's own page in the
+    /// moment between the read and the pulse can't be told from the app's.
     /// </summary>
-    public Task PulseAsync(byte mask, int seconds, CancellationToken cancellationToken = default)
+    public async Task<byte> PulseAsync(byte mask, int seconds, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(seconds, Vm204Api.PulseShortestSeconds);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(seconds, Vm204Api.PulseLongestSeconds);
-        return CommandAsync(Vm204Api.RelayPulsePath, mask, cancellationToken, string.Create(CultureInfo.InvariantCulture, $"&time={seconds}"));
+        var time = string.Create(CultureInfo.InvariantCulture, $"&time={seconds}");
+        byte started = 0;
+        await RunOnBoardAsync(
+            mask,
+            async (key, token) =>
+            {
+                var before = ReadStatusAnswer(await SendAsync($"{Vm204Api.StatusPath}?key={key}", routine: false, token).ConfigureAwait(false), key);
+                var free = before.Pulses is { } running ? (byte)(mask & ~before.Relays & ~running) : (byte)0;
+                if (free == 0)
+                {
+                    throw new BoardRefusedException(before.Pulses is null
+                        ? "The VM204's status doesn't say which pulses run; no pulse was sent."
+                        : $"{Vm204TraceText.Channels("relay", mask, Vm204Api.RelayCount)} is on already or its pulse runs; no pulse was sent.");
+                }
+
+                var after = ReadStatusAnswer(
+                    await SendAsync($"{Vm204Api.RelayPulsePath}?key={key}&relay={Vm204TraceText.RelayParameter(free)}{time}", routine: false, token).ConfigureAwait(false),
+                    key);
+                started = after.Pulses is { } now ? (byte)(free & now) : (byte)0;
+                if (started == 0)
+                {
+                    throw new BoardRefusedException("The VM204's answer shows no pulse running.");
+                }
+
+                return after;
+            },
+            cancellationToken).ConfigureAwait(false);
+        return started;
     }
 
     /// <summary>Polls at once; the answer comes as <see cref="StateChanged"/> if anything changed.</summary>
@@ -282,7 +314,21 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
         }
     }
 
-    private async Task CommandAsync(string path, byte mask, CancellationToken cancellationToken, string extra = "")
+    private Task CommandAsync(string path, byte mask, CancellationToken cancellationToken)
+    {
+        // Every failure is thrown as it is, so the poller counts it as a failed poll, as it would a poll's. A refused key
+        // is dropped: the poll the poller asks for at once logs in again.
+        return RunOnBoardAsync(
+            mask,
+            async (key, token) => ReadStatusAnswer(
+                await SendAsync($"{path}?key={key}&relay={Vm204TraceText.RelayParameter(mask)}", routine: false, token).ConfigureAwait(false),
+                key),
+            cancellationToken);
+    }
+
+    // A command for relays 1–4 through the poller: at once or BoardNotConnectedException, never queued; nothing for none.
+    // What it returns is the board's status right after it, the confirmation.
+    private async Task RunOnBoardAsync(byte mask, Func<string, CancellationToken, Task<Vm204Status>> command, CancellationToken cancellationToken)
     {
         if (mask > (1 << Vm204Api.RelayCount) - 1)
         {
@@ -311,11 +357,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
                         throw new BoardNotConnectedException("The VM204 is logging in again; the command was not sent.");
                     }
 
-                    // Every failure is thrown as it is, so the poller counts it as a failed poll, as it would a poll's.
-                    // A refused key is dropped: the poll the poller asks for at once logs in again.
-                    var answer = await SendAsync($"{path}?key={key}&relay={Vm204TraceText.RelayParameter(mask)}{extra}", routine: false, token)
-                        .ConfigureAwait(false);
-                    return ReadStatusAnswer(answer, key);
+                    return await command(key, token).ConfigureAwait(false);
                 },
                 cancellationToken).ConfigureAwait(false);
         }
@@ -324,8 +366,9 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
             // The poller counted it as a failed poll and reads the board at once.
             throw new BoardNotConnectedException("The VM204 didn't answer; the command may not have been carried out.", ex);
         }
-        catch (Exception ex) when (ex is Vm204AccessDeniedException or Vm204ProtocolException)
+        catch (Exception ex) when (ex is Vm204AccessDeniedException or Vm204ProtocolException or BoardRefusedException)
         {
+            // A refusal (BoardRefusedException) is an answer the poller doesn't count; outside it, it is "didn't take".
             // The board answered, but not with a status: counted and read in the same way.
             throw new BoardNotConnectedException($"The VM204 didn't take the command: {ex.Message}", ex);
         }
@@ -395,6 +438,12 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
     /// </summary>
     private async Task<Answer> SendAsync(string pathAndQuery, bool routine, CancellationToken cancellationToken, bool hideAnswer = false)
     {
+        if (!Vm204Api.QueryFits(pathAndQuery))
+        {
+            // Never sent: the firmware would copy it past the end of a 64-byte buffer (Vm204Api.MaxQueryLength).
+            throw new BoardNotConnectedException("The request is too long for the VM204; it was not sent.");
+        }
+
         var shown = $"GET {Vm204TraceText.Redact(pathAndQuery)}";
         Trace(BoardTraceDirection.Sent, Vm204TraceText.Request(pathAndQuery), shown, isRoutine: routine);
         try

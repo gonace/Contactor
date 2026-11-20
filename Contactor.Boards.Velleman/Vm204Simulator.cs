@@ -539,17 +539,15 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     private byte[] RespondStatus()
     {
         Vm204Status status;
-        byte pulses;
         bool routine;
         lock (_lock)
         {
-            status = new Vm204Status(_relays, _inputs, _analog);
-            pulses = (byte)Pulses.Running;
+            status = new Vm204Status(_relays, _inputs, _analog, (byte)Pulses.Running);
             routine = status.SameSwitches(_lastStatusSent);
             _lastStatusSent = status;
         }
 
-        var body = Vm204Json.WriteStatus(status, pulses);
+        var body = Vm204Json.WriteStatus(status);
         return Respond(HttpStatusCode.OK, body, Vm204TraceText.Status(status), bytes: Vm204TraceText.Answer(200, body), isRoutine: routine, json: true);
     }
 

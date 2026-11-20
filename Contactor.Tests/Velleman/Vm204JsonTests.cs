@@ -12,7 +12,18 @@ public sealed class Vm204JsonTests
     [Fact]
     public void Should_ReadTheStatus_AsTheFirmwareWritesIt()
     {
-        Assert.Equal(new Vm204Status(0b0101, 0b1000, 1023), Vm204Json.ReadStatus(Bytes(FirmwareStatus)));
+        Assert.Equal(new Vm204Status(0b0101, 0b1000, 1023, Pulses: 0), Vm204Json.ReadStatus(Bytes(FirmwareStatus)));
+        Assert.Equal((byte)0b0110, Vm204Json.ReadStatus(Bytes(FirmwareStatus.Replace("\"pulse\": [false,false,false,false]", "\"pulse\": [false,true,true,false]", StringComparison.Ordinal))).Pulses);
+    }
+
+    // Only the pulse command reads the flags, and it pulses nothing while they are unknown: never an unreadable status.
+    [Theory]
+    [InlineData("{\"relays\":[true,false,false,false],\"inputs\":[false,false,false,false]}")]
+    [InlineData("{\"relays\":[true,false,false,false],\"pulse\":[1,0,0,0],\"inputs\":[false,false,false,false]}")]
+    [InlineData("{\"relays\":[true,false,false,false],\"pulse\":[false,false],\"inputs\":[false,false,false,false]}")]
+    public void Should_ReadUnknownPulses_WhenTheFlagsArentFourTrueOrFalse(string json)
+    {
+        Assert.Equal(new Vm204Status(0b0001, 0, null, Pulses: null), Vm204Json.ReadStatus(Bytes(json)));
     }
 
     [Fact]
@@ -82,10 +93,19 @@ public sealed class Vm204JsonTests
     }
 
     [Fact]
-    public void Should_RefuseAKey_LongerThan64()
+    public void Should_RefuseAKey_LongerThan32()
     {
-        Assert.Equal(64, Vm204Json.ReadKey(Bytes($"{{\"ApiKey\":\"{new string('a', 64)}\"}}")).Length);
-        Assert.Throws<Vm204ProtocolException>(() => Vm204Json.ReadKey(Bytes($"{{\"ApiKey\":\"{new string('a', 65)}\"}}")));
+        Assert.Equal(32, Vm204Json.ReadKey(Bytes($"{{\"ApiKey\":\"{new string('a', 32)}\"}}")).Length);
+        Assert.Throws<Vm204ProtocolException>(() => Vm204Json.ReadKey(Bytes($"{{\"ApiKey\":\"{new string('a', 33)}\"}}")));
+    }
+
+    // parseRelayAPICommand, parsePulseAPICommand, isAPIAuthorized and authUser strcpy the query into 64 bytes (Main/api.c).
+    [Fact]
+    public void Should_FitAQuery_OnlyUpTo63Characters()
+    {
+        Assert.True(Vm204Api.QueryFits($"/api/relay/pulse?{new string('a', 63)}"));
+        Assert.False(Vm204Api.QueryFits($"/api/relay/pulse?{new string('a', 64)}"));
+        Assert.True(Vm204Api.QueryFits("/api/status"));
     }
 
     private static byte[] Bytes(string text)

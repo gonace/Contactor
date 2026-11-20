@@ -64,6 +64,32 @@ public sealed class Vm204SimulatedBoardTests
         Assert.Equal(ChannelMask.None, board.Pulsing);
     }
 
+    // The pulse's timer is in the board's memory: a power cut ends it, and its end never comes after the power is back.
+    [Fact]
+    public async Task Should_ForgetAPulse_AtAPowerCut()
+    {
+        var time = new ManualTimeProvider();
+        await using var board = new Vm204Simulator { TimeProvider = time };
+        board.Start();
+        await GetAsync(board.Port, $"/api/relay/pulse?key={board.Key}&relay=2&time=10");
+
+        await board.CutPowerAsync();
+        await board.RestorePowerAsync();
+        time.Advance(TimeSpan.FromSeconds(11));
+        Assert.Equal(ChannelMask.None, board.State.Relays);
+        Assert.Equal(ChannelMask.None, board.Pulsing);
+
+        // Nor does it turn off a relay switched on afterwards.
+        await GetAsync(board.Port, $"/api/relay/pulse?key={board.Key}&relay=3&time=10");
+        await board.CutPowerAsync();
+        await board.RestorePowerAsync();
+        await GetAsync(board.Port, $"/api/relay/on?key={board.Key}&relay=3");
+        time.Advance(TimeSpan.FromSeconds(11));
+
+        Assert.Equal(ChannelMask.Of(3), board.State.Relays);
+        Assert.Equal(ChannelMask.None, board.Pulsing);
+    }
+
     // The login changed on the board: the old one is refused, the new one gives the key, and the key the app has works.
     [Fact]
     public async Task Should_TakeOnlyTheNewLogin_AfterItChanged()
