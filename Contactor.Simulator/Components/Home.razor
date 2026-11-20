@@ -2,6 +2,7 @@
 @implements IDisposable
 @using System.Globalization
 @using Contactor.Boards
+@using Contactor.Boards.Denkovi
 @using Contactor.Boards.Shelly
 @using Contactor.Boards.Velleman
 @using Microsoft.Extensions.Options
@@ -419,6 +420,62 @@
                                             }
                                         </div>
                                         <span class="hint">Switch.GetConfig and SetConfig, which the app reads and turns auto-on off with. "Never answered" holds the connection until the simulator stops, for a schedule's Schedule.Update too.</span>
+                                    }
+                                    @if (current.SmartDen is { } week)
+                                    {
+                                        var rows = week.Rows;
+                                        <h4 class="label" id="week-head">WEEK SCHEDULE · @rows.Count(r => r.Enabled).ToString(CultureInfo.InvariantCulture) OF @SmartDenApi.ScheduleRows.ToString(CultureInfo.InvariantCulture) ROWS ON</h4>
+                                        <div class="schedule-list" role="group" aria-labelledby="week-head">
+                                            @foreach (var row in rows)
+                                            {
+                                                var number = row.Row;
+                                                <label class="check" @key="number">
+                                                    <input type="checkbox" checked="@row.Enabled" disabled="@poweredOff" @onchange="e => week.SetEnabledAsync(number, e.Value is true)" />
+                                                    <span class="schedule">Row @number.ToString(CultureInfo.InvariantCulture) · @row.Text</span>
+                                                </label>
+                                            }
+                                        </div>
+                                        <form class="schedule-add" @onsubmit="week.AddAsync">
+                                            <label class="visually-hidden" for="week-relay">Relay</label>
+                                            <select id="week-relay" @onchange="e => week.SetRelay(e.Value as string)">
+                                                @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                                {
+                                                    <option value="@relay.ToString(CultureInfo.InvariantCulture)" selected="@(week.Relay == relay)">Relay @relay</option>
+                                                }
+                                            </select>
+                                            <label class="visually-hidden" for="week-also">And relay</label>
+                                            <select id="week-also" @onchange="e => week.SetAlsoRelay(e.Value as string)">
+                                                <option value="0" selected="@(week.AlsoRelay == 0)">alone</option>
+                                                @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                                {
+                                                    <option value="@relay.ToString(CultureInfo.InvariantCulture)" selected="@(week.AlsoRelay == relay)">and relay @relay</option>
+                                                }
+                                            </select>
+                                            <label class="visually-hidden" for="week-state">On or off</label>
+                                            <select id="week-state" @onchange="e => week.SetState(e.Value as string)">
+                                                <option value="@SmartDenControls.On" selected="@(week.State == SmartDenControls.On)">on</option>
+                                                <option value="@SmartDenControls.Off" selected="@(week.State == SmartDenControls.Off)">off</option>
+                                            </select>
+                                            <label class="visually-hidden" for="week-time">Time</label>
+                                            <input id="week-time" type="time" class="mono" value="@week.Time" @onchange="e => week.Time = e.Value as string" />
+                                            <button type="submit" disabled="@(poweredOff || !week.CanAdd)">Add row</button>
+                                        </form>
+                                        @if (week.Error is not null)
+                                        {
+                                            <p class="error" role="alert">@week.Error</p>
+                                        }
+                                        <h4 class="label" id="week-refused-head">WHEN THE APP READS OR TURNS THEM OFF</h4>
+                                        <div class="schedule-list" role="group" aria-labelledby="week-refused-head">
+                                            <label class="check">
+                                                <input type="checkbox" checked="@week.RefuseReads" @onchange="e => week.SetRefuseReads(e.Value is true)" />
+                                                Reads of the week schedule refused
+                                            </label>
+                                            <label class="check">
+                                                <input type="checkbox" checked="@week.RefuseWrites" @onchange="e => week.SetRefuseWrites(e.Value is true)" />
+                                                Writes to the week schedule refused
+                                            </label>
+                                        </div>
+                                        <span class="hint">A row added here runs every day. The app turns a row off whole, with all its relays.</span>
                                     }
                                     @if (current.RunnableRules is { Count: > 0 } runnable)
                                     {
@@ -861,6 +918,12 @@
             var on = shelly.Schedules.Count(s => s.Enable);
             var schedules = on == 1 ? "1 schedule on" : $"{on.ToString(CultureInfo.InvariantCulture)} schedules on";
             return $"{schedules} · auto-on: {MaskText(shelly.AutoOn, capabilities)}";
+        }
+
+        if (board.SmartDen is { } week)
+        {
+            var on = week.Rows.Count(r => r.Enabled);
+            return on == 1 ? "1 week schedule row on" : $"{on.ToString(CultureInfo.InvariantCulture)} week schedule rows on";
         }
 
         if (board.Board is ISimulatedBoardRelayModes { Modes.Count: > 0 } modes)

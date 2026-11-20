@@ -192,6 +192,7 @@ public static class SimulatorCatalogue
         {
             Protocol = "Modbus TCP",
             PollSeconds = new SmartDenOptions().PollSeconds,
+            OwnRulesName = "a week schedule of 30 rows",
         },
         .. DaenetIp2Models.All.Select(model => new SimulatorModel(
             model,
