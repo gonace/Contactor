@@ -11,6 +11,19 @@ public sealed class ShellyBoardTests
 {
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
+    // Waits for the connect's StateChanged, not for State.IsConnected: the poller sets the state just before it raises
+    // the event, so a count of the states taken in between would miss the connect's state and count it later.
+    private static Task ConnectedAsync(List<BoardState> states)
+    {
+        return Wait.UntilAsync(() =>
+        {
+            lock (states)
+            {
+                return states.Count > 0 && states[^1].IsConnected;
+            }
+        });
+    }
+
     [Fact]
     public void Should_ListOneEntryPerRelayCount()
     {
@@ -132,7 +145,7 @@ public sealed class ShellyBoardTests
         var run = client.RunAsync(cts.Token);
         try
         {
-            await Wait.UntilAsync(() => board.State.IsConnected);
+            await ConnectedAsync(states);
             Assert.Equal(new PowerOnStates([PowerOnState.Off, PowerOnState.AsBefore]), board.State.PowerOn);
             int statesBefore;
             lock (states)
@@ -195,7 +208,7 @@ public sealed class ShellyBoardTests
         var run = client.RunAsync(cts.Token);
         try
         {
-            await Wait.UntilAsync(() => board.State.IsConnected);
+            await ConnectedAsync(states);
             OwnRule autoOn1 = new(1, OwnRuleKind.AutoOn), timer2 = new(2, OwnRuleKind.Timer);
             Assert.Equal(new OwnRules([autoOn1, timer2], [[timer2], [autoOn1]]), board.State.OwnRules);
             Assert.True(board.Capabilities.OwnRulesOrCantTell.TurnsOff);
