@@ -771,9 +771,10 @@ public sealed class SmartDenClientTests
 
         // Relay 1's rows are as seen, but row 0 is also relay 2's, whose rows changed: writing it would leave relay 2
         // half off, so neither goes.
-        await Assert.ThrowsAsync<BoardNotConnectedException>(
+        var error = await Assert.ThrowsAsync<BoardNotConnectedException>(
             () => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.Timer)], Cancel));
 
+        Assert.Equal("The smartDEN board's week schedule changed; nothing was sent.", error.Message);
         Assert.DoesNotContain(simulator.ReceivedRequests, r => r.Contains(" 00 06 62 ", StringComparison.Ordinal));
         Assert.Equal(SmartDenApi.RowEnabled, simulator.Register(SmartDenApi.RowEnableRegister));
     }

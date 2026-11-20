@@ -204,7 +204,7 @@ public sealed partial class AutoOffService : BackgroundService, IBoardWatcher
     {
         var expected = board.Expected;
         var off = Enumerable.Range(1, board.Capabilities.RelayCount)
-            .Where(c => !state.IsOn(c) && !expected.IsPending(c, on: true))
+            .Where(c => !expected.IsPending(c, on: true) && !state.IsOn(c))
             .Select(channels.RelayAt)
             .OfType<int>()
             .Where(r => !handled.Contains(r))
