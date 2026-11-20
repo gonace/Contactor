@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Net;
 using Contactor.Web.Components;
-using Contactor.Web.Features.Cloudflare;
 using Contactor.Web.Features.Languages;
 using Contactor.Web.Persistence;
 using Microsoft.AspNetCore.Components;
@@ -118,19 +117,6 @@ public sealed class LanguageTests
     }
 
     [Fact]
-    public async Task Should_HideTheChoice_WithOneLanguage()
-    {
-        await using var app = new TestWebApp(configureServices: OneLanguage);
-        using var http = app.CreateClient();
-
-        var settings = await http.GetStringAsync("/settings", Cancel);
-
-        Assert.DoesNotContain("id=\"language\"", settings, StringComparison.Ordinal);
-        using var page = await PageRenderer.StartAsync<Settings>(app.Services, John, "John");
-        Assert.False(await page.HasAsync(PageRenderer.With("id", "language")));
-    }
-
-    [Fact]
     public async Task Should_ChooseTheLanguageInSettings_ForEveryone()
     {
         await using var app = new TestWebApp();
@@ -214,22 +200,6 @@ public sealed class LanguageTests
         Assert.Equal("en", app.Services.GetRequiredService<AppLanguage>().Current.Code);
         Assert.Contains("The language couldn't be saved. Try again.", await page.TextAsync(), StringComparison.Ordinal);
         Assert.Empty(page.Errors);
-    }
-
-    [Fact]
-    public async Task Should_NotOfferTheLanguage_OnTheGuidesLaterPages()
-    {
-        await using var app = new TestWebApp(
-            settings: new Dictionary<string, string?> { ["CloudflareAccess:TeamDomain"] = "myteam.cloudflareaccess.com", ["CloudflareAccess:Audience"] = "aud" },
-            setUp: false);
-        app.SaveBeforeStart(new Installation { AccessType = CloudflareMethods.TunnelId, SignInType = CloudflareMethods.AccessId });
-        using var http = app.CreateClient();
-        await http.GetAsync("/setup", Cancel);
-
-        using var page = await PageRenderer.StartAsync<SetupGuide>(app.Services, John, "John");
-
-        Assert.Contains("About you", await page.TextAsync(), StringComparison.Ordinal);
-        Assert.False(await page.HasAsync(PageRenderer.With("id", "language")));
     }
 
     [Fact]

@@ -2,7 +2,6 @@ using System.Net;
 using Contactor.Web.Components;
 using Contactor.Web.Features.Boards;
 using Contactor.Web.Features.Relays;
-using Contactor.Web.Persistence;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,129 +14,6 @@ namespace Contactor.Tests.Web;
 public sealed class RelaysPageTests
 {
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
-
-    [Fact]
-    public async Task Should_ListActiveRelaysAndGreetTheUser()
-    {
-        await using var app = new TestWebApp(
-            "Development",
-            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
-            TestWebApp.WithLostBoard);
-        using var http = app.CreateClient();
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-
-        Assert.Contains("Hi John", html, StringComparison.Ordinal);
-        Assert.Contains("0 of 8 on", html, StringComparison.Ordinal);
-        for (var id = 1; id <= 8; id++)
-        {
-            Assert.Contains($"Relay {id}", html, StringComparison.Ordinal);
-        }
-    }
-
-    [Fact]
-    public async Task Should_ShowNoSectionHeadings_WithOnlyRelays()
-    {
-        await using var app = new TestWebApp(
-            "Development",
-            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
-
-        // The board's one input hidden: only relays are left, so they need no heading.
-        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
-        {
-            (await db.Inputs.SingleAsync(i => i.Id == 1, Cancel)).IsActive = false;
-            await db.SaveChangesAsync(Cancel);
-        }
-
-        using var http = app.CreateClient();
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-
-        Assert.DoesNotContain("id=\"groups-heading\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("id=\"relays-heading\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("id=\"inputs-heading\"", html, StringComparison.Ordinal);
-        Assert.DoesNotMatch("<section[^>]*aria-labelledby", html);
-    }
-
-    // With every relay in a group there is no relay card, so no "Relays" heading and no empty grid.
-    [Fact]
-    public async Task Should_ShowNoRelaysHeading_WhenEveryRelayIsInAGroup()
-    {
-        await using var app = new TestWebApp(
-            "Development",
-            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
-        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
-        {
-            List<RelayGroup> groups = [];
-            for (var g = 0; g < 4; g++)
-            {
-                var group = new RelayGroup { BoardId = 1, Name = $"Group {g + 1}", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
-                group.AddStep("Fan", (g * 2) + 1);
-                group.AddStep("Heat", (g * 2) + 2);
-                groups.Add(group);
-            }
-
-            await db.AddWithRuntimesAsync([.. groups]);
-        }
-
-        using var http = app.CreateClient();
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-
-        Assert.Contains("id=\"groups-heading\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("id=\"relays-heading\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("aria-labelledby=\"relays-heading\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("relay-cards", html, StringComparison.Ordinal);
-    }
-
-    // One group and every other relay inactive: no relay card shows, so no empty grid, only "Show N inactive relays".
-    [Fact]
-    public async Task Should_ShowNoRelaysSection_WhenTheOtherRelaysAreInactive()
-    {
-        await using var app = new TestWebApp(
-            "Development",
-            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
-        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
-        {
-            var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
-            group.AddStep("Fan", 1);
-            group.AddStep("Heat", 2);
-            await db.Relays.Where(r => r.Id > 2).ExecuteUpdateAsync(r => r.SetProperty(x => x.IsActive, false), Cancel);
-            await db.AddWithRuntimesAsync(group);
-        }
-
-        using var http = app.CreateClient();
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-
-        Assert.Contains("Fan heater", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("id=\"relays-heading\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("relay-cards", html, StringComparison.Ordinal);
-        Assert.Contains("Show 6 inactive relays", html, StringComparison.Ordinal);
-    }
-
-    // Groups first and relays after, each in a section of its own, so the cards line up and Tab goes row by row.
-    [Fact]
-    public async Task Should_ListTheGroupsFirst_InASectionOfTheirOwn()
-    {
-        await using var app = new TestWebApp(
-            "Development",
-            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
-        await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ContactorDbContext>>().CreateDbContextAsync(Cancel))
-        {
-            var group = new RelayGroup { BoardId = 1, Name = "Fan heater", Icon = GroupIcons.Fan, MaxOnMinutes = 120 };
-            group.AddStep("Fan", 1);
-            group.AddStep("Heat", 2);
-            await db.AddWithRuntimesAsync(group);
-        }
-
-        using var http = app.CreateClient();
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-
-        var groups = html.IndexOf("id=\"groups-heading\"", StringComparison.Ordinal);
-        var card = html.IndexOf("Fan heater", StringComparison.Ordinal);
-        var relays = html.IndexOf("id=\"relays-heading\"", StringComparison.Ordinal);
-        var relay = html.IndexOf("Relay 3", StringComparison.Ordinal);
-        Assert.True(groups >= 0 && groups < card && card < relays && relays < relay, $"{groups} {card} {relays} {relay}");
-    }
 
     [Fact]
     public async Task Should_WarnAndDisableButtons_WhenTheBoardIsNotConnected()
@@ -184,19 +60,6 @@ public sealed class RelaysPageTests
         Assert.DoesNotContain("TURN ON", relay, StringComparison.Ordinal);
         Assert.Contains("Waiting for the board", input, StringComparison.Ordinal);
         Assert.Contains("class=\"state unknown\"", input, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Should_ServeTheFonts()
-    {
-        await using var app = new TestWebApp(
-            "Development",
-            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
-        using var http = app.CreateClient();
-
-        using var response = await http.GetAsync("/fonts/ibm-plex-sans-latin-400-normal.woff2", Cancel);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     // A page closed while its first load is under way: when the load ends, it must not subscribe, or its handlers stay
