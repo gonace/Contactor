@@ -13,7 +13,7 @@ namespace Contactor.Boards.Velleman;
 /// A fake VM204 on a local TCP port: a small HTTP/1.1 server with the board's API routes (<see cref="Vm204Api"/>), as
 /// the firmware answers them: the key from a login, 400 for a wrong login or key, the status JSON, and one request
 /// per connection. It never tells the app anything by itself, as the real board. Used by the tests and, in
-/// development, by Contactor.Simulator. It listens on the loopback interface only.
+/// development, by Contactor.Simulator. It listens on 127.0.0.1 unless Start says otherwise.
 /// </summary>
 public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
@@ -140,18 +140,19 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     /// <summary>The request targets received, as they arrived (path and query, not decoded): the newest 1,000.</summary>
     public IReadOnlyList<string> ReceivedTargets => [.. _receivedTargets];
 
-    public void Start(int port = 0)
+    public void Start(int port = 0, IPAddress? address = null)
     {
         if (_listener is not null)
         {
             throw new InvalidOperationException("The simulator is already started.");
         }
 
-        _listener = new TcpListener(IPAddress.Loopback, port);
+        address ??= IPAddress.Loopback;
+        _listener = new TcpListener(address, port);
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = AcceptLoopAsync(_listener, _stopping.Token);
-        Vm204Log.SimulatorListening(_logger, Port);
+        Vm204Log.SimulatorListening(_logger, address, Port);
     }
 
     public Task SwitchRelayAsync(int relay, bool turnOn)

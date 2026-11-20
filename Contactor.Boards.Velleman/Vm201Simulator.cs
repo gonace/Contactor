@@ -12,8 +12,8 @@ namespace Contactor.Boards.Velleman;
 /// A fake VM201 on a local TCP port, implementing the whole protocol: optional login, channel names, status pushed
 /// on every change and no reply to a command that changes nothing (as the real board). A pulse turns its relays on, and
 /// off again by itself after its time on <see cref="TimeProvider"/>, with a status at each change; switching a relay
-/// ends its pulse, and a new pulse of it starts again. Used by the tests and, in
-/// development, by Contactor.Simulator (started by the Aspire AppHost). It listens on the loopback interface only.
+/// ends its pulse, and a new pulse of it starts again. Used by the tests and, in development, by Contactor.Simulator
+/// (started by the Aspire AppHost). It listens on 127.0.0.1 unless Start says otherwise.
 /// </summary>
 public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardTimers, ISimulatedBoardNoAnswer, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardRules, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
@@ -131,19 +131,20 @@ public sealed class Vm201Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     /// <summary>The packets received from logged-in clients, in order: the newest 1,000.</summary>
     public IReadOnlyList<Vm201Packet> ReceivedCommands => [.. _receivedCommands];
 
-    /// <summary>Starts listening on 127.0.0.1. Port 0 picks a free port.</summary>
-    public void Start(int port = 0)
+    /// <summary>Starts listening on 127.0.0.1, or on <paramref name="address"/>. Port 0 picks a free port.</summary>
+    public void Start(int port = 0, IPAddress? address = null)
     {
         if (_listener is not null)
         {
             throw new InvalidOperationException("The simulator is already started.");
         }
 
-        _listener = new TcpListener(IPAddress.Loopback, port);
+        address ??= IPAddress.Loopback;
+        _listener = new TcpListener(address, port);
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = AcceptLoopAsync(_listener, _stopping.Token);
-        Vm201Log.SimulatorListening(_logger, Port);
+        Vm201Log.SimulatorListening(_logger, address, Port);
     }
 
     /// <summary>Changes the outputs as the board's web page, buttons or timers would, and pushes the status.</summary>

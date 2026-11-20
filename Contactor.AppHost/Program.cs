@@ -33,9 +33,12 @@ public static class Program
 
         // The simulator's page is its http endpoint, linked from the dashboard; the board itself is its own port. The app
         // runs in a container and reaches the simulator on this computer at host.docker.internal, so the page says so.
+        // That connection comes in on this computer's network interface, not loopback, so every board listens on all
+        // addresses (Windows' firewall may ask once whether to allow the simulator).
         var simulator = builder.AddDotnetProject("simulator",
                 Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "Contactor.Simulator", "Contactor.Simulator.csproj")))
             .WithEnvironment("Simulator__AppAddress", ContainerHost)
+            .WithEnvironment("Simulator__ListenOnAllAddresses", "true")
             .WithEnvironment("Simulator__Boards__0__Type", "vm201")
             .WithEndpoint(port: Vm201Port, scheme: "tcp", name: "vm201", env: "Simulator__Boards__0__Port", isProxied: false)
             .WithHttpHealthCheck("/health");

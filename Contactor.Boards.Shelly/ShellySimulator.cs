@@ -21,7 +21,7 @@ namespace Contactor.Boards.Shelly;
 /// after an hour or 30,000 requests, and 429 after too many wrong passwords) or, for an older <see cref="Firmware"/>,
 /// in the way before it (a new challenge for every request). Its generation, firmware and profile can be set, for a
 /// device the app must refuse. It never tells the app anything by itself. Used by the tests and, in development, by
-/// Contactor.Simulator. It listens on the loopback interface only.
+/// Contactor.Simulator. It listens on 127.0.0.1 unless Start says otherwise.
 /// </summary>
 public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower, ISimulatedBoardRules, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
@@ -306,18 +306,19 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         }
     }
 
-    public void Start(int port = 0)
+    public void Start(int port = 0, IPAddress? address = null)
     {
         if (_listener is not null)
         {
             throw new InvalidOperationException("The simulator is already started.");
         }
 
-        _listener = new TcpListener(IPAddress.Loopback, port);
+        address ??= IPAddress.Loopback;
+        _listener = new TcpListener(address, port);
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = AcceptLoopAsync(_listener, _stopping.Token);
-        _logger.SimulatorListening(Port);
+        _logger.SimulatorListening(address, Port);
     }
 
     /// <summary><c>sys.schedule_rev</c>: 0 at start, 1 more for every job added and every update.</summary>

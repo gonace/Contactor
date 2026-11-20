@@ -15,7 +15,7 @@ namespace Contactor.Boards.Advantech;
 /// none. A frame whose header gives a length no Modbus frame has closes the connection, as nothing after it can be read
 /// in step. It has no registers: FC 03, 04, 06 and 10 are refused as "no such address". It takes any number of
 /// connections, since the manual names no limit. It never tells the app anything by itself, as the real module. Used
-/// by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
+/// by the tests and, in development, by Contactor.Simulator. It listens on 127.0.0.1 unless Start says otherwise.
 /// </summary>
 public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPower, ISimulatedBoardSlowAnswers
 {
@@ -126,18 +126,19 @@ public sealed class AdamSimulator : ISimulatedBoard, ISimulatedBoardRejectConnec
     /// <summary>The requests received, as hex, e.g. "00 01 00 00 00 06 01 05 00 10 FF 00". The newest 1,000.</summary>
     public IReadOnlyList<string> ReceivedRequests => [.. _receivedRequests];
 
-    public void Start(int port = 0)
+    public void Start(int port = 0, IPAddress? address = null)
     {
         if (_listener is not null)
         {
             throw new InvalidOperationException("The simulator is already started.");
         }
 
-        _listener = new TcpListener(IPAddress.Loopback, port);
+        address ??= IPAddress.Loopback;
+        _listener = new TcpListener(address, port);
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = AcceptLoopAsync(_listener, _stopping.Token);
-        _logger.SimulatorListening(Port);
+        _logger.SimulatorListening(address, Port);
     }
 
     public Task SwitchRelayAsync(int relay, bool turnOn)

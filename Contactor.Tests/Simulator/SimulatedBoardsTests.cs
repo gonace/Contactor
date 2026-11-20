@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Contactor.Boards;
 using Contactor.Boards.Advantech;
@@ -575,6 +576,41 @@ public sealed class SimulatedBoardsTests : IAsyncDisposable
         var board = Assert.Single(SimulatorHostedService.DefaultBoards);
 
         Assert.Equal(("vm201", Vm201Model.DefaultPort, "", ""), (board.Type, board.Port, board.Username, board.Password));
+    }
+
+    // The Aspire run's app is in a container, and reaches the simulator through this computer's network interface.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Should_ListenOnThisComputersOtherAddresses_OnlyWhenTheSettingsSaySo(bool listenOnAllAddresses)
+    {
+        var address = NetworkInterface.GetAllNetworkInterfaces()
+            .Where(n => n.OperationalStatus == OperationalStatus.Up)
+            .SelectMany(n => n.GetIPProperties().UnicastAddresses)
+            .Select(a => a.Address)
+            .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(a));
+        Assert.SkipWhen(address is null, "This computer has no IPv4 address but loopback.");
+        await using var boards = new SimulatedBoards(NullLoggerFactory.Instance, new FixedTimeProvider(Now),
+            Options.Create(new SimulatorOptions { ListenOnAllAddresses = listenOnAllAddresses }));
+        var port = FreePort();
+        Assert.Null(boards.Add("vm201", port, null, null));
+        using var client = new TcpClient(AddressFamily.InterNetwork);
+
+        if (listenOnAllAddresses)
+        {
+            await client.ConnectAsync(address, port, TestContext.Current.CancellationToken);
+
+            // The board's first word to the app: logged in, as a VM201 without a login says it.
+            var packet = new byte[5];
+            await client.GetStream().ReadExactlyAsync(packet, TestContext.Current.CancellationToken);
+            Assert.Equal(Vm201Command.LoggedIn, packet[2]);
+        }
+        else
+        {
+            var refused = await Assert.ThrowsAnyAsync<SocketException>(
+                () => client.ConnectAsync(address, port, TestContext.Current.CancellationToken).AsTask());
+            Assert.Equal(SocketError.ConnectionRefused, refused.SocketErrorCode);
+        }
     }
 
     // The page's one switch for a hung board is the VM201's own: a half-open socket.

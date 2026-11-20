@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Boards.Velleman;
@@ -29,6 +30,6 @@ internal static partial class Vm204Log
     [LoggerMessage(Level = LogLevel.Information, Message = "VM204 login changed (none: {None})")]
     public static partial void LoginChanged(ILogger logger, bool none);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "VM204 simulator listening on 127.0.0.1:{Port}")]
-    public static partial void SimulatorListening(ILogger logger, int port);
+    [LoggerMessage(Level = LogLevel.Information, Message = "VM204 simulator listening on {Address}:{Port}")]
+    public static partial void SimulatorListening(ILogger logger, IPAddress address, int port);
 }

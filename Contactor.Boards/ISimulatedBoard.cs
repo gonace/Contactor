@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace Contactor.Boards;
 
 /// <summary>
@@ -30,8 +32,11 @@ public interface ISimulatedBoard : IAsyncDisposable
     /// </summary>
     event EventHandler<BoardTraceEntry>? Traced;
 
-    /// <summary>Starts listening on 127.0.0.1. Port 0 picks a free port. Throws when the port is taken.</summary>
-    void Start(int port = 0);
+    /// <summary>
+    /// Starts listening on 127.0.0.1, or on <paramref name="address"/>, e.g. <see cref="IPAddress.Any"/> for an app in a
+    /// container. Port 0 picks a free port. Throws when the port is taken.
+    /// </summary>
+    void Start(int port = 0, IPAddress? address = null);
 
     /// <summary>Switches a relay as the board's own button would, and tells the app if anything changed.</summary>
     Task SwitchRelayAsync(int relay, bool turnOn);

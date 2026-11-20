@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Boards.Velleman;
@@ -46,8 +47,8 @@ internal static partial class Vm201Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "Discarded {ByteCount} invalid bytes from the VM201 stream")]
     public static partial void DiscardedBytes(ILogger logger, int byteCount);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "VM201 simulator listening on 127.0.0.1:{Port}")]
-    public static partial void SimulatorListening(ILogger logger, int port);
+    [LoggerMessage(Level = LogLevel.Information, Message = "VM201 simulator listening on {Address}:{Port}")]
+    public static partial void SimulatorListening(ILogger logger, IPAddress address, int port);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "VM201 → {Packet}")]
     public static partial void PacketSent(ILogger logger, string packet);

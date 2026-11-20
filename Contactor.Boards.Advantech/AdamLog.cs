@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Boards.Advantech;
@@ -20,8 +21,8 @@ internal static partial class AdamLog
     [LoggerMessage(Level = LogLevel.Error, Message = "An ADAM module subscriber failed")]
     public static partial void SubscriberFailed(this ILogger logger, Exception exception);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "ADAM simulator listening on 127.0.0.1:{Port}")]
-    public static partial void SimulatorListening(this ILogger logger, int port);
+    [LoggerMessage(Level = LogLevel.Information, Message = "ADAM simulator listening on {Address}:{Port}")]
+    public static partial void SimulatorListening(this ILogger logger, IPAddress address, int port);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The ADAM simulator closed a connection it couldn't serve")]
     public static partial void SimulatorConnectionFailed(this ILogger logger, Exception exception);

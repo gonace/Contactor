@@ -17,7 +17,7 @@ namespace Contactor.Boards.Denkovi;
 /// are refused as "no such address". It takes one connection at a time, as the manual says the board does: a new one is
 /// closed at once while another is open, or, with <see cref="NewConnectionTakesOver"/>, closes the one before (the manual
 /// doesn't say which; see README.md). It never tells the app anything by itself, as the real board. Used by the tests and, in
-/// development, by Contactor.Simulator. It listens on the loopback interface only.
+/// development, by Contactor.Simulator. It listens on 127.0.0.1 unless Start says otherwise.
 /// </summary>
 public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardSlowAnswers
 {
@@ -140,18 +140,19 @@ public sealed class SmartDenSimulator : ISimulatedBoard, ISimulatedBoardRejectCo
     /// <summary>The requests received, as hex, e.g. "00 01 00 00 00 06 00 05 00 00 FF 00". The newest 1,000.</summary>
     public IReadOnlyList<string> ReceivedRequests => [.. _receivedRequests];
 
-    public void Start(int port = 0)
+    public void Start(int port = 0, IPAddress? address = null)
     {
         if (_listener is not null)
         {
             throw new InvalidOperationException("The simulator is already started.");
         }
 
-        _listener = new TcpListener(IPAddress.Loopback, port);
+        address ??= IPAddress.Loopback;
+        _listener = new TcpListener(address, port);
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = AcceptLoopAsync(_listener, _stopping.Token);
-        _logger.SimulatorListening(Port);
+        _logger.SimulatorListening(address, Port);
     }
 
     public Task SwitchRelayAsync(int relay, bool turnOn)

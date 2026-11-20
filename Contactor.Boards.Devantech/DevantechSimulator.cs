@@ -17,7 +17,8 @@ namespace Contactor.Boards.Devantech;
 /// all, as on the board. It reads each TCP packet as the commands in it, and a password as the rest of its packet. A
 /// pulse time switches the relay back by itself after the time on <see cref="TimeProvider"/>; a later command for the
 /// relay ends its pulse, or starts it again. It never tells the app anything by itself. Several clients may connect at
-/// once. Used by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only.
+/// once. Used by the tests and, in development, by Contactor.Simulator. It listens on 127.0.0.1 unless Start says
+/// otherwise.
 /// </summary>
 public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPulses, ISimulatedBoardPower, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
@@ -176,18 +177,19 @@ public sealed class DevantechSimulator : ISimulatedBoard, ISimulatedBoardRejectC
     /// </summary>
     public IReadOnlyList<string> ReceivedRequests => [.. _receivedRequests];
 
-    public void Start(int port = 0)
+    public void Start(int port = 0, IPAddress? address = null)
     {
         if (_listener is not null)
         {
             throw new InvalidOperationException("The simulator is already started.");
         }
 
-        _listener = new TcpListener(IPAddress.Loopback, port);
+        address ??= IPAddress.Loopback;
+        _listener = new TcpListener(address, port);
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = AcceptLoopAsync(_listener, _stopping.Token);
-        _logger.SimulatorListening(Port);
+        _logger.SimulatorListening(address, Port);
     }
 
     public Task SwitchRelayAsync(int relay, bool turnOn)

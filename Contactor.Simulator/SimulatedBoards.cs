@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Options;
 
@@ -6,7 +7,8 @@ namespace Contactor.Simulator;
 
 /// <summary>
 /// The boards running in the simulator: the ones from the settings, and the ones added on the page, which last until
-/// the simulator stops. Each listens on its own port on 127.0.0.1.
+/// the simulator stops. Each listens on its own port on 127.0.0.1, or on all addresses with
+/// <see cref="SimulatorOptions.ListenOnAllAddresses"/>.
 /// </summary>
 public sealed partial class SimulatedBoards : IAsyncDisposable
 {
@@ -14,6 +16,7 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
     private readonly ILogger<SimulatedBoards> _logger;
     private readonly TimeProvider _time;
     private readonly int? _maxBoards;
+    private readonly IPAddress _address;
     private readonly Lock _lock = new();
     private readonly List<RunningBoard> _boards = [];
     private int _nextId = 1;
@@ -27,6 +30,7 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
         _logger = loggers.CreateLogger<SimulatedBoards>();
         _time = time;
         _maxBoards = options.Value.MaxBoards;
+        _address = options.Value.ListenOnAllAddresses ? IPAddress.Any : IPAddress.Loopback;
     }
 
     /// <summary>Raised when a board is added or removed, or any board's state or traffic changes; from any thread.</summary>
@@ -110,7 +114,7 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
             var board = model.Create(username, password, _loggers.CreateLogger(model.Model.Id), _time);
             try
             {
-                board.Start(port);
+                board.Start(port, _address);
             }
             catch (SocketException ex)
             {

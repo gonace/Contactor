@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Boards.Shelly;
@@ -29,6 +30,6 @@ internal static partial class ShellyLog
     [LoggerMessage(Level = LogLevel.Information, Message = "Shelly password changed; it is now {State}")]
     public static partial void PasswordChanged(this ILogger logger, string state);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Shelly simulator listening on 127.0.0.1:{Port}")]
-    public static partial void SimulatorListening(this ILogger logger, int port);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Shelly simulator listening on {Address}:{Port}")]
+    public static partial void SimulatorListening(this ILogger logger, IPAddress address, int port);
 }

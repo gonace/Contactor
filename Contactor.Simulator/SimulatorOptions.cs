@@ -5,14 +5,22 @@ public sealed class SimulatorOptions
 {
     public const string SectionName = "Simulator";
 
-    /// <summary>Where the boards listen, and where the app reaches them when no <see cref="AppAddress"/> is given.</summary>
+    /// <summary>Where the app reaches the boards when no <see cref="AppAddress"/> is given.</summary>
     public const string DefaultAppAddress = "127.0.0.1";
 
     /// <summary>
     /// The address the app reaches the boards at, shown on the page, e.g. <c>host.docker.internal</c> when the app runs
-    /// in a container (the Aspire run). Only shown: the boards still listen on 127.0.0.1. Empty: 127.0.0.1.
+    /// in a container (the Aspire run). Only shown; where the boards listen is <see cref="ListenOnAllAddresses"/>.
+    /// Empty: 127.0.0.1.
     /// </summary>
     public string AppAddress { get; set; } = "";
+
+    /// <summary>
+    /// Whether every board, from the settings or added on the page, listens on all of this computer's addresses
+    /// instead of 127.0.0.1 only. The Aspire run sets it: the app's container reaches this computer through its network
+    /// interface, not loopback. Off for the tests and the simulator run on its own.
+    /// </summary>
+    public bool ListenOnAllAddresses { get; set; }
 
     /// <summary>The boards to start. None given: one VM201 on its own port, 9760, without a login.</summary>
     public List<SimulatorBoardOptions> Boards { get; init; } = [];

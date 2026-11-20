@@ -17,8 +17,8 @@ namespace Contactor.Boards.Denkovi;
 /// noSuchName, a value out of range badValue. Only GetRequest and SetRequest are answered (section 9:
 /// snmpwalk isn't supported). A datagram it can't read is skipped, and the next one served. Its relays are the kit's
 /// pins: a pin that is High is a relay that is on. It never tells the app anything by itself, as the real board. Used
-/// by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only. Its traces show
-/// the PDU only, never a community.
+/// by the tests and, in development, by Contactor.Simulator. It listens on 127.0.0.1 unless Start says otherwise. Its
+/// traces show the PDU only, never a community.
 /// </summary>
 public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPower, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
@@ -209,17 +209,18 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
 
     private ulong RelaysUnlocked => _layout.RelaysOf(_p3, _p5);
 
-    public void Start(int port = 0)
+    public void Start(int port = 0, IPAddress? address = null)
     {
         if (_socket is not null)
         {
             throw new InvalidOperationException("The simulator is already started.");
         }
 
-        var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        address ??= IPAddress.Loopback;
+        var socket = new Socket(address.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
         try
         {
-            socket.Bind(new IPEndPoint(IPAddress.Loopback, port));
+            socket.Bind(new IPEndPoint(address, port));
         }
         catch
         {
@@ -230,7 +231,7 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         _socket = socket;
         Port = ((IPEndPoint)socket.LocalEndPoint!).Port;
         _loop = ServeAsync(socket, _stopping.Token);
-        DaenetIp2Log.SimulatorListening(_logger, Port);
+        DaenetIp2Log.SimulatorListening(_logger, address, Port);
     }
 
     public Task SwitchRelayAsync(int relay, bool turnOn)

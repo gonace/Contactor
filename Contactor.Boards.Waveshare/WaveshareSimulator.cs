@@ -158,18 +158,19 @@ public sealed class WaveshareSimulator : ISimulatedBoard, ISimulatedBoardRejectC
     /// <summary>The requests received, as hex, e.g. "01 05 00 00 FF 00 8C 3A". The newest 1,000.</summary>
     public IReadOnlyList<string> ReceivedRequests => [.. _receivedRequests];
 
-    public void Start(int port = 0)
+    public void Start(int port = 0, IPAddress? address = null)
     {
         if (_listener is not null)
         {
             throw new InvalidOperationException("The simulator is already started.");
         }
 
-        _listener = new TcpListener(IPAddress.Loopback, port);
+        address ??= IPAddress.Loopback;
+        _listener = new TcpListener(address, port);
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptLoop = AcceptLoopAsync(_listener, _stopping.Token);
-        _logger.SimulatorListening(Port);
+        _logger.SimulatorListening(address, Port);
     }
 
     public Task SwitchRelayAsync(int relay, bool turnOn)

@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Boards.Velleman;
@@ -20,6 +21,6 @@ internal static partial class Vm208Log
     [LoggerMessage(Level = LogLevel.Information, Message = "VM208 address set to {Host}:{Port}")]
     public static partial void EndpointChanged(ILogger logger, string host, int port);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "VM208 simulator listening on 127.0.0.1:{Port}")]
-    public static partial void SimulatorListening(ILogger logger, int port);
+    [LoggerMessage(Level = LogLevel.Information, Message = "VM208 simulator listening on {Address}:{Port}")]
+    public static partial void SimulatorListening(ILogger logger, IPAddress address, int port);
 }

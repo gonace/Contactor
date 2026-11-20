@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Boards.Denkovi;
@@ -20,8 +21,8 @@ internal static partial class SmartDenLog
     [LoggerMessage(Level = LogLevel.Error, Message = "A smartDEN subscriber failed")]
     public static partial void SubscriberFailed(this ILogger logger, Exception exception);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "smartDEN simulator listening on 127.0.0.1:{Port}")]
-    public static partial void SimulatorListening(this ILogger logger, int port);
+    [LoggerMessage(Level = LogLevel.Information, Message = "smartDEN simulator listening on {Address}:{Port}")]
+    public static partial void SimulatorListening(this ILogger logger, IPAddress address, int port);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The smartDEN simulator closed a connection it couldn't serve")]
     public static partial void SimulatorConnectionFailed(this ILogger logger, Exception exception);

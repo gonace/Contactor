@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Logging;
 
 namespace Contactor.Boards.Denkovi;
@@ -29,8 +30,8 @@ internal static partial class DaenetIp2Log
     [LoggerMessage(Level = LogLevel.Error, Message = "A DAEnetIP2 v2 subscriber failed")]
     public static partial void SubscriberFailed(ILogger logger, Exception exception);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "DAEnetIP2 v2 simulator listening on UDP 127.0.0.1:{Port}")]
-    public static partial void SimulatorListening(ILogger logger, int port);
+    [LoggerMessage(Level = LogLevel.Information, Message = "DAEnetIP2 v2 simulator listening on UDP {Address}:{Port}")]
+    public static partial void SimulatorListening(ILogger logger, IPAddress address, int port);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The DAEnetIP2 v2 simulator couldn't serve a datagram")]
     public static partial void SimulatorDatagramFailed(ILogger logger, Exception exception);
