@@ -417,9 +417,28 @@ public sealed class WaveshareClient : IPolledBoard<WaveshareStatus>, IDisposable
             Trace(BoardTraceDirection.Received, WaveshareTraceText.Inputs(inputs, inputCount), WaveshareModbus.Hex(inputAnswer), isRoutine: last?.Inputs == inputs);
         }
 
-        var status = new WaveshareStatus(relays, inputs, _modes);
+        // The relays in linkage mode: from the modes when they were read, otherwise as the last reading that knew them
+        // (kept while disconnected, gone once the poller forgets the board): a read that failed says nothing about them
+        // (issue #567).
+        var linkage = _modes is { } modes ? Linkage(modes) : _poller.State.Reading?.Linkage ?? 0;
+        var status = new WaveshareStatus(relays, inputs, _modes, linkage);
         Volatile.Write(ref _lastTraced, status);
         return status;
+    }
+
+    // Bit per relay whose mode is linkage, bit 0 = relay 1.
+    private static ulong Linkage(IReadOnlyList<ushort> modes)
+    {
+        ulong mask = 0;
+        for (var i = 0; i < modes.Count && i < WaveshareApi.RelayModeCount; i++)
+        {
+            if (modes[i] == WaveshareApi.ModeLinkage)
+            {
+                mask |= 1UL << i;
+            }
+        }
+
+        return mask;
     }
 
     // The 8 mode registers, read with one FC 03; never written here. A read the board refuses, or whose answer can't be

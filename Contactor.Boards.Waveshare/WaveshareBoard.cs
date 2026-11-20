@@ -114,7 +114,8 @@ public sealed class WaveshareBoard : IRelayBoard
     /// <summary>
     /// The board's state as a <see cref="BoardState"/>, with its own rules (<see cref="ToOwnRules"/>): null while the
     /// modes aren't known (a model without them, before they were read, or a read that failed), and kept while
-    /// disconnected, as the relays are.
+    /// disconnected, as the relays are. While they aren't known, the relays the last read that worked showed in linkage
+    /// mode stay unavailable (<see cref="BoardState.KeptUnavailable"/>, issue #567).
     /// </summary>
     public static BoardState ToBoardState(WaveshareState state)
     {
@@ -124,7 +125,8 @@ public sealed class WaveshareBoard : IRelayBoard
             new ChannelMask(state.Relays),
             new ChannelMask(state.Inputs),
             state.LastContactUtc,
-            OwnRules: state.Modes is { } modes ? ToOwnRules(modes) : null);
+            OwnRules: state.Modes is { } modes ? ToOwnRules(modes) : null,
+            KeptUnavailable: state.Modes is null ? new ChannelMask(state.Linkage) : ChannelMask.None);
     }
 
     /// <summary>

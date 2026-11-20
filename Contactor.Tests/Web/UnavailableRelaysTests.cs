@@ -408,6 +408,43 @@ public sealed partial class UnavailableRelaysTests
         Assert.False(board.State.IsOn(1));
     }
 
+    // The board's rules can't be read for a while after a read that showed Heat (relay 2) and relay 3 controlled by the
+    // board itself (issue #567): they stay unavailable, as they were, until a read shows them otherwise.
+    [Fact]
+    public async Task Should_KeepItUnavailable_WhileTheRulesCantBeRead()
+    {
+        await using var rig = await BoardTestRig.StartAsync(secondBoard: true);
+        var board = rig.Second!;
+        var (id, error) = await rig.GroupSetup.CreateAsync(Draft(rig, 1, 2), John, Cancel);
+        Assert.Null(error);
+        await rig.Control.TurnOnAsync(rig.SecondRelayId(4), John, Cancel);
+        board.SetRelay(3, on: true);
+        board.SetOwnRules(null, keptUnavailable: ChannelMask.Of(2) | ChannelMask.Of(3));
+
+        // No ON or OFF for a person, and "All off" leaves it out.
+        await Assert.ThrowsAsync<RelayUnavailableException>(() => rig.Control.TurnOnAsync(rig.SecondRelayId(3), John, Cancel));
+        await Assert.ThrowsAsync<RelayUnavailableException>(() => rig.Control.TurnOffAsync(rig.SecondRelayId(3), John, Cancel));
+        await rig.Control.TurnAllOffAsync(rig.SecondBoardId, John, Cancel);
+        Assert.Equal(ChannelMask.Of(3), board.State.Relays);
+        Assert.DoesNotContain(board.Sent, s => s.Relays.Contains(3));
+
+        // The group doesn't start, and a stop waits for Heat without sending it anything.
+        await Assert.ThrowsAsync<GroupUnavailableException>(() => rig.Groups.StartGroupAsync(id!.Value, John, Cancel));
+        board.SetRelay(1, on: true);
+        board.SetRelay(2, on: true);
+        await rig.Groups.StepAsync(Cancel);
+        await rig.Groups.StopGroupAsync(id!.Value, John, Cancel);
+        for (var second = 0; second < 20; second++)
+        {
+            rig.Time.Now += TimeSpan.FromSeconds(1);
+            await rig.Groups.StepAsync(Cancel);
+        }
+
+        Assert.DoesNotContain(board.Sent, s => s.Relays.Contains(2));
+        Assert.True(board.State.IsOn(1) && board.State.IsOn(2));
+        Assert.Equal(GroupPhases.Stopping, (await rig.GroupSetup.GetAsync(id.Value, Cancel))!.Runtime.Phase);
+    }
+
     // ----- The screens -----
 
     [Fact]
