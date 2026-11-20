@@ -83,8 +83,29 @@ public sealed class OnItsWayTests : IAsyncLifetime
         Assert.Equal([(ChannelMask.Of(1), true), (ChannelMask.Of(2), true), (ChannelMask.Of(2), false), (ChannelMask.Of(1), false)], _board.Sent);
     }
 
-    // The board showed Jane's ON before the recorder got to it, then the relay went off and on again at the board: the
-    // recorder, once it catches up, still takes the ON as Jane's and logs the two changes after it as external.
+    // What is on its way is read before the board's state: here a status comes just after the step read the state, and
+    // shows the fan's OFF (on its way, as one the app sent) taken. Read the other way round, the step would take the
+    // state from before it with the OFF no longer on its way, and send the heat's ON while the fan is off.
+    [Fact]
+    public async Task Should_NotStartTheNextStep_WhenAStatusShowingTheRelayAboveOffComesJustAfterTheStateIsRead()
+    {
+        var groupId = await AddGroupAsync((1, "Fan"), (2, "Heat"));
+        await Groups.StartGroupAsync(groupId, Jane, Cancel);
+        await Groups.StepAsync(Cancel);
+        _time.Now += TimeSpan.FromSeconds(1);
+        _database.Services.Live().Expected.Expect(ChannelMask.Of(1), on: false);
+        _board.AfterStateRead = () => _board.SetRelay(1, on: false);
+
+        await Groups.StepAsync(Cancel);
+
+        Assert.Null(_board.AfterStateRead);
+        Assert.DoesNotContain((ChannelMask.Of(2), true), _board.Sent);
+        Assert.False(_board.State.IsOn(2));
+    }
+
+    // Guards that logging is unchanged (it passes on main too): the board showed Jane's ON before the recorder got to it,
+    // then the relay went off and on again at the board. The recorder, once it catches up, still takes the ON as Jane's
+    // and logs the two changes after it as external.
     [Fact]
     public async Task Should_LogOnlyTheChangesOutsideTheApp_WhenTheRecorderCatchesUpLater()
     {
@@ -97,12 +118,11 @@ public sealed class OnItsWayTests : IAsyncLifetime
 
         List<(int RelayId, string Actor, string Action)> expected =
             [(3, Jane, EventActions.On), (3, EventActors.External, EventActions.Off), (3, EventActors.External, EventActions.On)];
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-        while ((await EventsAsync()).Count < expected.Count && DateTime.UtcNow < deadline)
+        await BoardTestRig.WaitUntilAsync(() =>
         {
-            await Task.Delay(20, Cancel);
-        }
-
+            using var db = _database.Factory.CreateDbContext();
+            return db.EventLog.Count() >= expected.Count;
+        });
         Assert.Equal(expected, await EventsAsync());
     }
 

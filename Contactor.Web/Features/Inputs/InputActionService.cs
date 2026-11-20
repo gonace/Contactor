@@ -273,10 +273,12 @@ public sealed partial class InputActionService : BackgroundService, IBoardWatche
         }
     }
 
-    // The board shows the relay (its channel) in that state, and no command to change it is on its way.
+    // The board shows the relay (its channel) in that state, and no command to change it is on its way. On its way is
+    // read before the board's state (see ExpectedChanges.IsPending).
     private static bool IsAlready(LiveBoard board, int channel, bool on)
     {
-        return board.State.Relays.Contains(channel) == on && !board.Expected.IsPending(channel, !on);
+        var pending = board.Expected.IsPending(channel, !on);
+        return !pending && board.State.Relays.Contains(channel) == on;
     }
 
     // Every relay (by channel) on, nothing on its way and no sequence under way: starting it again would only log a

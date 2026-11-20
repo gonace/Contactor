@@ -187,8 +187,9 @@ public sealed class RelayControl
 
         // A relay the app just turned on counts as on before its board shows it (a status still on its way, or the next
         // poll): otherwise its "Off" would be neither logged nor expected, and the board's OFF would show as a change
-        // made at the board.
-        var wasOn = (board.State.Relays | PendingOn(expected, single)) & single;
+        // made at the board. On its way is read before the board's state (see ExpectedChanges.IsPending).
+        var pendingOn = PendingOn(expected, single);
+        var wasOn = (board.State.Relays | pendingOn) & single;
         var sent = _clock.UtcNow;
         var refused = ChannelMask.None;
         if (!single.IsEmpty)

@@ -158,7 +158,9 @@ public sealed class ExpectedChanges
 
     /// <summary>
     /// Whether a command for this change went out in the last few seconds and the board hasn't shown it yet: the
-    /// board's state may still show the relay as it was.
+    /// board's state may still show the relay as it was. Read it before the board's state, never after: a status that
+    /// comes in between then shows in the state. Read after, it can end what is on its way while the state read
+    /// before still shows the relay as it was.
     /// </summary>
     public bool IsPending(int channel, bool on)
     {

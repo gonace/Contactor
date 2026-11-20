@@ -372,15 +372,20 @@ public sealed partial class BoardSequencer : IBoardPart, IAsyncDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            // What is on its way before the board's state (see ExpectedChanges.IsPending): a status that comes in between
+            // then shows in the state, instead of the state being older than what is no longer on its way.
+            var relays = _board.Capabilities.AllRelays.Channels;
+            var offPending = ChannelMask.Of(relays.Where(c => _expected.IsPending(c, on: false)));
+            var onPending = ChannelMask.Of(relays.Where(c => _expected.IsPending(c, on: true)));
             var state = _board.State;
 
             // A relay the app sent an OFF for still shows on until the board's status catches up: it counts as off for
             // what may come on, so a status from before the OFF never lets a relay below it on.
-            _offOnItsWay = ChannelMask.Of(state.Relays.Channels.Where(c => _expected.IsPending(c, on: false)));
+            _offOnItsWay = state.Relays & offPending;
 
             // A relay turned on again while the others of its step stop: that stop finishes only once the board shows it.
             // "Turn off" turns it off too, after that ON.
-            _onOnItsWay = ChannelMask.Of(_board.Capabilities.AllRelays.Except(state.Relays).Channels.Where(c => _expected.IsPending(c, on: true)));
+            _onOnItsWay = onPending.Except(state.Relays);
             if (!state.IsConnected || Volatile.Read(ref _disposed) == 1)
             {
                 if (request is not null)

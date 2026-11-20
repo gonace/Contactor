@@ -200,6 +200,19 @@ public sealed class ExpectedChangesTests
         Assert.True(_expected.TryConsume(1, on: true, Received));
     }
 
+    // The recorder takes a change the board already showed before one still on its way, even one added earlier, so
+    // that one stays on its way.
+    [Fact]
+    public void Should_UseUpTheShownExpectationFirst_AndKeepTheOneOnItsWay()
+    {
+        _expected.Expect(ChannelMask.Of(1), on: true);
+        _expected.ExpectAgain(1, on: true);
+
+        Assert.True(_expected.TryConsume(1, on: true, Received));
+
+        Assert.True(_expected.IsPending(1, on: true));
+    }
+
     private DateTime Received => _time.GetUtcNow().UtcDateTime;
 
     private BoardState Status(ChannelMask relays)
