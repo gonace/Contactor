@@ -152,7 +152,8 @@ public sealed class DemoSetupTests : IDisposable
         var colour = new Regex(@"#[0-9A-Fa-f]{3,8}\b");
         var css = System.Text.Encoding.UTF8.GetString(DemoPages.Stylesheet());
 
-        var outsideTokens = css.Split('\n').Where(l => colour.IsMatch(l) && !token.IsMatch(l)).ToList();
+        // Git may check the stylesheet out with CRLF on Windows, so its lines are read whatever their endings.
+        var outsideTokens = css.ReplaceLineEndings("\n").Split('\n').Where(l => colour.IsMatch(l) && !token.IsMatch(l)).ToList();
         var pages = string.Concat(DemoPages.Page(new DemoOptions(), offersTemplate: true), DemoPages.Busy(), DemoPages.Ended(), DemoPages.NotStarted(), DemoPages.WentWrong());
 
         Assert.Empty(outsideTokens);
