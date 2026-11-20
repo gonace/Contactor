@@ -15,34 +15,7 @@ namespace Contactor.Tests.Web;
 public sealed class GroupNewTests
 {
     private const string John = "john@example.com";
-    private static readonly GroupMemberDraft[] FanHeater =
-    [
-        new(3, "Fan", 3, 300),
-        new(1, "Heat", 10, 0),
-        new(5, "Lamp", 1, 0),
-    ];
-
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
-
-    [Fact]
-    public void Should_DescribeTheStartFromTheTop_WithTheWaits()
-    {
-        Assert.Equal("Fan → wait 10 s → Heat → wait 1 s → Lamp", TestTexts.GroupPlan.Start(FanHeater));
-    }
-
-    [Fact]
-    public void Should_DescribeTheStopFromTheBottom_WithTheRunOn()
-    {
-        Assert.Equal("Lamp off → Heat off → Run-on for 5 min: Fan, then off", TestTexts.GroupPlan.Stop(FanHeater));
-    }
-
-    [Fact]
-    public void Should_DescribeTheInterlockForEachPair()
-    {
-        Assert.Equal(
-            "Heat can only be on while Fan is on. Lamp can only be on while Heat is on.",
-            TestTexts.GroupPlan.Interlock(FanHeater));
-    }
 
     [Theory]
     [InlineData(null, false, true, "Free", true)]

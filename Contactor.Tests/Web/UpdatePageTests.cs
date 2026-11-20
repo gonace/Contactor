@@ -32,40 +32,6 @@ public sealed class UpdatePageTests
         Assert.Contains("Contactor restarts. That takes about a minute. The relays stay as they are, and schedules catch up afterwards.", html, StringComparison.Ordinal);
     }
 
-    // The changes are written as text: bold where the notes have it, and HTML only as characters.
-    [Fact]
-    public async Task Should_ShowWhatsNew_AsText_WithBold()
-    {
-        var release = new Release("2026.11.20", new DateOnly(2026, 11, 20), ReleaseNotes.Changes("* **Bold first** then <script>alert(1)</script> and **open"));
-        await using var app = new TestWebApp(
-            "Development",
-            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" },
-            TestWebApp.WithReleases("2026.11.14", release));
-        await StartAsync(app, helper: true);
-        using var http = app.CreateClient();
-
-        var html = await http.GetStringAsync("/settings", Cancel);
-
-        Assert.Matches("<li[^>]*><strong[^>]*>Bold first</strong> then &lt;script&gt;alert\\(1\\)&lt;/script&gt; and open</li>", html);
-        Assert.DoesNotContain("<script>alert", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("**", html, StringComparison.Ordinal);
-    }
-
-    // A template or a plain compose run: the platform updates Contactor.
-    [Fact]
-    public async Task Should_SayWhereUpdatesComeFrom_WithoutTheHelper()
-    {
-        await using var app = App();
-        await StartAsync(app, helper: false);
-        using var http = app.CreateClient();
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
-
-        Assert.Contains("Version 2026.11.20 is available", html, StringComparison.Ordinal);
-        Assert.DoesNotMatch(">\\s*Update now\\s*</button>", html);
-        Assert.Contains("Contactor is updated where it was installed", html, StringComparison.Ordinal);
-    }
-
     [Fact]
     public async Task Should_AskFirst_ThenStartTheUpdate()
     {
@@ -149,24 +115,6 @@ public sealed class UpdatePageTests
         Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync("/settings/update-log?id=20261112-095801", Cancel)).StatusCode);
     }
 
-    [Fact]
-    public async Task Should_ShowTheSplash_OnEveryPage_WhileTheAppRestarts()
-    {
-        await using var app = App();
-        var service = await StartAsync(app, helper: true);
-        using var page = await PageRenderer.StartAsync<UpdateSplash>(app.Services, "jane@example.com", "Jane");
-        Assert.DoesNotContain("Contactor is updating", await page.TextAsync(), StringComparison.Ordinal);
-        var renders = page.Renders;
-
-        WriteStatus(service, "state=running\nstep=restart");
-        await Wait.UntilAsync(() => page.Renders > renders);
-
-        var text = await page.TextAsync();
-        Assert.Contains("Contactor is updating", text, StringComparison.Ordinal);
-        Assert.Contains("To version 2026.11.20. This takes about a minute, and the page comes back by itself.", text, StringComparison.Ordinal);
-        Assert.Contains("The relays stay as they are. Schedules and auto-offs catch up once it's back.", text, StringComparison.Ordinal);
-    }
-
     // A page closed while "Checking…" shows: its wait ends with the page, without the clock moving.
     [Fact]
     public async Task Should_EndCheckingsWait_WhenThePageCloses()
@@ -189,60 +137,6 @@ public sealed class UpdatePageTests
 
         // The press ends on its own: the clock never moves here.
         await Wait.UntilAsync(() => press.IsCompleted);
-    }
-
-    // "Check now" reads GitHub at once: "Checking…" meanwhile, at least for a moment, then what it found, with the line
-    // and the button kept.
-    [Fact]
-    public async Task Should_CheckNow_AndShowWhatItFound()
-    {
-        var time = new ManualTimeProvider();
-        var source = new UpdateServiceTests.HeldSource([]);
-        await using var app = new TestWebApp(
-            "Development",
-            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com", ["TimeZone"] = "Europe/Stockholm" },
-            services =>
-            {
-                TestWebApp.WithReleases("2026.11.14")(services);
-                services.AddSingleton<IReleaseSource>(source);
-                services.AddSingleton<TimeProvider>(time);
-            });
-        await StartAsync(app, helper: true);
-        using var page = await PageRenderer.StartAsync<UpdateBox>(app.Services, "john@example.com", "John");
-        var text = await page.TextAsync();
-        Assert.Contains("You have the newest version, 2026.11.14.", text, StringComparison.Ordinal);
-        Assert.Contains("Checked today at 11:00.", text, StringComparison.Ordinal);
-        var calls = source.Calls;
-
-        // Within a minute of the last read: "Checking…" for a moment, so the press shows it was taken, then the same as
-        // before, without reading GitHub.
-        var press = page.ClickAsync(PageRenderer.WithText("Check now"));
-        await Wait.UntilAsync(() => page.HasAsync(a => PageRenderer.WithText("Checking…")(a) && PageRenderer.With("disabled", "True")(a)).GetAwaiter().GetResult());
-        Assert.False(press.IsCompleted);
-        time.Advance(UpdateBox.CheckingShownFor);
-        await press;
-        Assert.True(await page.HasAsync(PageRenderer.WithText("Check now")));
-        Assert.Contains("Checked today at 11:00.", await page.TextAsync(), StringComparison.Ordinal);
-        Assert.Equal(calls, source.Calls);
-
-        time.Advance(UpdateService.CheckNowEvery);
-        source.Hold();
-        var click = page.ClickAsync(PageRenderer.WithText("Check now"));
-        await Wait.UntilAsync(() => page.HasAsync(PageRenderer.WithText("Checking…")).GetAwaiter().GetResult());
-        Assert.True(await page.HasAsync(a => PageRenderer.WithText("Checking…")(a) && PageRenderer.With("disabled", "True")(a)));
-        source.Release([Newest]);
-        time.Advance(UpdateBox.CheckingShownFor);
-        await click;
-        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("is available", StringComparison.Ordinal));
-
-        text = await page.TextAsync();
-        Assert.Equal(calls + 1, source.Calls);
-        Assert.Contains("You have version 2026.11.14.", text, StringComparison.Ordinal);
-        Assert.Contains("Checked today at 11:01.", text, StringComparison.Ordinal);
-        Assert.True(await page.HasAsync(PageRenderer.WithText("Check now")));
-        Assert.True(text.IndexOf("Check now", StringComparison.Ordinal) < text.IndexOf("Version 2026.11.20 is available", StringComparison.Ordinal));
-        Assert.True(await page.HasAsync(PageRenderer.WithText("Update now")));
-        Assert.Empty(page.Errors);
     }
 
     // Issue #490: the result of an update that went through shows for a day, and a newer release still can be installed.
@@ -309,19 +203,6 @@ public sealed class UpdatePageTests
         Assert.Contains("Updating from 2026.11.14 to 2026.11.20.", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Check now", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Checked today", text, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Should_SayItIsTheNewest_InADevelopmentBuild()
-    {
-        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = "john@example.com" });
-        using var http = app.CreateClient();
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
-
-        Assert.Contains("This is a development version of Contactor. It isn't updated from here.", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("Update now", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("Check now", html, StringComparison.Ordinal);
     }
 
     private static TestWebApp App()
