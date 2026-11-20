@@ -57,15 +57,15 @@ Contactor.Demo/           # The public demo: a proxy that gives each visitor the
 Contactor.AppHost/        # Aspire: runs everything locally (aspire run)
 Contactor.ServiceDefaults/ # Aspire defaults: OpenTelemetry, health checks, resilient HTTP clients
 Contactor.Tests/          # The only test project
-  Advantech/                # Modbus TCP codec, trace words, simulator + client against the simulator
+  Advantech/                # Modbus TCP codec, simulator + client against the simulator
   Boards/                   # ChannelMask, BoardPoller, board adapters
   Demo/                     # The demo's proxy, visitors' copies, supervised programs, settings, pages and the Workshop template
-  Denkovi/                  # Modbus TCP and SNMPv1 codecs, trace words, simulators + clients against the simulators
-  Devantech/                # Command bytes and layouts, trace words, simulator + client against the simulator
-  Shelly/                   # RPC JSON, digest, trace words, simulator + client against the simulator
+  Denkovi/                  # Modbus TCP and SNMPv1 codecs, simulators + clients against the simulators
+  Devantech/                # Command bytes and layouts, the trace lines that hide secrets, simulator + client against the simulator
+  Shelly/                   # RPC JSON, digest, the trace lines that hide secrets, simulator + client against the simulator
   Simulator/                # The simulator's boards and page
-  Velleman/                 # VM201 codec, VM204 and VM208 JSON, login, trace words, connections + clients against the simulator
-  Waveshare/                # Modbus codec, trace words, simulator + client against the simulator
+  Velleman/                 # VM201 codec, VM204 and VM208 JSON, login, the trace lines that hide secrets, connections + clients against the simulator
+  Waveshare/                # Modbus codec, simulator + client against the simulator
   Web/                      # Scheduling, auto-off, daylight saving, identity
 install/
   install.sh                # The one-command install (curl … | sh), the only file attached to each GitHub Release
