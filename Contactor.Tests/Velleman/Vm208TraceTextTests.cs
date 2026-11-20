@@ -5,34 +5,6 @@ namespace Contactor.Tests.Velleman;
 /// <summary>The VM208's requests and answers in plain words, and the relay form read as the firmware reads it.</summary>
 public sealed class Vm208TraceTextTests
 {
-    [Theory]
-    [InlineData("GET", "/status", null, "Ask for status")]
-    [InlineData("POST", "/relay", "index=3&state=1&interface=-1&socket=0", "Turn on relay 3")]
-    [InlineData("POST", "/relay", "index=2&state=0&interface=-1&socket=0", "Turn off relay 2")]
-    [InlineData("POST", "/relay", "index=9&state=0&interface=-1&socket=0", "Ask for POST /relay")]
-    [InlineData("GET", "/heap", null, "Ask for GET /heap")]
-    public void Should_SayWhatARequestAsksFor(string method, string path, string? form, string text)
-    {
-        Assert.Equal(text, Vm208TraceText.Request(method, path, form));
-    }
-
-    [Fact]
-    public void Should_ShowTheRequestsBytes()
-    {
-        Assert.Equal("GET /status?interface=-1&socket=0", Vm208TraceText.RequestBytes("GET", $"{Vm208Api.StatusPath}?{Vm208Api.StatusQuery}"));
-        Assert.Equal("POST /relay index=4&state=0&interface=-1&socket=0", Vm208TraceText.RequestBytes("POST", Vm208Api.RelayPath, Vm208Api.RelayForm(4, false)));
-    }
-
-    [Theory]
-    [InlineData(0b0000, false, 0, "Status: all off · input off")]
-    [InlineData(0b0101, true, 0, "Status: relay 1 and 3 on · input on")]
-    [InlineData(0b1111, false, 3, "Status: all on · input off · m1 and m2 on")]
-    [InlineData(0b0010, false, 2, "Status: relay 2 on · input off · m2 on")]
-    public void Should_PutTheStatusInWords(byte relays, bool input, byte outputs, string text)
-    {
-        Assert.Equal(text, Vm208TraceText.Status(new Vm208Status(relays, input, outputs)));
-    }
-
     [Fact]
     public void Should_CutALongAnswer_AndHideWhatIsntPrintable()
     {

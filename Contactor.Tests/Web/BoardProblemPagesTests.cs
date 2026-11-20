@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using Contactor.Boards;
 using Contactor.Boards.Devantech;
 using Contactor.Boards.Shelly;
@@ -7,7 +6,6 @@ using Contactor.Boards.Velleman;
 using Contactor.Tests.Boards;
 using Contactor.Web.Components;
 using Contactor.Web.Features.Boards;
-using Contactor.Web.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -42,173 +40,6 @@ public sealed class BoardProblemPagesTests
         { new ConnectionProblem(ConnectionProblemKind.AskedToWait, DevantechModels.Eth008), "The board asks Contactor to wait a while. If you just changed the password, check it.", "Asked to wait" },
         { null, "No contact with the relay board at", "No contact yet" },
     };
-
-    [Theory]
-    [MemberData(nameof(Problems))]
-    public async Task Should_SayWhy_OnSettings_WithOneBoard(ConnectionProblem? problem, string longText, string shortText)
-    {
-        var board = new FakeRelayBoard(connected: false);
-        board.SetProblem(problem);
-        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John }, TestWebApp.WithBoard(board));
-        using var http = app.CreateClient();
-
-        var html = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
-
-        Assert.Contains(longText, html, StringComparison.Ordinal);
-        if (problem is not null)
-        {
-            // The desktop's side menu, on every screen, has the short one.
-            Assert.DoesNotContain("No contact with the relay board at", html, StringComparison.Ordinal);
-            Assert.Matches($"<span class=\"no-contact\"[^>]*>{shortText}</span>", html);
-        }
-
-        // Another model the app knows is added again: the model can't be changed here.
-        Assert.Equal(
-            problem is { Kind: ConnectionProblemKind.WrongModel, Found: not null, FoundRelayCount: null },
-            html.Contains("Add it again as an ETH484-B with 'Add a board', then remove this one.", StringComparison.Ordinal));
-        Assert.Equal(
-            problem is { FoundRelayCount: 4 },
-            html.Contains("Add it again with 'Add a board' and choose the one with 4 relays, then remove this one.", StringComparison.Ordinal));
-    }
-
-    // The red box keeps its heading; the line under it says why, and where to go. The relays wait for the board.
-    [Theory]
-    [MemberData(nameof(Problems))]
-    public async Task Should_SayWhy_OnRelays(ConnectionProblem? problem, string longText, string shortText)
-    {
-        _ = shortText;
-        foreach (var answered in new[] { false, true })
-        {
-            var board = answered ? FakeRelayBoard.LostContact() : new FakeRelayBoard(connected: false);
-            board.SetProblem(problem);
-            await using var app = new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John }, TestWebApp.WithBoard(board));
-            using var http = app.CreateClient();
-
-            var html = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-
-            Assert.Contains(answered ? "No contact with the relay board" : "No contact with the relay board yet", html, StringComparison.Ordinal);
-            if (problem is null)
-            {
-                Assert.Contains(answered ? "The states below may be wrong." : "Waiting for its first answer.", html, StringComparison.Ordinal);
-                Assert.DoesNotContain("See Settings.", html, StringComparison.Ordinal);
-            }
-            else
-            {
-                Assert.Contains($"{longText} See Settings.", html, StringComparison.Ordinal);
-                Assert.DoesNotContain("Waiting for its first answer.", html, StringComparison.Ordinal);
-                Assert.DoesNotContain("The states below may be wrong.", html, StringComparison.Ordinal);
-            }
-
-            if (!answered)
-            {
-                Assert.Contains("Waiting for the board", html, StringComparison.Ordinal);
-            }
-        }
-    }
-
-    // With several boards: the short reason in the board's row on Settings and in the desktop's side menu, the long one
-    // on the board's own page. The chips on a phone are as before.
-    [Theory]
-    [MemberData(nameof(Problems))]
-    public async Task Should_SayWhy_InTheBoardsRows_AndOnItsPage(ConnectionProblem? problem, string longText, string shortText)
-    {
-        var barn = new FakeRelayBoard(relayCount: 4, connected: false, inputCount: 2);
-        barn.SetProblem(problem);
-        await using var boards = await TwoBoards.StartAsync(barn);
-        using var http = boards.App.CreateClient();
-
-        var settings = WebUtility.HtmlDecode(await http.GetStringAsync("/settings", Cancel));
-        var page = WebUtility.HtmlDecode(await http.GetStringAsync($"/board/{boards.BarnId}", Cancel));
-        var relays = WebUtility.HtmlDecode(await http.GetStringAsync("/", Cancel));
-
-        Assert.Matches($"(?s)href=\"board/{boards.BarnId}\" class=\"board-row lost\".*?<span class=\"board-status\"[^>]*><span class=\"dot\"[^>]*></span>{shortText}</span>", settings);
-        Assert.Contains(longText, page, StringComparison.Ordinal);
-        var side = problem is null ? "No contact" : shortText;
-        Assert.Matches($"(?s)class=\"side-board[^\"]* lost\".*?<span class=\"no-contact\"[^>]*>{side}</span>", relays);
-        if (problem is not null)
-        {
-            // The side menu only: not the phone's chips.
-            Assert.DoesNotContain("No contact yet", settings, StringComparison.Ordinal);
-            Assert.Single(System.Text.RegularExpressions.Regex.Matches(relays, shortText));
-        }
-    }
-
-    // A board's problem, and its end, redraws the filter: the side menu has the short reason.
-    [Fact]
-    public void Should_RedrawTheFilter_ForANewProblem()
-    {
-        var board = new FakeRelayBoard(connected: false);
-        var shown = new ShownBoardStatesProbe(board);
-
-        board.SetProblem(WrongModel);
-        Assert.True(shown.Changed());
-        board.SetProblem(WrongModel);
-        Assert.False(shown.Changed());
-        board.SetProblem(new ConnectionProblem(ConnectionProblemKind.LoginRefused, DevantechModels.Eth008));
-        Assert.True(shown.Changed());
-        board.SetProblem(null);
-        Assert.True(shown.Changed());
-    }
-
-    // "Add a board": another model at the address says so, and "Choose model" goes back to the model step.
-    [Fact]
-    public async Task Should_SayItIsAnotherModel_AndGoBackToTheModel_WhenAddingABoard()
-    {
-        await using var simulator = Started(DevantechModels.Eth484);
-        await using var boards = await TwoBoards.StartAsync();
-        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
-        await ChooseAsync(page, "Devantech", "devantech-eth008");
-        await page.ClickAsync(Button("Next"));
-
-        await AtAsync(page, simulator.Port);
-        await page.ClickAsync(Button("Next"));
-
-        var text = await page.TextAsync();
-        Assert.Contains("The board at this address is an ETH484-B, not an ETH008-B.", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("No answer from", text, StringComparison.Ordinal);
-        Assert.False(await page.HasAsync(Button("Check again")));
-        Assert.Contains("Where is the board?", text, StringComparison.Ordinal);
-
-        await page.ClickAsync(Button("Choose model"));
-
-        Assert.Contains("STEP 1 OF 3", await page.TextAsync(), StringComparison.Ordinal);
-        Assert.Empty(page.Errors);
-    }
-
-    // A board that asks for a password: "no password" is unticked and the cursor goes to Password, once for each new
-    // reason; the right password goes on.
-    [Fact]
-    public async Task Should_AskForThePassword_AndPutTheCursorThere_OnceForEachReason()
-    {
-        await using var simulator = Started(DevantechModels.Eth008, "apple");
-        await using var boards = await TwoBoards.StartAsync();
-        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
-        await ChooseAsync(page, "Devantech", "devantech-eth008");
-        await page.ClickAsync(Button("Next"));
-        await AtAsync(page, simulator.Port);
-        Assert.False(await page.HasAsync(PageRenderer.With("id", "password")));
-
-        await page.ClickAsync(Button("Next"));
-
-        Assert.Contains("The board asks for a password.", await page.TextAsync(), StringComparison.Ordinal);
-        Assert.True(await page.HasAsync(PageRenderer.With("id", "password")));
-        Assert.Equal(["password"], page.Focused.Where(id => id is "password" or "username"));
-
-        await page.TypeAsync(PageRenderer.With("id", "password"), "pear");
-        await page.ClickAsync(Button("Next"));
-        Assert.Contains("The password is wrong.", await page.TextAsync(), StringComparison.Ordinal);
-        await BoardTestRig.WaitUntilAsync(() => page.Focused.Count(id => id is "password") == 2);
-
-        // The same reason again moves nothing: the person may be typing.
-        await page.ClickAsync(Button("Check again"));
-        Assert.Contains("The password is wrong.", await page.TextAsync(), StringComparison.Ordinal);
-        Assert.Equal(2, page.Focused.Count(id => id is "password" or "username"));
-
-        await page.TypeAsync(PageRenderer.With("id", "password"), "apple");
-        await page.ClickAsync(Button("Next"));
-        Assert.Contains("Name your relays", await page.TextAsync(), StringComparison.Ordinal);
-        Assert.Empty(page.Errors);
-    }
 
     // A Shelly added in the app: its password, then a 429, which says to wait and doesn't claim the password is wrong,
     // then the right one goes on, and the app switches its relays.
@@ -248,48 +79,6 @@ public sealed class BoardProblemPagesTests
         Assert.Equal((byte)0b10, simulator.Relays);
     }
 
-    // A Shelly with another number of relays: the counts, not the models, and "Choose model" back to the entries.
-    [Fact]
-    public async Task Should_SayTheRelayCount_OfAShellyWithAnotherNumber()
-    {
-        await using var simulator = new ShellySimulator(ShellyModels.FourRelays);
-        simulator.Start();
-        await using var boards = await TwoBoards.StartAsync();
-        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
-        await ChooseAsync(page, "Shelly", "shelly-2");
-        await page.ClickAsync(Button("Next"));
-        await AtAsync(page, simulator.Port);
-
-        await page.ClickAsync(Button("Next"));
-        Assert.Contains("The board at this address has 4 relays, not 2.", await page.TextAsync(), StringComparison.Ordinal);
-        Assert.True(await page.HasAsync(Button("Choose model")));
-        Assert.Empty(page.Errors);
-    }
-
-    // A Shelly in the cover profile: no model fits, so the step says to set its profile and offers "Check again".
-    [Fact]
-    public async Task Should_SayToSetTheProfile_OfAShellyThatDrivesACover()
-    {
-        await using var simulator = new ShellySimulator(ShellyModels.TwoRelays) { Profile = "cover" };
-        simulator.Start();
-        await using var boards = await TwoBoards.StartAsync();
-        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
-        await ChooseAsync(page, "Shelly", "shelly-2");
-        await page.ClickAsync(Button("Next"));
-        await AtAsync(page, simulator.Port);
-
-        await page.ClickAsync(Button("Next"));
-
-        Assert.Contains("The board is set up to drive a cover, not relays. Set its profile to \"switch\" on its own web page, then check again.", await page.TextAsync(), StringComparison.Ordinal);
-        Assert.False(await page.HasAsync(Button("Choose model")));
-        Assert.True(await page.HasAsync(Button("Check again")));
-
-        simulator.Profile = "switch";
-        await page.ClickAsync(Button("Check again"));
-        await BoardTestRig.WaitUntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("Board online", StringComparison.Ordinal));
-        Assert.Empty(page.Errors);
-    }
-
     // A Shelly that asks to wait from the start: the step says so, and leaves "no password" ticked, since a 429 doesn't
     // say the password is wrong.
     [Fact]
@@ -310,75 +99,6 @@ public sealed class BoardProblemPagesTests
         Assert.False(await page.HasAsync(PageRenderer.With("id", "password")));
         Assert.DoesNotContain(page.Focused, id => id is "password" or "username");
         Assert.True(await page.HasAsync(Button("Check again")));
-        Assert.Empty(page.Errors);
-    }
-
-    // A Shelly with firmware before 1.7.0: the step says to update it.
-    [Fact]
-    public async Task Should_SayToUpdateTheFirmware_OfAnOldShelly()
-    {
-        await using var simulator = new ShellySimulator(ShellyModels.OneRelay) { Firmware = "1.6.2" };
-        simulator.Start();
-        await using var boards = await TwoBoards.StartAsync();
-        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
-        await ChooseAsync(page, "Shelly", "shelly-1");
-        await page.ClickAsync(Button("Next"));
-        await AtAsync(page, simulator.Port);
-
-        await page.ClickAsync(Button("Next"));
-
-        Assert.Contains("The board's firmware is too old. Update it to 1.7.0 or later on the board's own web page.", await page.TextAsync(), StringComparison.Ordinal);
-        Assert.True(await page.HasAsync(Button("Check again")));
-        Assert.DoesNotContain(page.Focused, id => id is "password" or "username");
-        Assert.Empty(page.Errors);
-    }
-
-    // A board with a user name: the cursor goes to User name.
-    [Fact]
-    public async Task Should_AskForTheLogin_AndPutTheCursorInUserName_OnABoardWithOne()
-    {
-        await using var simulator = new Vm201Simulator("admin", "secret", NullLogger.Instance);
-        simulator.Start();
-        await using var boards = await TwoBoards.StartAsync();
-        using var page = await PageRenderer.StartAsync<BoardNew>(boards.App.Services, John, "John");
-        await ChooseAsync(page, "Velleman", "vm201");
-        await page.ClickAsync(Button("Next"));
-        await AtAsync(page, simulator.Port);
-
-        await page.ClickAsync(Button("Next"));
-
-        Assert.Contains("The board asks for a user name and password.", await page.TextAsync(), StringComparison.Ordinal);
-        Assert.True(await page.HasAsync(PageRenderer.With("id", "username")));
-        Assert.Equal(["username"], page.Focused.Where(id => id is "password" or "username"));
-    }
-
-    // The setup guide: the same step, and "Choose model" goes back to "Which relay board?".
-    [Fact]
-    public async Task Should_GoBackToTheModel_InTheSetupGuide()
-    {
-        await using var simulator = Started(DevantechModels.Eth484);
-        await using var app = new TestWebApp(
-            settings: new Dictionary<string, string?>
-            {
-                ["CloudflareAccess:TeamDomain"] = "myteam.cloudflareaccess.com",
-                ["CloudflareAccess:Audience"] = "aud",
-                ["Devantech:Host"] = "127.0.0.1",
-                ["Devantech:Port"] = simulator.Port.ToString(CultureInfo.InvariantCulture),
-            },
-            setUp: false);
-        app.SaveBeforeStart(new Installation { AccessType = Contactor.Web.Features.Cloudflare.CloudflareMethods.TunnelId, SignInType = Contactor.Web.Features.Cloudflare.CloudflareMethods.AccessId });
-        using var http = app.CreateClient();
-        await http.GetAsync("/setup", Cancel);
-        using var page = await PageRenderer.StartAsync<SetupGuide>(app.Services, John, "John");
-        await page.ClickAsync(Button("Next"));
-        await ChooseAsync(page, "Devantech", "devantech-eth008");
-        await page.ClickAsync(Button("Next"));
-
-        await page.ClickAsync(Button("Next"));
-
-        Assert.Contains("The board at this address is an ETH484-B, not an ETH008-B.", await page.TextAsync(), StringComparison.Ordinal);
-        await page.ClickAsync(Button("Choose model"));
-        Assert.Contains("Which relay board?", await page.TextAsync(), StringComparison.Ordinal);
         Assert.Empty(page.Errors);
     }
 

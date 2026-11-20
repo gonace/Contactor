@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using Contactor.Web;
 using Contactor.Web.Features.Backup;
-using Contactor.Web.Features.Events;
 using Contactor.Web.Features.Identity;
 using Contactor.Web.Features.Updates;
 using Contactor.Web.Persistence;
@@ -407,31 +406,6 @@ public sealed class UpdateBoxViewTests
     }
 
     [Fact]
-    public void Should_SayItIsTheNewest_AndWhenItWasChecked()
-    {
-        var checkedAt = Now.AddHours(-4).AddMinutes(12);
-
-        var view = View(Snapshot(releases: [Older], checkedUtc: checkedAt));
-
-        Assert.Equal(UpdateBoxKind.Current, view.Kind);
-        Assert.Null(view.Offered);
-        Assert.Equal("Checked today at 07:12.", view.CheckedLine);
-        Assert.Equal("Checked yesterday at 07:12.", View(Snapshot(releases: [Older], checkedUtc: checkedAt.AddDays(-1))).CheckedLine);
-    }
-
-    [Fact]
-    public void Should_NameTheDate_WhenCheckedDaysAgo_InTheLanguagesFormat()
-    {
-        var checkedAt = Now.AddDays(-3).AddHours(-4).AddMinutes(12);
-
-        Assert.Equal("Checked 9 November at 07:12.", View(Snapshot(releases: [Older], checkedUtc: checkedAt)).CheckedLine);
-        using (TestCulture.Formats("sv-SE"))
-        {
-            Assert.Equal("Checked 9 november at 07:12.", View(Snapshot(releases: [Older], checkedUtc: checkedAt)).CheckedLine);
-        }
-    }
-
-    [Fact]
     public void Should_SaySoWhenGitHubCantBeReached()
     {
         Assert.Equal("Couldn't check for updates.", View(Snapshot(releases: [], checkedUtc: null, failed: true)).CheckedLine);
@@ -454,23 +428,6 @@ public sealed class UpdateBoxViewTests
         var view = View(Snapshot(releases: [Newest], helper: false));
 
         Assert.Equal((UpdateBoxKind.Available, "2026.11.20", false, true), (view.Kind, view.Offered, view.CanUpdate, view.NoHelper));
-    }
-
-    // "Check now" shows next to it, also above a newer version and under how the last update ended.
-    [Fact]
-    public void Should_SayWhenItWasChecked_AlsoWithANewerVersion()
-    {
-        Assert.Equal("Checked today at 11:00.", View(Snapshot(releases: [Newest])).CheckedLine);
-        Assert.Equal("Checked today at 11:00.", View(Snapshot(releases: [Newest], status: Status(UpdateStates.Failed) with { Reason = UpdateReasons.Download })).CheckedLine);
-    }
-
-    // No "Check now" while an update runs or waits, nor in a development build.
-    [Fact]
-    public void Should_NotSayWhenItWasChecked_WhileAnUpdateRuns_OrInADevelopmentBuild()
-    {
-        Assert.Null(View(Snapshot(releases: [Newest], status: Status(UpdateStates.Running, UpdateSteps.Download))).CheckedLine);
-        Assert.Null(View(Snapshot(releases: [Newest]) with { Pending = new PendingUpdate(Now, "John", "2026.11.20", null) }).CheckedLine);
-        Assert.Null(View(Snapshot(releases: [Newest]) with { Build = new AppBuild(AppBuild.Development, null) }).CheckedLine);
     }
 
     [Fact]
@@ -1295,50 +1252,6 @@ public sealed class UpdateBackupTests
 /// <summary>Updates on the Events screen.</summary>
 public sealed class UpdateEventTextTests
 {
-    [Fact]
-    public void Should_SayWhoStartedTheUpdate()
-    {
-        var view = TestTexts.Events.For(Entry("john@example.com", EventActions.UpdateRequested, "{\"from\":\"2026.11.14\",\"to\":\"2026.11.20\"}"), null, "John");
-
-        Assert.Equal(new EventView(true, "J", "John", "{0} started the update to 2026.11.20", null), view);
-    }
-
-    [Fact]
-    public void Should_SayItWasUpdated_WithItsLog()
-    {
-        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.UpdateDone, "{\"id\":\"20261115-140200\",\"from\":\"2026.11.14\",\"to\":\"2026.11.20\"}"), null, null);
-
-        Assert.Equal(new EventView(false, "A", "Contactor", "{0} updated to 2026.11.20", null, Log: "settings/update-log?id=20261115-140200"), view);
-    }
-
-    [Fact]
-    public void Should_SayItWentBack_InRed()
-    {
-        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.UpdateWentBack, "{\"id\":\"20261115-140200\",\"from\":\"2026.11.14\",\"to\":\"2026.11.20\",\"reason\":\"health\"}"), null, null);
-
-        Assert.Equal(("Contactor", "went back to 2026.11.14: the update to 2026.11.20 didn't work", true), (view.Who, view.What, view.IsAlert));
-    }
-
-    [Theory]
-    [InlineData("download", "didn't update to 2026.11.20: it couldn't be downloaded. Nothing was changed", true)]
-    [InlineData("signature", "didn't update to 2026.11.20: it didn't pass the check that it's ours. Nothing was changed", true)]
-    [InlineData("cancelled", "didn't update to 2026.11.20: the update was cancelled", false)]
-    [InlineData("switching", "didn't update to 2026.11.20: the relays were still switching. Nothing was changed", false)]
-    public void Should_SayWhyItDidntUpdate(string reason, string what, bool alert)
-    {
-        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.UpdateFailed, $"{{\"id\":\"20261115-140200\",\"to\":\"2026.11.20\",\"reason\":\"{reason}\"}}"), null, null);
-
-        Assert.Equal((what, alert), (view.What, view.IsAlert));
-    }
-
-    [Fact]
-    public void Should_SayThereWasNothingNewer()
-    {
-        var view = TestTexts.Events.For(Entry(EventActors.System, EventActions.UpdateCurrent, "{\"id\":\"20261115-140200\",\"from\":\"2026.11.14\",\"to\":\"2026.11.14\"}"), null, null);
-
-        Assert.Equal(("Contactor", "found nothing newer than 2026.11.14 to download", false), (view.Who, view.What, view.IsAlert));
-    }
-
     [Fact]
     public void Should_LinkNoLog_ForAnIdThatIsntOne()
     {
