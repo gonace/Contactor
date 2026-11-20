@@ -650,8 +650,8 @@ public sealed class Vm208ScheduleTests
         Assert.Equal(ChannelMask.None, simulator.RunningPulses);
         await Wait.UntilAsync(() => run.Time.WaitsOnly(run.PollInterval));
         run.Time.Advance(run.PollInterval);
-        await Wait.UntilAsync(() => run.Client.State.OwnRules is { CantTurnOff.Count: 0 });
-        Assert.Equal(ruleChanges + 1, run.RuleChanges);
+        await Wait.UntilAsync(() => run.RuleChanges == ruleChanges + 1);
+        Assert.Empty(run.Client.State.OwnRules!.CantTurnOff);
         boardTime.Advance(TimeSpan.FromSeconds(5));
         Assert.Equal(ChannelMask.Of(2), simulator.State.Relays);
         AssertOnlySafeRequests(simulator);
