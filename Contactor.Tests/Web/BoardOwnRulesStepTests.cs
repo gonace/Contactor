@@ -68,6 +68,37 @@ public sealed class BoardOwnRulesStepTests
         Assert.Empty(Errors(page));
     }
 
+    // Relay 3's timer runs on the board now and can't be turned off: the step shows it in its own group, "Turn it off" and
+    // "Keep it" are for relay 5's alone, and "Turn it off" sends only
+    // relay 5's and goes on once that is gone. Relay 3's is neither sent, turned off nor logged; it stays a rule, and
+    // Relays warns about it.
+    [Fact]
+    public async Task Should_TurnOffOnlyTheRulesItCan_AndGoOn()
+    {
+        var board = new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        await using var app = App();
+        using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
+        var live = await ToWhereAsync(app, page, board);
+        board.SetOwnRules(new OwnRules([Timer3, Timer5], null, [Timer3]));
+        await page.ClickAsync(Button("Next"));
+
+        var text = await page.TextAsync();
+        Assert.Contains("Running on the board right now", text, StringComparison.Ordinal);
+        Assert.Contains("Started on the board's own web page. It ends by itself, and Contactor can't stop it.", text, StringComparison.Ordinal);
+        Assert.Contains("Once the pulse or timer has ended, a schedule on the relay can be turned off or kept.", text, StringComparison.Ordinal);
+        Assert.False(await page.HasAsync(Button("Turn them off")));
+        Assert.False(await page.HasAsync(Button("Keep them")));
+
+        await page.ClickAsync(Button("Turn it off"));
+
+        Assert.Contains("Name your relays", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Equal(1, board.OwnRulesTurnOffs);
+        Assert.Equal(new OwnRules([Timer3], null, [Timer3]), board.State.OwnRules);
+        var logged = Assert.Single(await EventsAsync(app, live.BoardId, EventActions.BoardOwnRulesTurnedOff));
+        Assert.Contains("\"relays\":[5]", logged.Details, StringComparison.Ordinal);
+        Assert.Empty(Errors(page));
+    }
+
     // The board takes the command, but its state keeps the timers: after 5 s on the app's clock the step says so and
     // stays, and "Turn them off" can be pressed again. A second press while one is under way sends nothing more.
     [Fact]

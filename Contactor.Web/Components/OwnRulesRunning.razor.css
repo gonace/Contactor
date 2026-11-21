@@ -1,0 +1,95 @@
+/* "Running on the board right now": a small mono heading, then each relay in a dashed box. */
+.running {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.title {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.run {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px dashed var(--line-dashed);
+    background: var(--inactive-bg);
+    color: var(--ink);
+}
+
+.what {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.what svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--muted);
+}
+
+.text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.name {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.why {
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+.later {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.later button {
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: 10px;
+    border: 1px solid var(--inactive-border);
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: not-allowed;
+}
+
+.later span {
+    flex: 1 1 180px;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--muted);
+}

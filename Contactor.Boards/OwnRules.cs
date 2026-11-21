@@ -5,8 +5,9 @@ namespace Contactor.Boards;
 /// <summary>
 /// The rules of its own a board reported (<see cref="BoardState.OwnRules"/>), in the order the board gave them, and
 /// what lies behind them on the board (<see cref="Units"/>), so the app can tell which rules a turn-off takes with it
-/// (<see cref="GoesWith(IEnumerable{OwnRule})"/>). Immutable; two are equal when they hold the same rules in the same
-/// order and the same units.
+/// (<see cref="GoesWith(IEnumerable{OwnRule})"/>), and which of them the app can't turn off (<see cref="CantTurnOff"/>).
+/// Immutable; two are equal when they hold the same rules in the same order, the same units and the same rules the app
+/// can't turn off.
 /// </summary>
 public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
 {
@@ -14,6 +15,9 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
 
     // Each unit's rules, each once, in the order of _rules; no empty unit and no unit twice.
     private readonly OwnRule[][] _units;
+
+    // The rules the app can't turn off, each once, in the order of _rules.
+    private readonly OwnRule[] _cantTurnOff;
 
     /// <summary>The board's rules, each on its own: a turn-off takes no other rule with it.</summary>
     public OwnRules(IEnumerable<OwnRule> rules)
@@ -27,8 +31,10 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
     /// timers. Turning off a rule turns off every unit that holds it, and a rule goes too once every unit that holds it
     /// is off (<see cref="GoesWith(IEnumerable{OwnRule})"/>). A rule in no unit stands alone. Every rule a unit names must
     /// be one of <paramref name="rules"/>; an empty unit is left out, and a unit given twice counts once.
+    /// <paramref name="cantTurnOff"/> are the rules the app can't turn off (<see cref="CantTurnOff"/>), each one of
+    /// <paramref name="rules"/>; none by default.
     /// </summary>
-    public OwnRules(IEnumerable<OwnRule> rules, IEnumerable<IReadOnlyCollection<OwnRule>>? units)
+    public OwnRules(IEnumerable<OwnRule> rules, IEnumerable<IReadOnlyCollection<OwnRule>>? units, IEnumerable<OwnRule>? cantTurnOff = null)
     {
         ArgumentNullException.ThrowIfNull(rules);
         _rules = [.. rules];
@@ -53,6 +59,18 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
         }
 
         _units = [.. kept];
+        HashSet<OwnRule> fixedRules = [];
+        foreach (var rule in cantTurnOff ?? [])
+        {
+            if (rule is null || !_rules.Contains(rule))
+            {
+                throw new ArgumentException("Rules the app can't turn off must be among the board's rules.", nameof(cantTurnOff));
+            }
+
+            fixedRules.Add(rule);
+        }
+
+        _cantTurnOff = [.. _rules.Distinct().Where(fixedRules.Contains)];
         Relays = ChannelMask.Of(_rules.Select(r => r.Relay));
         Unavailable = ChannelMask.Of(_rules.Where(r => r.Kind == OwnRuleKind.InputLinkage).Select(r => r.Relay));
     }
@@ -85,6 +103,19 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
     /// </summary>
     public IReadOnlyList<IReadOnlyList<OwnRule>> Units => _units;
 
+    /// <summary>
+    /// The rules the app can't turn off, each once, in the board's order: a turn-off doesn't remove them
+    /// (<see cref="IRelayBoard.TurnOffOwnRulesAsync"/> doesn't take them), e.g. a timer started on the VM208's own web
+    /// page, which ends by itself. None by default. A screen offers no "Turn off" for them.
+    /// </summary>
+    public IReadOnlyList<OwnRule> CantTurnOff => _cantTurnOff;
+
+    /// <summary>Whether a turn-off can remove <paramref name="rule"/>: false for one of <see cref="CantTurnOff"/>.</summary>
+    public bool CanTurnOff(OwnRule rule)
+    {
+        return rule is not null && Array.IndexOf(_cantTurnOff, rule) < 0;
+    }
+
     /// <summary>The other rules that turning off <paramref name="rule"/> also removes: <see cref="GoesWith(IEnumerable{OwnRule})"/> for it alone.</summary>
     public IReadOnlyList<OwnRule> GoesWith(OwnRule rule)
     {
@@ -95,7 +126,8 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
     /// The other rules that turning off <paramref name="rules"/> together also removes on the board
     /// (<see cref="IRelayBoard.TurnOffOwnRulesAsync"/>): every unit that holds one of them goes off, and a rule not asked
     /// goes too when every unit that holds it went off. Each once, in the board's order. None when the rules stand alone,
-    /// the default, or for rules the board doesn't have.
+    /// the default, or for rules the board doesn't have; never a rule the app can't turn off (<see cref="CantTurnOff"/>),
+    /// which stays.
     /// </summary>
     public IReadOnlyList<OwnRule> GoesWith(IEnumerable<OwnRule> rules)
     {
@@ -108,6 +140,7 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
         }
 
         return [.. _rules.Distinct().Where(r => !asked.Contains(r)
+            && CanTurnOff(r)
             && off.Exists(u => u.Contains(r))
             && _units.All(u => !u.Contains(r) || off.Contains(u)))];
     }
@@ -127,7 +160,8 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
         return other is not null
             && _rules.AsSpan().SequenceEqual(other._rules)
             && _units.Length == other._units.Length
-            && _units.All(u => Array.Exists(other._units, o => o.AsSpan().SequenceEqual(u)));
+            && _units.All(u => Array.Exists(other._units, o => o.AsSpan().SequenceEqual(u)))
+            && _cantTurnOff.AsSpan().SequenceEqual(other._cantTurnOff);
     }
 
     public override bool Equals(object? obj)
@@ -144,6 +178,7 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
         }
 
         hash.Add(_units.Length);
+        hash.Add(_cantTurnOff.Length);
         return hash.ToHashCode();
     }
 
@@ -155,7 +190,8 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
         }
 
         var units = _units.Select(u => $"; ({string.Join(", ", u.Select(Name))})");
-        return $"[{string.Join(", ", _rules.Select(Name))}{string.Concat(units)}]";
+        var fixedRules = _cantTurnOff.Length == 0 ? "" : $"; can't turn off: {string.Join(", ", _cantTurnOff.Select(Name))}";
+        return $"[{string.Join(", ", _rules.Select(Name))}{string.Concat(units)}{fixedRules}]";
     }
 
     public static bool operator ==(OwnRules? left, OwnRules? right)

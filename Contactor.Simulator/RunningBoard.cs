@@ -2,6 +2,7 @@ using System.Globalization;
 using Contactor.Boards;
 using Contactor.Boards.Denkovi;
 using Contactor.Boards.Shelly;
+using Contactor.Boards.Velleman;
 
 namespace Contactor.Simulator;
 
@@ -165,6 +166,23 @@ public sealed class RunningBoard : IAsyncDisposable
             CultureInfo.InvariantCulture,
             $"The board's own timer for relay {relay} turned {(turnOn ? "on" : "off")} here"));
         return timers.SetTimerAsync(relay, turnOn);
+    }
+
+    /// <summary>
+    /// Starts a pulse of 5 s or a timer of 1 minute on a VM208's relay, as its own web page would: the relay toggles now
+    /// and again when it ends. Nothing for another board, a relay it doesn't have, or while the power is cut.
+    /// </summary>
+    public Task StartVm208RunAsync(int relay, bool timer)
+    {
+        if (Power?.IsPoweredOff == true || Board is not Vm208Simulator vm208 || relay < 1 || relay > Vm208Api.RelayCount)
+        {
+            return Task.CompletedTask;
+        }
+
+        Add(TrafficKind.AtBoard, string.Create(
+            CultureInfo.InvariantCulture,
+            $"{(timer ? "A 1-minute timer" : "A 5-second pulse")} started on relay {relay} here"));
+        return timer ? vm208.StartTimerAsync(relay, 1) : vm208.StartPulseAsync(relay, 5000);
     }
 
     /// <summary>

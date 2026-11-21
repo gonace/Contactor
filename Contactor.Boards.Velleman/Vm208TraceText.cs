@@ -54,7 +54,10 @@ public static class Vm208TraceText
         return $"Ask for {method} {Shorten(path)}";
     }
 
-    /// <summary>"Status: relay 1 and 3 on · input on", with " · m1 on" when a transistor output is on.</summary>
+    /// <summary>
+    /// "Status: relay 1 and 3 on · input on", with " · m1 on" when a transistor output is on, and " · timer running on
+    /// relay 3" when a pulse or a timer runs on the board.
+    /// </summary>
     public static string Status(Vm208Status status)
     {
         ArgumentNullException.ThrowIfNull(status);
@@ -68,7 +71,23 @@ public static class Vm208TraceText
             3 => " · m1 and m2 on",
             _ => "",
         });
+        text.Append(status.Pulses is null || status.Timers is null
+            ? " · pulse and timer flags unreadable"
+            : Running("pulse", status.Pulses.Value) + Running("timer", status.Timers.Value));
         return text.ToString();
+    }
+
+    // " · timer running on relay 3", or nothing when none runs.
+    private static string Running(string what, byte mask)
+    {
+        mask &= (1 << Vm208Api.RelayCount) - 1;
+        if (mask == 0)
+        {
+            return "";
+        }
+
+        var relays = Channels("relay", mask, Vm208Api.RelayCount);
+        return $" · {what} running on {(relays == "all" ? "all relays" : relays)}";
     }
 
     /// <summary>"Relay 2's schedule: 3 of 14 alarms on", or "Relay 2's schedule: all alarms off".</summary>

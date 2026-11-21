@@ -132,6 +132,26 @@ public sealed class OwnRulesTests
         Assert.NotEqual(BoardState.Initial with { OwnRules = rules }, BoardState.Initial with { OwnRules = new OwnRules([T1, T2, T3, A4]) });
     }
 
+    // A rule the app can't turn off (e.g. a timer running on the VM208) never goes with another, and a change in which
+    // rules those are alone is a change.
+    [Fact]
+    public void Should_KnowTheRulesTheAppCantTurnOff()
+    {
+        var rules = new OwnRules([T1, T2, T3], [[T1, T2], [T3]], [T2, T2]);
+
+        Assert.Equal([T2], rules.CantTurnOff);
+        Assert.False(rules.CanTurnOff(T2));
+        Assert.True(rules.CanTurnOff(T1));
+        Assert.False(rules.CanTurnOff(null!));
+        Assert.Empty(rules.GoesWith(T1));
+        Assert.Empty(new OwnRules([T1]).CantTurnOff);
+        Assert.Equal(rules, new OwnRules([T1, T2, T3], [[T1, T2], [T3]], [T2]));
+        Assert.NotEqual(rules, new OwnRules([T1, T2, T3], [[T1, T2], [T3]]));
+        Assert.Equal("[Timer 1, Timer 2, Timer 3; (Timer 1, Timer 2); (Timer 3); can't turn off: Timer 2]", rules.ToString());
+        Assert.Throws<ArgumentException>(() => new OwnRules([T1], null, [T2]));
+        Assert.Throws<ArgumentException>(() => new OwnRules([T1], null, [null!]));
+    }
+
     [Fact]
     public void Should_RefuseAUnit_WithARuleTheBoardDoesntHave()
     {

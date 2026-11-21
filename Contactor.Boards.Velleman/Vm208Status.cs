@@ -8,11 +8,27 @@ namespace Contactor.Boards.Velleman;
 /// switch them.
 /// </param>
 /// <param name="OwnRules">
-/// The board's own rules as last read (<see cref="Vm208Client.SchedulesInterval"/>): a <see cref="OwnRuleKind.Timer"/>
-/// rule on each relay whose week schedule has an enabled alarm; null while the schedules aren't known.
+/// The board's own rules: a <see cref="OwnRuleKind.Timer"/> rule on each relay whose week schedule has an enabled alarm
+/// (as last read, <see cref="Vm208Client.SchedulesInterval"/>) or that has a pulse or a timer running
+/// (<see cref="Running"/>, from this status), which the app can't turn off; null while either isn't known.
 /// </param>
 public sealed record Vm208Status(byte Relays, bool Input, byte Outputs, OwnRules? OwnRules = null)
 {
+    /// <summary>
+    /// The relays with a pulse running (<c>pulseActive</c>), bit 0 = relay 1: started on the board's own page
+    /// (<c>/pulse</c>), it toggles the relay when it ends. Null when a relay's flag isn't true or false.
+    /// </summary>
+    public byte? Pulses { get; init; } = 0;
+
+    /// <summary>
+    /// The relays with a timer running (<c>timerActive</c>), bit 0 = relay 1: started on the board's own page
+    /// (<c>/timer</c>), it toggles the relay when it ends. Null when a relay's flag isn't true or false.
+    /// </summary>
+    public byte? Timers { get; init; } = 0;
+
+    /// <summary>The relays with a pulse or a timer running; null while either isn't known.</summary>
+    public byte? Running => Pulses is { } pulses && Timers is { } timers ? (byte)(pulses | timers) : null;
+
     /// <summary>
     /// Compares the relays and the input only: the app doesn't show the transistor outputs, so a change of those
     /// alone is no change worth telling every screen about, and a change of the own rules alone comes as

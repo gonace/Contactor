@@ -1920,6 +1920,10 @@
     <value>They can switch {0} without Contactor.</value>
     <comment>Under OwnRules.Warning: {0} is e.g. "relays 3 and 5" (OwnRules.Relays).</comment>
   </data>
+  <data name="OwnRules.CantTurnOff" xml:space="preserve">
+    <value>Started on the board's own web page. It ends by itself, and Contactor can't stop it.</value>
+    <comment>In place of "Turn off" for a rule the board runs now, e.g. a pulse or a timer started on the VM208's own page.</comment>
+  </data>
   <data name="OwnRules.Card.CantTell" xml:space="preserve">
     <value>This board may have timers of its own. Check its own web page.</value>
     <comment>A board whose own rules the app can't see.</comment>
@@ -2058,6 +2062,14 @@
   </data>
   <data name="OwnRules.Reset.Label" xml:space="preserve">
     <value>Reset relay {0}</value>
+  </data>
+  <data name="OwnRules.Running.Later" xml:space="preserve">
+    <value>Once the pulse or timer has ended, a schedule on the relay can be turned off or kept.</value>
+    <comment>Under a disabled "Keep" for a pulse or a timer that runs on the board now; also why a "Keep" is refused then.</comment>
+  </data>
+  <data name="OwnRules.Running.Title" xml:space="preserve">
+    <value>Running on the board right now</value>
+    <comment>Heads the relays with a pulse or a timer started on the board's own page, which the app can't turn off.</comment>
   </data>
   <data name="OwnRules.Step.Intro_One" xml:space="preserve">
     <value>It can turn a relay on and off without Contactor.</value>
