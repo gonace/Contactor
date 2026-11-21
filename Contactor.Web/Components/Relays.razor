@@ -822,7 +822,8 @@
         </div>
     };
 
-    // An analog input: its value on the right, as large as its name, and a line only when there is no value to show.
+    // An analog input: its value on the right, as large as its name, and a line only when there is no value to show or
+    // the value is the board's top value ("≥ 66.0 °C").
     // No outline around the value: it isn't a button.
     private RenderFragment AnalogCard(AnalogInputView input) => __builder =>
     {
@@ -842,9 +843,14 @@
                 {
                     <span class="status problem">@Texts[value.State == AnalogValueState.NoReading ? "Analog.NoReading" : "Analog.AboveRange"]</span>
                 }
+                else if (value.State == AnalogValueState.TopValue)
+                {
+                    @* "≥ 66.0 °C": a value, so no red, but the reason it may be more. *@
+                    <span class="status">@Texts[AnalogValueText.Rises(input.Scale) ? "Analog.TopValue.More" : "Analog.TopValue.Less"]</span>
+                }
             </a>
             @* Without a value, a screen reader hears "No value" rather than the dash. *@
-            <span class="value @(value.State == AnalogValueState.Value ? null : "none")">@if (value.State == AnalogValueState.Value)
+            <span class="value @(value.State is AnalogValueState.Value or AnalogValueState.TopValue ? null : "none")">@if (value.State is AnalogValueState.Value or AnalogValueState.TopValue)
                 {
                     <span class="number">@value.Text</span>
                 }

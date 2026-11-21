@@ -127,8 +127,9 @@ Exchanges from the documents and the recorded session:
 - The ETH484-B also has `33 cc`: 12 bit, full scale at 5 V (p. 18). The app uses `32`, which the ETH484-B answers "scaled
   to 3.3v for ETH484 compatibility" (p. 18). The original ETH484 has the same module id, 20, and has only `32`: 10 bit,
   0 to 3.3 V (ETH484 manual pp. 4 and 10). The app can't tell the two apart, so it uses the command they both have. On
-  the ETH484-B, "for 10 bit results the 3.3V to 5V region will merely read full scale" (p. 5): the app shows 1023 as
-  "Above the board's range".
+  the ETH484-B, "for 10 bit results the 3.3V to 5V region will merely read full scale" (p. 5): for an input without a
+  scale, the app shows 1023 as "Above the board's range". For an input with a scale, it shows the scaled value at
+  3.3 V after "≥", e.g. "≥ 66.0 °C" (Issue #564).
 - An analog answer that fails never fails the poll, and never stops the app from switching the relays. The analog
   inputs are a measurement nobody has checked on a real board yet. When an analog answer fails:
   - The relays and inputs of that poll are kept, and the board stays connected.
