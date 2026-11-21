@@ -603,7 +603,8 @@ public sealed class SetupTests
     }
 
     // Two pulses of the same relay at once: one goes and locks the relay, the other is refused without touching its
-    // lock or its expectations.
+    // lock or its expectations. A pulse always checked and locked in one step, with no wait in between, so this guards
+    // the lock's keeping; the test below catches a press that doesn't hold the relay.
     [Fact]
     public async Task Should_RefuseTheSecondOfTwoPulsesAtOnce_AndKeepTheFirstsLock()
     {
@@ -635,6 +636,42 @@ public sealed class SetupTests
                 return ex;
             }
         }
+    }
+
+    // A person's ON or OFF on its way to the board holds the relay: a pulse of it started meanwhile is refused, so the
+    // press can't undo the pulse or end it early (Issue #620).
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Should_RefuseAPulse_WhileAPressOfTheRelayIsOnItsWay(bool on)
+    {
+        await using var rig = await Rig.StartAsync(pulse: TenthsUpTo25s);
+        var control = rig.Database.Services.GetRequiredService<RelayControl>();
+        var live = rig.Database.Services.Live();
+        Exception? refused = null;
+
+        // The press waits at the board until the pulse is decided.
+        Func<Task> startPulse = async () =>
+        {
+            (rig.Board.BeforeOn, rig.Board.BeforeOff) = (null, null);
+            refused = await Record.ExceptionAsync(() => control.PulseAsync(3, TimeSpan.FromSeconds(2), JohnEmail, Cancel));
+        };
+        if (on)
+        {
+            rig.Board.BeforeOn = startPulse;
+            await control.TurnOnAsync(3, JohnEmail, Cancel);
+        }
+        else
+        {
+            rig.Board.SetRelay(3, true);
+            rig.Board.BeforeOff = startPulse;
+            await control.TurnOffAsync(3, JohnEmail, Cancel);
+        }
+
+        Assert.IsType<RelayPulsingException>(refused);
+        Assert.Empty(rig.Board.Pulses);
+        Assert.False(live.IsPulsing(3));
+        Assert.Equal(on, rig.Board.State.IsOn(3));
     }
 
     // A board whose pulse can't do 2 s: "Try" turns the relay on and off itself, as on a board without one.

@@ -30,6 +30,10 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
     private string? _key;
     private Vm204Status? _lastTraced;
 
+    // The analog value last reported, with a state change or an analog change. Only the poller's callbacks touch it,
+    // and it calls them one at a time, under its lock.
+    private int? _reportedAnalog;
+
     public Vm204Client(IOptions<Vm204Options> options, TimeProvider timeProvider, ILogger<Vm204Client> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -251,12 +255,21 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
 
     void IPolledBoard<Vm204Status>.OnStateChanged(PolledState<Vm204Status> state)
     {
+        _reportedAnalog = state.Reading?.Analog;
         Raise(StateChanged, state);
     }
 
     void IPolledBoard<Vm204Status>.OnReadingChanged(PolledState<Vm204Status> state)
     {
-        // The comparer leaves out only the analog value: that is what changed.
+        // The comparer leaves out the analog value and the pulse flags. Only a change of the analog value is an analog
+        // change: the flags alone change nothing the screens show.
+        var analog = state.Reading?.Analog;
+        if (analog == _reportedAnalog)
+        {
+            return;
+        }
+
+        _reportedAnalog = analog;
         Raise(AnalogChanged, state);
     }
 
