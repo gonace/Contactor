@@ -1832,6 +1832,10 @@
     <value>{0} is in the list twice.</value>
     <comment>{0} is a group or relay, e.g. "Relay 4: Lighting".</comment>
   </data>
+  <data name="Inputs.SettingChanged" xml:space="preserve">
+    <value>The input's setting was changed on the device</value>
+    <comment>An input's status line, with "–", when its type was changed on the device (e.g. a Shelly's input made a button) since the app connected: its state is unknown until the next connection.</comment>
+  </data>
   <data name="Inputs.Show.Both_One" xml:space="preserve">
     <value>Show {0} inactive</value>
   </data>
@@ -2865,6 +2869,10 @@
   </data>
   <data name="Setup.Capabilities.Analog_Other" xml:space="preserve">
     <value>{0} analog inputs</value>
+  </data>
+  <data name="Setup.Capabilities.InputsFromBoard" xml:space="preserve">
+    <value>inputs read from the device</value>
+    <comment>After a model's relays, for a model whose inputs differ by device, e.g. a Shelly: "1 relay · inputs read from the device".</comment>
   </data>
   <data name="Setup.Capabilities.Inputs_One" xml:space="preserve">
     <value>{0} input</value>

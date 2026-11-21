@@ -31,7 +31,9 @@ public sealed class ShellyBoardTests
         Assert.All(ShellyModels.All, m =>
         {
             Assert.Equal("Shelly", m.Brand);
-            Assert.Equal(0, m.Capabilities.InputCount);
+            // Up to input:3; the device says at each connection how many it has.
+            Assert.Equal(ShellyApi.MaxInputCount, m.Capabilities.InputCount);
+            Assert.True(m.Capabilities.InputCountFromBoard);
             Assert.False(m.Capabilities.ReportsChanges);
             Assert.Equal(new OwnRulesAbility(Reads: true, TurnsOff: true, MayHaveUnseen: true), m.Capabilities.OwnRules);
             Assert.Equal(new PowerOnAbility([PowerOnState.Off, PowerOnState.AsBefore, PowerOnState.On, PowerOnState.FollowsInput], perRelay: true), m.Capabilities.PowerOn);
@@ -96,6 +98,7 @@ public sealed class ShellyBoardTests
             Assert.Equal(ChannelMask.Of(2), await board.TurnOnAsync(ChannelMask.Of(2), Cancel));
             Assert.Equal(ChannelMask.Of(2), board.State.Relays);
             Assert.Equal(ChannelMask.None, board.State.Inputs);
+            Assert.Equal(2, board.Capabilities.InputCount);
             Assert.Null(board.State.Analog);
             await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.TurnOnAsync(ChannelMask.Of(3), Cancel));
             await Assert.ThrowsAsync<NotSupportedException>(() => board.PulseAsync(ChannelMask.Of(1), TimeSpan.FromSeconds(1), Cancel));
@@ -107,6 +110,18 @@ public sealed class ShellyBoardTests
             }
 
             Assert.True(Volatile.Read(ref traced) > 0);
+
+            // An input that closes comes as a new state, as on every board: the input actions go by it.
+            await simulator.SetInputAsync(1, true);
+            await board.RefreshAsync(Cancel);
+            await Wait.UntilAsync(() =>
+            {
+                lock (states)
+                {
+                    return states[^1].Inputs == ChannelMask.Of(1);
+                }
+            });
+            Assert.Equal(ChannelMask.Of(1), board.State.Inputs);
         }
         finally
         {

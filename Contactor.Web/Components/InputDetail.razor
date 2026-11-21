@@ -54,19 +54,19 @@
                 </div>
 
                 @* What the board reads now; the app can't switch an input. *@
-                <section class="status @(!State.HasAnswered ? "unknown" : IsClosed ? "closed" : null)">
+                <section class="status @(!IsKnown ? "unknown" : IsClosed ? "closed" : null)">
                     <div class="now-row">
                         <div>
                             <p class="label">@Texts["Inputs.Now"]</p>
                             <p class="now">
-                                @(State.HasAnswered ? Status.Text : StatusText.Waiting)
-                                @if (State.HasAnswered && Status.SinceUnknown)
+                                @(SettingChanged ? Texts["Inputs.SettingChanged"] : State.HasAnswered ? Status.Text : StatusText.Waiting)
+                                @if (State.HasAnswered && !SettingChanged && Status.SinceUnknown)
                                 {
                                     <WhyUnknown Label="@Texts["Inputs.WhyUnknownLabel"]" For="Id" />
                                 }
                             </p>
                         </div>
-                        <InputStateBadge Closed="IsClosed" Unknown="!State.HasAnswered" />
+                        <InputStateBadge Closed="IsClosed" Unknown="!IsKnown" />
                     </div>
                     @if (State.HasAnswered && !State.IsConnected)
                     {
@@ -173,6 +173,12 @@
     private bool _adding;
 
     private bool IsClosed => _input is not null && State.Inputs.Contains(_input.Channel);
+
+    // The board can tell its state: it answered, and the input's setting wasn't changed on the device since it connected.
+    private bool IsKnown => _input is not null && State.IsInputKnown(_input.Channel);
+
+    // Its setting was changed on the device: unknown until the board connects again.
+    private bool SettingChanged => State.HasAnswered && !IsKnown;
 
     // What can still be added: what the input doesn't control yet.
     private List<InputActionTarget> Available => [.. _targets.Where(t => !_actions.Any(a => a.Target.IsSame(t)))];
@@ -290,7 +296,13 @@
         {
             await InvokeAsync(async () =>
             {
-                if (reload && _input is not null && await Inputs.GetAsync(Id, CancellationToken.None) is { } fresh)
+                if (reload && _input is null)
+                {
+                    // Missing so far, e.g. opened before a Shelly said how many inputs it has (InputCountWatch): load it
+                    // as when the page opened.
+                    await OnParametersSetAsync();
+                }
+                else if (reload && _input is not null && await Inputs.GetAsync(Id, CancellationToken.None) is { } fresh)
                 {
                     _input = fresh;
                     _events = [.. await Events.GetAsync(EventFilter.All, beforeId: null, EventCount, CancellationToken.None, inputId: Id)];

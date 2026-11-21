@@ -10,6 +10,9 @@ namespace Contactor.Boards.Shelly;
 /// such as scripts and auto-off: <see cref="ShellyApi.OwnRules"/>.
 /// Each switch's <c>initial_state</c> is its state after a power cut, which the app reads and sets
 /// (<see cref="ShellyApi.PowerOn"/>).
+/// The inputs differ between models with the same number of relays (the Pro 1 has 2, the Plus 1 has 1), so the device
+/// says at each connection how many it has, at most <see cref="ShellyApi.MaxInputCount"/>
+/// (<see cref="BoardCapabilities.InputCountFromBoard"/>).
 /// </summary>
 public static class ShellyModels
 {
@@ -56,7 +59,7 @@ public static class ShellyModels
             $"shelly-{relays}",
             Brand,
             name,
-            new BoardCapabilities(relays, InputCount: 0, ReportsChanges: false, OwnRules: ShellyApi.OwnRules, PowerOn: ShellyApi.PowerOn),
+            new BoardCapabilities(relays, InputCount: ShellyApi.MaxInputCount, ReportsChanges: false, OwnRules: ShellyApi.OwnRules, PowerOn: ShellyApi.PowerOn, InputCountFromBoard: true),
             ShellyApi.DefaultPort,
             LoginMaxLength: ShellyApi.PasswordMaxLength,
             PasswordOnly: true);

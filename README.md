@@ -73,7 +73,7 @@ a qualified electrician.
 | Denkovi DAEnetIP2 v2 with a 16-, 8- or 2-relay board, SNMPv1 | 16, 8, 2, each plus 8 analog inputs | In the app and the simulator. Not yet tested on a real board (Issue #371). See [its README](Contactor.Boards.Denkovi/README.md#daenetip2-v2) |
 | Devantech ETH002-B, ETH008-B, ETH1610, ETH484-B and ETH8020-B | 2, 8, 10 plus 16 analog inputs, 4 plus 8 inputs and 4 analog inputs, 20 plus 8 inputs and 8 analog inputs | In the app and the simulator. Not yet tested on a real board. See [its README](Contactor.Boards.Devantech/README.md) |
 | Advantech ADAM-6060, ADAM-6066 and ADAM-6260, Modbus TCP | 6 plus 6 inputs, 6 plus 6 inputs, 6 | In the app and the simulator. Not yet tested on a real board. See [its README](Contactor.Boards.Advantech/README.md) |
-| Shelly Gen2+ devices with firmware 1.7.0 or later, HTTP RPC | 1 to 4 | In the app and the simulator. Not yet tested on a real device. See [its README](Contactor.Boards.Shelly/README.md) |
+| Shelly Gen2+ devices with firmware 1.7.0 or later, HTTP RPC | 1 to 4, plus the device's inputs (up to 4) | In the app and the simulator. Not yet tested on a real device. See [its README](Contactor.Boards.Shelly/README.md) |
 
 One installation can run several boards, of any of these models: the setup guide sets up the first, and Settings →
 "Add a board" adds more. Each manufacturer has a small project behind one interface, `IRelayBoard`, so a new board needs its own project and

@@ -22,6 +22,8 @@ The pages, and what the app takes from each:
 | Components and Services → *Shelly* | `Shelly.GetDeviceInfo` (`id`, `model`, `gen`, `ver`, `profile`) and `Shelly.GetStatus` (a member per component, e.g. `switch:0`), with their examples |
 | Components and Services → *Switch* | `Switch.Set` (`id` and `on`, and its result `was_on`) and the switch status (`output`). `Switch.GetConfig` (`id`) and `Switch.SetConfig` (`id` and `config`, and its result `restart_required`), with their examples. In the configuration, `initial_state`: "Output state to set on power_on. Range of values: off, on, restore_last, match_input", and `auto_on`: "True if the "Automatic ON" function is enabled, false otherwise". `Switch.Toggle` (`id`), `Switch.SetAll` (`on`) and `Switch.SetMany` (`ids` and `on`), only to read them in a schedule |
 | Components and Services → *Schedule* | The job (`id`, `enable`, "true by default", `timespec`, `calls` with `method` and `params`), "a limit of 20 schedule instances per device" and "a limit of 5 calls per schedule job". `Schedule.List` (`jobs` and `rev`) and `Schedule.Update` (`id` and `enable`, and its result `rev`), with their examples |
+| Components and Services → *Input* (read 2026-11-20) | The input's status: `state` "boolean or null (only for type switch, button)", "null if the input instance is stateless, i.e. for type button", `percent` for type `analog` and `counts` for type `count`. `enable`: "When disabled, the input instance ... reports status properties as null". Inputs are "identified with input:<id>". The `Input.GetStatus` example `{"id":0,"state":false}` |
+| Devices → *Shelly Plus 1*, *Pro 1*, *Plus 2PM*, *Pro 3*, *Pro 4PM* (read 2026-11-20) | Their inputs: `input:0` on the Plus 1, `input:0` and `input:1` on the Pro 1 and Plus 2PM, `input:0` to `input:2` on the Pro 3, and `input:0` to `input:3` on the Pro 4PM |
 | Components and Services → *Sys* | `cfg_rev` in the status: "Configuration revision. This number will be incremented for every configuration change of a device component. If the new config value is the same as the old one there will be no change of this property". `schedule_rev`: "Schedules revision number, present if schedules are enabled" |
 | *Changelog* | 2.0.0 (2026-07-13): "Authentication: Implement brute-force protection" and "RFC 7616-compliant nonce management" |
 
@@ -32,13 +34,17 @@ Also RFC 7616, *HTTP Digest Access Authentication*, section 3.4.1 (the response 
 
 | Catalogue id | Name | Relays | Inputs | Pulse | Login |
 |---|---|---|---|---|---|
-| `shelly-1` | Shelly Gen2+ 1 | 1 | 0 | none | optional password |
-| `shelly-2` | Shelly Gen2+ 2 | 2 | 0 | none | optional password |
-| `shelly-3` | Shelly Gen2+ 3 | 3 | 0 | none | optional password |
-| `shelly-4` | Shelly Gen2+ 4 | 4 | 0 | none | optional password |
+| `shelly-1` | Shelly Gen2+ 1 | 1 | from the device, up to 4 | none | optional password |
+| `shelly-2` | Shelly Gen2+ 2 | 2 | from the device, up to 4 | none | optional password |
+| `shelly-3` | Shelly Gen2+ 3 | 3 | from the device, up to 4 | none | optional password |
+| `shelly-4` | Shelly Gen2+ 4 | 4 | from the device, up to 4 | none | optional password |
 
 The docs list no model codes for the app to tell the devices apart, so the catalogue has one entry per number of
 relays (`ShellyModels`). The device must have that many `switch:N` components, or the app refuses it.
+
+Devices with the same number of relays have different inputs: the Pro 1 has 2, the Plus 1 has 1. So the device says
+how many it has at each connection (`BoardCapabilities.InputCountFromBoard`), and each entry's `InputCount` is 4, the
+most the app reads. See "The inputs".
 
 - Port 80.
 - The device's own schedules and auto-on can switch its relays. The app reads them and turns them off, and the device
@@ -46,7 +52,7 @@ relays (`ShellyModels`). The device must have that many `switch:N` components, o
   `OwnRules: ShellyApi.OwnRules`, which `Reads`, `TurnsOff` and `MayHaveUnseen`. See "The device's own rules".
 - Each relay has its own state after a power cut, its switch's `initial_state`: `PowerOn: ShellyApi.PowerOn`, all four
   states, per relay.
-- The app doesn't read the device's inputs, power metering or `errors` list, and doesn't use the WebSocket.
+- The app doesn't read the device's power metering or `errors` list, and doesn't use the WebSocket.
 
 ## Protocol
 
@@ -77,10 +83,43 @@ HTTP, so the app polls it every 2 s.
   gap. Every other component is skipped.
 
 `ShellyJsonTests` reads the docs' own examples, byte for byte: the `Shelly.GetStatus` result of a Pro 4PM (with
-`cfg_rev` 26), the `/shelly` answer, the `Switch.Set` answers of "RPC Channels" and "RPC Protocol", the
+`cfg_rev` 26, and its four inputs with the state false), the input status of `Input.GetStatus`, the `/shelly` answer, the `Switch.Set` answers of "RPC Channels" and "RPC Protocol", the
 `Switch.GetConfig` and `Switch.SetConfig` answers of "Switch", the `Schedule.List` answer of "Schedule", and the error
 frames of "RPC Protocol" (-105) and
 "Common Errors" (-109).
+
+### The inputs
+
+The app reads the inputs from the same `Shelly.GetStatus` it polls, with no other request. `input:0` is input 1.
+
+- An input counts when its status has a `state` that is true or false. The docs give one only for type `switch`.
+  True is on (closed).
+- These are left out:
+  - a `button`: its `state` is null;
+  - a disabled input: its `state` is null;
+  - an `analog` input (`percent`) and a `count` input (`counts`);
+  - `input:4` and higher: 4 is the app's own limit, as many as the Pro 4PM has. So the inputs of an add-on, such as
+    the Plus Add-on's `input:100` and up, are left out too;
+  - an input the app can't read: another key (`input:01`), an `id` that isn't the key's, a `state` of another kind,
+    or the same key twice.
+- An input never fails the poll. The inputs only decide what the app shows.
+- How many inputs the device has is decided at each new connection, from the connect's status. They are the inputs
+  that count, from `input:0` without a gap. An input after a gap isn't shown, so an input keeps its number. Before
+  the device answered, the board has no inputs. While disconnected, the last count is kept.
+- During a connection the count stays as it was:
+  - An input of the count that reads no state in a status, because its setting was changed at the device (made a
+    `button`, `analog` or `count`, or turned off), is unknown until the next connection (`ShellyStatus.UnknownInputs`,
+    `BoardState.UnknownInputs`). It stays unknown when it has a state again before then. The app never shows an old or
+    a new state for it: the screens show "–" and "The input's setting was changed on the device".
+  - An input that only now has a state isn't read until the next connection.
+  - So a change of the device's settings never looks like an input that changed. The app logs nothing and runs no
+    input action when an input goes unknown.
+  - At the next connection, every input is read afresh. The app compares an input that was unknown with its last
+    known state and logs a difference as noticed, which runs no action.
+- An input that changed is a state change (`ShellyStatus.StateComparer`), as a relay is. The input actions take it as
+  they do on every board.
+- The status trace adds the inputs: "Status: relay 2 on · input 1 on", "Status: all off · inputs off", and
+  "· input 1 unknown" for an unknown input.
 
 ### The state after a power cut
 
@@ -247,7 +286,7 @@ A command (ON or OFF) switches the relays in the mask one at a time:
 
 `SetPowerOnAsync` goes like a command: at once or `BoardNotConnectedException`, to the address it started on, and
 `ArgumentOutOfRangeException` for a relay or a state the entry hasn't, before anything is sent. A change of the
-states after a power cut alone comes as `PowerOnChanged`, not `StateChanged` (`ShellyStatus.RelaysComparer`).
+states after a power cut alone comes as `PowerOnChanged`, not `StateChanged` (`ShellyStatus.StateComparer`).
 
 `ShellyBoard`, `ShellyConnection` and `ShellyTraffic` are the adapters for the app. `ShellyTraceText` puts each
 request in plain words. The polls and the answers that change nothing are routine.
@@ -288,6 +327,10 @@ The `Shelly` section applies to all four entries:
   one on or off, `FailSchedules` refuses `Schedule.List`, `FailScheduleUpdates` refuses `Schedule.Update` for some
   jobs, `SilentScheduleUpdates` never answers it for some, and `ReportsScheduleRevision` false leaves `schedule_rev`
   out of the status.
+- It has as many inputs as switches, as the devices the docs list: `input:0` on a 1-relay device up to `input:3` on a
+  4-relay device, each of type `switch` and open at start. `SetInputAsync` closes or opens one, and the simulator's
+  page has a checkbox per input. `SetInputType`, for the tests only (the page has no control for it), makes one a
+  `button` (`state` null) or `analog` (`percent` 0 or 100) "at the device", which grows `cfg_rev`.
 - Any other method gets the error 404 "No handler for …", which isn't from the docs: the app sends no
   other method.
 - With a password it asks for the digest, in the way of the firmware it is set to (`Firmware`, "2.0.0" by default):
@@ -310,7 +353,7 @@ The `Shelly` section applies to all four entries:
 - Relays can be switched "at the device", and connections can be dropped or refused. A request that is too long,
   cut short or not HTTP is closed without an answer. A request that isn't a request frame gets 400 (the docs don't
   say what the device does).
-- A power cut (`ISimulatedBoardPower`): each relay comes back as its `initial_state` says (`off`, `on`, `restore_last`). `match_input` follows the switch's input, which the simulator doesn't have, so it comes back off. `power_restore_delay_enable` isn't simulated. The device forgets its nonces, as after a reboot.
+- A power cut (`ISimulatedBoardPower`): each relay comes back as its `initial_state` says (`off`, `on`, `restore_last`). `match_input` follows the switch's input, which the simulator doesn't link to its inputs, so it comes back off. `power_restore_delay_enable` isn't simulated. The device forgets its nonces, as after a reboot.
 - A new password while it runs (`ChangePassword`, or `ChangeLogin` with the user name ignored): a kept nonce still answers, but the old password is wrong from then on.
 
 ## To check on a real board
@@ -345,5 +388,14 @@ The `Shelly` section applies to all four entries:
   a delay already running, and that `cfg_rev` grows when `auto_on` changes.
 - The longest password the device's web page takes, and if a password with non-ASCII letters works.
 - How the device handles a poll every 2 s for days, with and without a password.
+- That an input of type `switch` gives `state` true when its terminal is closed, and that `invert` turns it the other
+  way.
+- That `input:N` is the input marked SW, SW1 or S1 (N = 0) on the device, and so on.
+- What the status gives for an input set to `button`, `analog` or turned off: the docs say `state` null for a button
+  and a disabled input, and `percent` for an analog one.
+- That a Plus 1 or a Gen3 device with one relay has `input:0` only, and a Pro 1 `input:0` and `input:1`.
+- How a switch's `in_mode` ("Mode of the associated input": `momentary`, `follow`, `flip`, `detached` …, "Switch")
+  switches the relay at the device by itself. The app doesn't read it, so an input may switch a relay without the
+  app (`MayHaveUnseen`).
 - How many HTTP clients the device takes at once. The docs say 6 non-persistent channels. If too many clients also
   get 429.

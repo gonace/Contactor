@@ -289,20 +289,26 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
 
         // The first status after start has nothing to compare the relays with: what happened before is unknown. After
         // a reconnect it is compared with the last status before the loss, so changes made meanwhile are logged.
+        // An input the board can't tell now (BoardState.UnknownInputs) counts as unchanged: going unknown is no change,
+        // and it is compared with its last known state once it is known again, at the next connection, so only as noticed.
+        ChannelMask inputs;
         if (_known is { } known)
         {
             await RecordRelayChangesAsync(db, channels, known.Relays, state.Relays, now, state.LastContactUtc?.UtcDateTime ?? now, cancellationToken);
-            RecordInputChanges(db, channels, BoardId, known.Inputs, state.Inputs, now, noticed: afterGap);
+            inputs = state.Inputs.Except(state.UnknownInputs) | (known.Inputs & state.UnknownInputs);
+            RecordInputChanges(db, channels, BoardId, known.Inputs, inputs, now, noticed: afterGap);
         }
         else
         {
             // At start the inputs are compared with what the event log last says about each: one that changed while
             // the app was down is logged now, as noticed, so its "since" reads unknown.
-            RecordInputChanges(db, channels, BoardId, await LastLoggedInputsAsync(db, channels, state.Inputs, cancellationToken), state.Inputs, now, noticed: true);
+            var logged = await LastLoggedInputsAsync(db, channels, state.Inputs, cancellationToken);
+            inputs = state.Inputs.Except(state.UnknownInputs) | (logged & state.UnknownInputs);
+            RecordInputChanges(db, channels, BoardId, logged, inputs, now, noticed: true);
             await GiveOwnerlessRelaysAutoOffAsync(db, channels, state.Relays, now, cancellationToken);
         }
 
-        _known = state;
+        _known = state with { Inputs = inputs };
         if (db.ChangeTracker.HasChanges())
         {
             await RelayRuns.SaveAsync(db, cancellationToken);
@@ -321,7 +327,7 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
     // marked so: it happened at a time nobody knows.
     private void RecordInputChanges(ContactorDbContext db, BoardChannels channels, int boardId, ChannelMask before, ChannelMask after, DateTime now, bool noticed)
     {
-        for (var channel = 1; channel <= _board.Capabilities.InputCount; channel++)
+        for (var channel = 1; channel <= InputChannels(after); channel++)
         {
             if (before.Contains(channel) != after.Contains(channel) && channels.InputAt(channel) is { } inputId)
             {
@@ -344,6 +350,15 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
         }
     }
 
+    // How many inputs to look at: the board's, or more while the status in hand has an input above them on. A board that
+    // says its count at each connection (a Shelly) may have had more when that status came, e.g. one handled again
+    // after a reconnect with fewer: an input it shows on is still logged. Only the status in hand widens it, never the
+    // one before: an input a reconnect no longer counts isn't logged as gone off.
+    private int InputChannels(ChannelMask inputs)
+    {
+        return Math.Max(_board.Capabilities.InputCount, 64 - System.Numerics.BitOperations.LeadingZeroCount(inputs.Bits));
+    }
+
     // The inputs as the event log last left them, by channel; an input never logged counts as matching the status in hand.
     private async Task<ChannelMask> LastLoggedInputsAsync(ContactorDbContext db, BoardChannels channels, ChannelMask current, CancellationToken cancellationToken)
     {
@@ -357,7 +372,7 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
             .ToListAsync(cancellationToken);
         var logged = last.ToDictionary(e => e.InputId, e => EventText.InputOn(e.Details));
         var inputs = ChannelMask.None;
-        for (var channel = 1; channel <= _board.Capabilities.InputCount; channel++)
+        for (var channel = 1; channel <= InputChannels(current); channel++)
         {
             var on = (channels.InputAt(channel) is { } inputId ? logged.GetValueOrDefault(inputId) : null) ?? current.Contains(channel);
             if (on)

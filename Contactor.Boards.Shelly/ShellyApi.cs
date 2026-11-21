@@ -129,6 +129,18 @@ public static class ShellyApi
     /// <summary>The most relays a catalogue entry has: the Pro 4PM's four.</summary>
     public const int MaxRelayCount = 4;
 
+    /// <summary>
+    /// The key of an input's status in <see cref="GetStatus"/>'s result ("Input": "identified with input:&lt;id&gt;"):
+    /// <c>input:0</c> is input 1.
+    /// </summary>
+    public const string InputKeyPrefix = "input:";
+
+    /// <summary>
+    /// The most digital inputs the app reads of a device: <c>input:0</c> to <c>input:3</c>, as many as the Pro 4PM has
+    /// ("Shelly Pro 4 PM": "4 instances of Input"). The app's own limit: an input with a higher id isn't shown.
+    /// </summary>
+    public const int MaxInputCount = 4;
+
     /// <summary>"-109: FAILED PRECONDITION", e.g. "Overtemp condition present" ("Common Errors").</summary>
     public const int FailedPrecondition = -109;
 

@@ -2,7 +2,10 @@ namespace Contactor.Boards;
 
 /// <summary>What a kind of board has and does.</summary>
 /// <param name="RelayCount">How many relays, numbered 1 to this.</param>
-/// <param name="InputCount">How many digital inputs, numbered 1 to this.</param>
+/// <param name="InputCount">
+/// How many digital inputs, numbered 1 to this. With <paramref name="InputCountFromBoard"/>, in the catalogue the most
+/// the board may have, and on a live board (<see cref="IRelayBoard.Capabilities"/>) how many it said it has.
+/// </param>
 /// <param name="ReportsChanges">
 /// Whether the board reports every change by itself, including ones made at the board. Without it the app has to
 /// ask, and changes made elsewhere show later.
@@ -22,7 +25,13 @@ namespace Contactor.Boards;
 /// board. Null means "can't tell": the app can neither read nor set it, and the board may still switch relays by itself
 /// when the power comes back. A model in the catalogue that leaves it null does so on purpose.
 /// </param>
-public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges, AnalogAbility? Analog = null, PulseAbility? Pulse = null, OwnRulesAbility? OwnRules = null, PowerOnAbility? PowerOn = null)
+/// <param name="InputCountFromBoard">
+/// Whether the board says at each connection how many digital inputs it has, e.g. a Shelly, whose models with the same
+/// number of relays have different inputs. The catalogue's <paramref name="InputCount"/> is then the most it may have,
+/// and the app keeps a row for each; the live board's is how many it said on its last connection, 0 before it answered,
+/// and the app shows only those, as it hides the rows a board with more inputs left behind.
+/// </param>
+public sealed record BoardCapabilities(int RelayCount, int InputCount, bool ReportsChanges, AnalogAbility? Analog = null, PulseAbility? Pulse = null, OwnRulesAbility? OwnRules = null, PowerOnAbility? PowerOn = null, bool InputCountFromBoard = false)
 {
     /// <summary>What the app can know and do about the board's own rules: <see cref="OwnRulesAbility.CantTell"/> when it doesn't say.</summary>
     public OwnRulesAbility OwnRulesOrCantTell => OwnRules ?? OwnRulesAbility.CantTell;

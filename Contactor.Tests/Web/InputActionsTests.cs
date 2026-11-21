@@ -346,6 +346,49 @@ public sealed class InputActionsTests
         }
     }
 
+    // An input whose setting was changed on the board (a Shelly's made a button) is unknown: going unknown is no change,
+    // and once known again, at the next connection, a change is only noticed. Neither is logged as seen nor handed on.
+    [Fact]
+    public async Task Should_NeitherLogNorAct_OnAnInputGoingUnknown()
+    {
+        await using var rig = await RigAsync(inputCount: 2);
+        var recorder = rig.Database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
+        await recorder.StartAsync(Cancel);
+        try
+        {
+            // A first status handled, so the input's change after it is seen live.
+            rig.Board.SetRelay(1, on: true);
+            await BoardTestRig.WaitUntilAsync(() =>
+            {
+                using var db = rig.Database.Factory.CreateDbContext();
+                return db.EventLog.Any(e => e.RelayId == 1);
+            });
+            rig.Board.SetInput(1, on: true);
+            Assert.Equal(new InputChanged(1, Closed: true), await BoardTestRig.NextAsync(rig.Feed.Reader));
+            var events = rig.InputEvents();
+
+            // Unknown, and still unknown with its terminal changed: nothing logged, nothing handed on. Input 2's change
+            // after it is the next one handed on.
+            rig.Board.SetUnknownInputs(ChannelMask.Of(1));
+            rig.Board.SetInput(1, on: false);
+            rig.Board.SetInput(2, on: true);
+            Assert.Equal(new InputChanged(2, Closed: true), await BoardTestRig.NextAsync(rig.Feed.Reader));
+            Assert.Equal(events + 1, rig.InputEvents());
+
+            // The next connection reads it afresh: open now, which is only noticed, and never handed on.
+            rig.Board.SetConnected(false);
+            rig.Board.SetUnknownInputs(ChannelMask.None);
+            rig.Board.SetConnected(true);
+            await BoardTestRig.WaitUntilAsync(() => rig.InputEvents() == events + 2);
+            rig.Board.SetInput(2, on: false);
+            Assert.Equal(new InputChanged(2, Closed: false), await BoardTestRig.NextAsync(rig.Feed.Reader));
+        }
+        finally
+        {
+            await recorder.StopAsync(CancellationToken.None);
+        }
+    }
+
     // An input's ON refused while its board is closed for its removal is done once the board opens again (the removal
     // didn't go ahead), if the input is still as it was; its OFFs go through at once.
     [Fact]

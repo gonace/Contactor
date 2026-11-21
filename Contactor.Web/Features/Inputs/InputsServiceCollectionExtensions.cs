@@ -22,6 +22,7 @@ public static class InputsServiceCollectionExtensions
         services.AddSingleton<InputActionService>();
         services.AddSingleton<IBoardWatcher>(sp => sp.GetRequiredService<InputActionService>());
         services.AddHostedService(sp => sp.GetRequiredService<InputActionService>());
+        services.AddHostedService<InputCountWatch>();
         return services;
     }
 }
