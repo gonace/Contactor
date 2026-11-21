@@ -1964,6 +1964,12 @@
   <data name="OwnRules.TurnOffTimer" xml:space="preserve">
     <value>Stäng av timern</value>
   </data>
+  <data name="OwnRules.TurnOffTimer.Label" xml:space="preserve">
+    <value>Stäng av timern för relä {0}</value>
+  </data>
+  <data name="OwnRules.TurnOffTimer.LabelNamed" xml:space="preserve">
+    <value>Stäng av timern för relä {0} ({1})</value>
+  </data>
   <data name="OwnRules.Unavailable.GroupText_One" xml:space="preserve">
     <value>Kortet styr det självt. Återställ det för att starta gruppen.</value>
   </data>

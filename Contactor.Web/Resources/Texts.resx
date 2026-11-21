@@ -2167,7 +2167,7 @@
   </data>
   <data name="OwnRules.TurnOffAllRelays" xml:space="preserve">
     <value>Turn them all off</value>
-    <comment>The warning's button on Relays when two or more relays have rules of the board that can be turned off: turns them all off. With one, the button is only on that relay's card.</comment>
+    <comment>The warning's button on Relays when two or more relays have rules of the board that can be turned off: turns them all off. A relay's timer also has its own button on its card.</comment>
   </data>
   <data name="OwnRules.TurnOffAll_One" xml:space="preserve">
     <value>Turn it off</value>
@@ -2178,6 +2178,14 @@
   <data name="OwnRules.TurnOffTimer" xml:space="preserve">
     <value>Turn off the timer</value>
     <comment>The button on a relay's card on Relays, under OwnRules.CardLine.Timer: turns off only that relay's timers on the board.</comment>
+  </data>
+  <data name="OwnRules.TurnOffTimer.Label" xml:space="preserve">
+    <value>Turn off the timer for relay {0}</value>
+    <comment>OwnRules.TurnOffTimer for a screen reader, for a relay without a name: {0} is its number.</comment>
+  </data>
+  <data name="OwnRules.TurnOffTimer.LabelNamed" xml:space="preserve">
+    <value>Turn off the timer for relay {0} ({1})</value>
+    <comment>OwnRules.TurnOffTimer for a screen reader: {0} is the relay's number, {1} its name, e.g. "Fan heater".</comment>
   </data>
   <data name="OwnRules.Unavailable.GroupText_One" xml:space="preserve">
     <value>The board controls it itself. Reset it to start the group.</value>

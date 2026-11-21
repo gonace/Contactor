@@ -312,8 +312,9 @@
     // The rules each board's "Turn them off" turns off (OwnRulesHandler.TurnsOff), by board id: kept as the page is drawn.
     private readonly Dictionary<int, IReadOnlyList<OwnRule>> _shownTurnsOff = [];
 
-    // Each relay's own "Turn off the timer" on its card (issue #616), by board id: the rules of that relay it turns off
-    // and what it takes with it, in relay order. Kept as the page is drawn.
+    // Each relay's own "Turn off the timer" on its card (issue #616), by board id: the timers of that relay it turns off
+    // and what it takes with it, in relay order. Timers only: other kinds stay on the warning's button. Kept as the page
+    // is drawn.
     private readonly Dictionary<int, IReadOnlyList<RelayTurnOff>> _shownRelayTurnOffs = [];
 
     // The relays each board controls by itself, by board id: kept as the page is drawn.
@@ -573,16 +574,18 @@
     };
 
     // A line on the card of a relay the board's own rules can switch: "(clock) The relay is also run by a timer on the
-    // board". In the card's link only while the relay has no "Turn off the timer": with one, both go under the card
-    // (OwnRuleTurnOff).
+    // board". In the card's link, for the rules without a "Turn off the timer": the timers that have one go under the
+    // card with it (OwnRuleTurnOff).
     private RenderFragment OwnRuleLine(Relay relay) => __builder =>
     {
-        if (_shownRules.GetValueOrDefault(relay.BoardId) is not { Count: > 0 } rules || !rules.Any(r => r.Relay == relay.Channel) || RelayTurnOffOf(relay) is not null)
+        var underCard = RelayTurnOffOf(relay)?.Rules ?? [];
+        List<OwnRule> rules = [.. _shownRules.GetValueOrDefault(relay.BoardId)?.Where(r => r.Relay == relay.Channel && !underCard.Contains(r)) ?? []];
+        if (rules.Count == 0)
         {
             return;
         }
 
-        @OwnRuleLineText(rules.Where(r => r.Relay == relay.Channel))
+        @OwnRuleLineText(rules)
     };
 
     private RenderFragment OwnRuleLineText(IEnumerable<OwnRule> rules) => __builder =>
@@ -593,9 +596,10 @@
         </span>
     };
 
-    // Under the card of a relay with rules of the board the app can turn off (issue #616): the line, what else goes with
-    // them, and "Turn off the timer" for this relay's rules only. Not a relay whose rule runs on the board now (the
-    // warning's "Running on the board right now"), nor a kept rule.
+    // Under the card of a relay with timers of the board the app can turn off (issue #616): the line, what else goes with
+    // them, and "Turn off the timer" for this relay's timers only. Not a relay whose rule runs on the board now (the
+    // warning's "Running on the board right now"), nor a kept rule, nor another kind (e.g. an auto-on): a "Turn off" next
+    // to the relay's ON/OFF could be pressed to turn the relay off, and change the device's setting instead.
     private RenderFragment OwnRuleTurnOff(Relay relay) => __builder =>
     {
         if (RelayTurnOffOf(relay) is not { } turnOff)
@@ -605,12 +609,12 @@
 
         var connected = StateOf(relay.BoardId).IsConnected;
         <div class="own-rule-row">
-            @OwnRuleLineText(_shownRules.GetValueOrDefault(relay.BoardId)?.Where(r => r.Relay == relay.Channel) ?? turnOff.Rules)
+            @OwnRuleLineText(turnOff.Rules)
             @if (OwnRulesText.AlsoTurnsOff(turnOff.Also, RelayNames(relay.BoardId)) is { } also)
             {
                 <span class="also">@also</span>
             }
-            <button type="button" class="turn-off-rule" disabled="@(_busy || !connected)" @onclick="() => TurnOffRulesAsync(relay.BoardId, turnOff.Rules, relay.Channel)">@OwnRulesText.TurnOffRelay(turnOff.Rules.Select(r => r.Kind))</button>
+            <button type="button" class="turn-off-rule" aria-label="@OwnRulesText.TurnOffTimerLabel(relay.Channel, relay.Name)" disabled="@(_busy || !connected)" @onclick="() => TurnOffRulesAsync(relay.BoardId, turnOff.Rules, relay.Channel)">@OwnRulesText.TurnOffTimer()</button>
             @if (_rulesError is { } error && error.BoardId == relay.BoardId && error.Channel == relay.Channel)
             {
                 <span class="rules-error" role="alert">@error.Message</span>
@@ -619,14 +623,17 @@
     };
 
     // The warning's button, or null for none: "Turn them all off" with two or more relays to turn off. With one, only
-    // when it has no card of its own on the page (a relay in a group, or an inactive one hidden), whose rules would have
-    // no button otherwise: "Turn it off", "Turn them off".
+    // when one of its rules has no button on a card shown on the page (not a timer, or a relay in a group or an inactive
+    // one hidden), so every rule has a button somewhere: "Turn it off", "Turn them off".
     private string? TurnOffAllText(int boardId, IReadOnlyList<OwnRule> turnsOff)
     {
-        List<int> channels = [.. turnsOff.Select(r => r.Relay).Distinct()];
-        return channels.Count >= 2 ? OwnRulesText.TurnOffAllRelays()
-            : channels.Any(c => !VisibleRelays.Any(r => r.BoardId == boardId && r.Channel == c)) ? OwnRulesText.TurnOffAll(turnsOff.Count)
-            : null;
+        if (turnsOff.Select(r => r.Relay).Distinct().Count() >= 2)
+        {
+            return OwnRulesText.TurnOffAllRelays();
+        }
+
+        var onCards = VisibleRelays.Where(r => r.BoardId == boardId).SelectMany(r => RelayTurnOffOf(r)?.Rules ?? []).ToHashSet();
+        return turnsOff.Any(r => !onCards.Contains(r)) ? OwnRulesText.TurnOffAll(turnsOff.Count) : null;
     }
 
     // The relay's own "Turn off the timer", or null without one.
@@ -1332,11 +1339,12 @@
         return rules.Count > 0 && board.Capabilities.OwnRulesOrCantTell.TurnsOff ? OwnRules.AlsoTurnsOff(board.BoardId, rules) : [];
     }
 
-    // Each relay's own "Turn off the timer": the rules the warning's would turn off, by relay, with what each relay's take
-    // with them (only for a board that turns them off).
+    // Each relay's own "Turn off the timer": the timers the warning's would turn off, by relay, with what each relay's
+    // take with them (only for a board that turns them off).
     private IReadOnlyList<RelayTurnOff> RelayTurnOffsToShow(LiveBoard board, IReadOnlyList<OwnRule> turnsOff)
     {
         return [.. turnsOff
+            .Where(r => r.Kind == OwnRuleKind.Timer)
             .GroupBy(r => r.Relay)
             .OrderBy(g => g.Key)
             .Select(g =>

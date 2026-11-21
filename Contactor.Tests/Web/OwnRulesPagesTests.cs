@@ -61,6 +61,58 @@ public sealed partial class OwnRulesPagesTests
         Assert.DoesNotContain("Also", box, StringComparison.Ordinal);
     }
 
+    // Relays 3 and 5 have timers (issue #616): relay 5's "Turn off the timer" turns off only relay 5's, logged; relay 3's
+    // stays and is still warned about. A press the board refuses says so on that relay's card, not in the warning.
+    [Fact]
+    public async Task Should_TurnOffOnlyThatRelaysTimer_FromItsCard()
+    {
+        const string NotTaken = "The relay board didn't turn them off. Try again.";
+        var board = Board();
+        await using var app = App(board);
+        await NameAsync(app, 5, "Heat");
+        await RulesAsync(app, board, Timer3, Timer5);
+        using var page = await PageRenderer.StartAsync<Relays>(app.Services, John, "John");
+        var timer5 = PageRenderer.With("aria-label", "Turn off the timer for relay 5 (Heat)");
+
+        board.RefuseOwnRules = true;
+        await page.ClickAsync(timer5);
+        var text = await page.TextAsync();
+        Assert.Single(Regex.Matches(text, Regex.Escape(NotTaken)));
+        Assert.True(text.IndexOf(NotTaken, StringComparison.Ordinal) > text.IndexOf("Heat", StringComparison.Ordinal));
+        Assert.Empty(await EventsAsync(app));
+
+        board.RefuseOwnRules = false;
+        await page.ClickAsync(timer5);
+        Assert.Equal(new OwnRules([Timer3]), board.State.OwnRules);
+        var entry = (await EventsAsync(app)).Single(e => e.Action == EventActions.BoardOwnRulesTurnedOff);
+        Assert.Contains("\"relays\":[5]", entry.Details, StringComparison.Ordinal);
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains("It can switch relay 3 on and off without Contactor.", StringComparison.Ordinal));
+        Assert.True(await page.HasAsync(PageRenderer.WithText("Turn off the timer")));
+        Assert.False(await page.HasAsync(timer5));
+        Assert.Empty(page.Errors);
+    }
+
+    // A rule of another kind (relay 5's auto-on) gets no button on its card, where a "Turn off" next to ON/OFF could be
+    // taken for turning the relay off: it stays on the warning's button, which turns it off.
+    [Fact]
+    public async Task Should_OfferNoCardButton_ForARuleThatIsntATimer()
+    {
+        var auto5 = new OwnRule(5, OwnRuleKind.AutoOn);
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, auto5);
+
+        var html = await PageAsync(app, "/");
+        Assert.DoesNotContain("turn-off-rule", Card(html, "relay/5"), StringComparison.Ordinal);
+        Assert.Contains("The board turns it on again by itself after it goes off", CardText(html, "relay/5"), StringComparison.Ordinal);
+        Assert.Contains(">Turn it off</button>", Box(html), StringComparison.Ordinal);
+
+        using var page = await PageRenderer.StartAsync<Relays>(app.Services, John, "John");
+        await page.ClickAsync(PageRenderer.WithText("Turn it off"));
+        Assert.Equal(OwnRules.Empty, board.State.OwnRules);
+        Assert.Empty(page.Errors);
+    }
+
     // Relay 3's timer is a schedule on the board that also switches relay 5 (Heat), which a person kept: with one relay,
     // the warning has no button, and relay 3's card says before the press that "Turn off the timer" takes Heat's too,
     // and it does.

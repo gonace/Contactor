@@ -54,13 +54,20 @@ public sealed class OwnRulesText
         return _texts["OwnRules.TurnOffAllRelays"];
     }
 
-    /// <summary>
-    /// The button on a relay's card on Relays that turns off only that relay's rules: "Turn off the timer" for timers,
-    /// "Turn off" for any other kind.
-    /// </summary>
-    public string TurnOffRelay(IEnumerable<OwnRuleKind> kinds)
+    /// <summary>The button on a relay's card on Relays that turns off only that relay's timers: "Turn off the timer".</summary>
+    public string TurnOffTimer()
     {
-        return _texts[Kind(kinds) == "Timer" ? "OwnRules.TurnOffTimer" : "OwnRules.TurnOff"];
+        return _texts["OwnRules.TurnOffTimer"];
+    }
+
+    /// <summary>
+    /// The card's button for a screen reader, naming the relay: "Turn off the timer for relay 5 (Fan heater)", or
+    /// "… for relay 5" without a name.
+    /// </summary>
+    public string TurnOffTimerLabel(int channel, string? name)
+    {
+        var relay = channel.ToString(CultureInfo.CurrentCulture);
+        return string.IsNullOrWhiteSpace(name) ? _texts["OwnRules.TurnOffTimer.Label", relay] : _texts["OwnRules.TurnOffTimer.LabelNamed", relay, name];
     }
 
     /// <summary>The step's heading while the board is being added: "This board has timers of its own".</summary>
