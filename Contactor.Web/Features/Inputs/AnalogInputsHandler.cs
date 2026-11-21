@@ -179,7 +179,7 @@ public sealed class AnalogInputsHandler
             return null;
         }
 
-        return new AnalogScale(unit, unitText, v1, x1, v2, x2);
+        return new AnalogScale(unit, unit == AnalogUnits.Other ? unitText.Trim() : "", v1, x1, v2, x2);
     }
 
     private static decimal? Round(decimal? value)

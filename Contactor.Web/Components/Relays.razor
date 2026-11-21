@@ -1479,6 +1479,14 @@
                     _unconfirmed = null;
                 }
 
+                // A refusal for a pulse that has ended since: the relay switches again, so a later pulse of it shows no
+                // message under this person's card.
+                if (_pulsing && (_relays.FirstOrDefault(r => r.Id == _failedRelayId) is not { } refused || !IsPulsing(refused)))
+                {
+                    _failedRelayId = null;
+                    _pulsing = false;
+                }
+
                 StateHasChanged();
             });
         }

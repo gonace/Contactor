@@ -129,7 +129,8 @@ Exchanges from the documents and the recorded session:
   0 to 3.3 V (ETH484 manual pp. 4 and 10). The app can't tell the two apart, so it uses the command they both have. On
   the ETH484-B, "for 10 bit results the 3.3V to 5V region will merely read full scale" (p. 5): for an input without a
   scale, the app shows 1023 as "Above the board's range". For an input with a scale, it shows the scaled value at
-  3.3 V after "≥", e.g. "≥ 66.0 °C" (Issue #564).
+  3.3 V after "≥" when its values rise with the voltage, e.g. "≥ 66.0 °C" for 0–5 V = 0–100 °C, or after "≤" when they
+  fall, e.g. "≤ 34.0 %" for 0 V = 100 %, 5 V = 0 % (Issue #564).
 - An analog answer that fails never fails the poll, and never stops the app from switching the relays. The analog
   inputs are a measurement nobody has checked on a real board yet. When an analog answer fails:
   - The relays and inputs of that poll are kept, and the board stays connected.

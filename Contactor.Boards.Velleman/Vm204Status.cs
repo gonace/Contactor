@@ -6,7 +6,7 @@ namespace Contactor.Boards.Velleman;
 /// <param name="Analog">The analog input as the board's 10-bit converter reads it, or null when the answer had none.</param>
 /// <param name="Pulses">
 /// Bit per relay whose pulse runs (<c>"pulse"</c>), bit 0 = relay 1; null when the answer had no such flags the app could
-/// read. Only the pulse command reads it (<see cref="Vm204Client.PulseAsync"/>).
+/// read. Every status reads it, but only the pulse command acts on it (<see cref="Vm204Client.PulseAsync"/>).
 /// </param>
 public sealed record Vm204Status(byte Relays, byte Inputs, int? Analog, byte? Pulses = null)
 {

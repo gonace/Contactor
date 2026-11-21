@@ -31,6 +31,7 @@ public sealed class AnalogValueTextTests
     {
         Assert.Equal(new AnalogValue(AnalogValueState.TopValue, "≥\u00A080.0", "°C", 5m, "5.00"), Show(1023, Celsius));
         Assert.True(AnalogValueText.Rises(Celsius));
+        Assert.True(AnalogValueText.Rises(new AnalogScale(AnalogUnits.Percent, "", 5m, 100m, 0m, 0m)));
 
         // 0 V = 100 %, 5 V = 0 %.
         var falling = new AnalogScale(AnalogUnits.Percent, "", 0m, 100m, 5m, 0m);
@@ -67,15 +68,16 @@ public sealed class AnalogValueTextTests
         Assert.Null(AnalogValueText.BeyondRange(sensor with { Volts2 = 3.3m }, threeVolts));
     }
 
-    // The warning follows the points as typed, but only as they would save: rounded, and nothing for points out of
+    // The note follows the points as typed, but only as they would save: rounded, and nothing for points out of
     // range, which could make the scaled value too large for a number while the page draws.
     [Fact]
-    public void Should_WarnOnlyOfTypedPoints_AsTheyWouldSave()
+    public void Should_NoteOnlyTypedPoints_AsTheyWouldSave()
     {
         var threeVolts = new AnalogAbility(1, 1023, 3.3m);
         var typed = AnalogInputsHandler.AsSaved(AnalogUnits.Celsius, "", 0m, 0m, 5.0004m, 100m);
         Assert.Equal(new AnalogScale(AnalogUnits.Celsius, "", 0m, 0m, 5m, 100m), typed);
         Assert.NotNull(AnalogValueText.BeyondRange(typed!, threeVolts));
+        Assert.Equal("L", AnalogInputsHandler.AsSaved(AnalogUnits.Other, " L ", 0m, 0m, 5m, 100m)!.UnitText);
 
         Assert.Null(AnalogInputsHandler.AsSaved(AnalogUnits.Celsius, "", 0m, -decimal.MaxValue, 5m, decimal.MaxValue));
         Assert.Null(AnalogInputsHandler.AsSaved(AnalogUnits.Celsius, "", 0m, 0m, 101m, 100m));

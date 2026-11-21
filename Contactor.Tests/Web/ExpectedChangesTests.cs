@@ -73,6 +73,16 @@ public sealed class ExpectedChangesTests
         Assert.False(_expected.TryConsume(1, on: true, now));
         Assert.True(_expected.TryConsume(2, on: true, now));
         Assert.True(_expected.TryConsume(1, on: false, now));
+
+        // A failed pulse's expectations, by their owner: another command's for the same relay stay.
+        var pulse = new object();
+        _expected.Expect(ChannelMask.Of(3), on: true, owner: pulse);
+        _expected.Expect(ChannelMask.Of(3), on: false, owner: pulse);
+        _expected.Expect(ChannelMask.Of(3), on: false);
+        _expected.Forget(pulse);
+        Assert.False(_expected.TryConsume(3, on: true, now));
+        Assert.True(_expected.TryConsume(3, on: false, now));
+        Assert.False(_expected.TryConsume(3, on: false, now));
     }
 
     [Fact]

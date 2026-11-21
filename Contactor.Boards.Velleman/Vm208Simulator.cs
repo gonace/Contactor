@@ -429,8 +429,8 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
 
         _listener?.Dispose();
         _stopping.Dispose();
-        PulseRuns.Dispose();
-        TimerRuns.Dispose();
+        Volatile.Read(ref _pulseRuns)?.Dispose();
+        Volatile.Read(ref _timerRuns)?.Dispose();
     }
 
     private async Task AcceptLoopAsync(TcpListener listener, CancellationToken cancellationToken)
@@ -829,7 +829,7 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         lock (_lock)
         {
             status = new Vm208Status(_relays, _input, 0) { Pulses = (byte)PulseRuns.Running, Timers = (byte)TimerRuns.Running };
-            routine = status.SameSwitches(_lastStatusSent) && status.Running == _lastStatusSent?.Running;
+            routine = status.SameSwitches(_lastStatusSent) && status.Pulses == _lastStatusSent?.Pulses && status.Timers == _lastStatusSent?.Timers;
             _lastStatusSent = status;
         }
 

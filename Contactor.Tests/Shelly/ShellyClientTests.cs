@@ -92,7 +92,7 @@ public sealed class ShellyClientTests
         Assert.Equal(0b01, run.Client.State.UnknownInputs);
         Assert.Equal(0b00, run.Client.State.Inputs);
         Assert.Equal(2, run.Client.State.InputCount);
-        Assert.Contains(run.Traces, t => t.Text == "Status: all off · input 1 unknown · inputs off");
+        Assert.Contains(run.Traces, t => t.Text == "Status: all off · input 1 unknown · input 2 off");
 
         // A switch again, its terminal closed: still unknown until the next connection.
         simulator.SetInputType(1, ShellySimulator.SwitchInput);

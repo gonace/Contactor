@@ -36,7 +36,7 @@ public static class ShellyTraceText
 
     /// <summary>
     /// "Status: relay 1 and 3 on", "Status: all off", and the inputs of a device that has some: "Status: relay 2 on ·
-    /// input 1 on", "Status: all off · inputs off".
+    /// input 1 on", "Status: all off · inputs off", "Status: all off · input 1 unknown · input 2 off".
     /// </summary>
     public static string Status(ShellyStatus status, int relayCount)
     {
@@ -52,9 +52,16 @@ public static class ShellyTraceText
             relays += $" · {InputList(status.UnknownInputs, status.InputCount)} unknown";
         }
 
-        if (status.Inputs == 0)
+        if (status.Inputs == 0 && status.UnknownInputs == 0)
         {
             return relays + (status.InputCount == 1 ? " · input off" : " · inputs off");
+        }
+
+        if (status.Inputs == 0)
+        {
+            // Only the inputs that are known are off: "input 1 unknown · input 2 off", or nothing more when none is.
+            var known = (byte)(((1 << status.InputCount) - 1) & ~status.UnknownInputs);
+            return known == 0 ? relays : $"{relays} · {InputList(known, status.InputCount)} off";
         }
 
         return $"{relays} · {InputList(status.Inputs, status.InputCount)} on";

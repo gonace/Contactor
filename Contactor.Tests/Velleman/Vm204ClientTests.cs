@@ -686,10 +686,6 @@ public sealed class Vm204ClientTests
         }
     }
 
-    /// <summary>
-    /// A VM204 the test drives: it logs anyone in, switches relays, and answers the status, or never answers it while
-    /// <see cref="HangStatus"/> is set. Also used by <see cref="Boards.Vm204BoardTests"/>.
-    /// </summary>
     // The firmware's key is 32 letters and digits; a longer one would make queries that overflow its 64-byte copy of the
     // query (Main/api.c), so the app never logs in with it, and no command goes out.
     [Fact]
@@ -706,6 +702,10 @@ public sealed class Vm204ClientTests
         Assert.False(run.Client.State.IsConnected);
     }
 
+    /// <summary>
+    /// A VM204 the test drives: it logs anyone in, switches relays, and answers the status, or never answers it while
+    /// <see cref="HangStatus"/> is set. Also used by <see cref="Boards.Vm204BoardTests"/>.
+    /// </summary>
     internal sealed class ScriptedBoard : IAsyncDisposable
     {
         private readonly TcpListener _listener;
