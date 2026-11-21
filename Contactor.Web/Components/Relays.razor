@@ -774,8 +774,9 @@
                 {
                     <span class="error" role="alert">@Texts["Boards.BeingRemoved"]</span>
                 }
-                else if (_failedRelayId == relay.Id && _pulsing)
+                else if (_failedRelayId == relay.Id && _pulsing && pulsing)
                 {
+                    @* Only while the lock lasts: once the pulse has ended, the relay switches again. *@
                     <span class="error" role="alert">@Texts["Relays.Pulsing"]</span>
                 }
             </a>

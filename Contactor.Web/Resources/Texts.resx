@@ -2489,6 +2489,7 @@
   </data>
   <data name="Relays.Pulsing" xml:space="preserve">
     <value>This relay is pulsing. Switch it when the pulse has ended.</value>
+    <comment>Under a relay whose ON or OFF was refused because a pulse the app started (e.g. "Try") still runs on it; it goes when the pulse has ended.</comment>
   </data>
   <data name="Relays.RelayLabel" xml:space="preserve">
     <value>RELAY {0}</value>

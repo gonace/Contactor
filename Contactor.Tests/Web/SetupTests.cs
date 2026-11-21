@@ -592,10 +592,49 @@ public sealed class SetupTests
         Assert.False(rig.Board.State.IsOn(3));
         Assert.True(live.IsPulsing(3));
 
+        // Over for good once the board has shown it off after the pulse's length: a person's ON and then OFF both go.
         time.Advance(TimeSpan.FromSeconds(2));
         Assert.False(live.IsPulsing(3));
         await control.TurnOnAsync(3, JohnEmail, Cancel);
         Assert.True(rig.Board.State.IsOn(3));
+        Assert.False(live.IsPulsing(3));
+        await control.TurnOffAsync(3, JohnEmail, Cancel);
+        Assert.False(rig.Board.State.IsOn(3));
+    }
+
+    // Two pulses of the same relay at once: one goes and locks the relay, the other is refused without touching its
+    // lock or its expectations.
+    [Fact]
+    public async Task Should_RefuseTheSecondOfTwoPulsesAtOnce_AndKeepTheFirstsLock()
+    {
+        var time = new ManualTimeProvider(new DateTimeOffset(Now));
+        await using var rig = await Rig.StartAsync(pulse: TenthsUpTo25s, time: time);
+        var control = rig.Database.Services.GetRequiredService<RelayControl>();
+        var live = rig.Database.Services.Live();
+
+        var results = await Task.WhenAll(
+            Attempt(() => control.PulseAsync(3, TimeSpan.FromSeconds(2), JohnEmail, Cancel)),
+            Attempt(() => control.PulseAsync(3, TimeSpan.FromSeconds(2), JohnEmail, Cancel)));
+
+        Assert.Single(results, r => r is null);
+        Assert.IsType<RelayPulsingException>(Assert.Single(results, r => r is not null));
+        Assert.Single(rig.Board.Pulses);
+        Assert.True(live.IsPulsing(3));
+        Assert.True(live.Expected.IsPending(3, on: false));
+        await Assert.ThrowsAsync<RelayPulsingException>(() => control.TurnOnAsync(3, JohnEmail, Cancel));
+
+        static async Task<Exception?> Attempt(Func<Task> pulse)
+        {
+            try
+            {
+                await pulse();
+                return null;
+            }
+            catch (RelayPulsingException ex)
+            {
+                return ex;
+            }
+        }
     }
 
     // A board whose pulse can't do 2 s: "Try" turns the relay on and off itself, as on a board without one.

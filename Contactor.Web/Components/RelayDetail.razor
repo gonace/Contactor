@@ -112,8 +112,9 @@
                     {
                         <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy)" @onclick="ToggleAsync">@Texts[IsOn ? "Relays.Detail.TurnOff" : "Relays.Detail.TurnOn"]</button>
                     }
-                    @if (_toggleFailed)
+                    @if (_toggleFailed && !(_pulsing && !IsPulsing))
                     {
+                        @* A refusal for a pulse shows only while the lock lasts: once it has ended, the relay switches again. *@
                         @if (_inGroup)
                         {
                             <p class="error" role="alert">@Texts["Relays.InGroup"]</p>
@@ -691,6 +692,13 @@
                 if (_toggleFailed && !_inGroup && new UnconfirmedPress(Id, _channel, _wanted).IsSettledBy(State))
                 {
                     _toggleFailed = false;
+                }
+
+                // A refusal for a pulse that has ended since: the relay switches again.
+                if (_pulsing && !IsPulsing)
+                {
+                    _toggleFailed = false;
+                    _pulsing = false;
                 }
 
                 StateHasChanged();

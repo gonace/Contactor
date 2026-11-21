@@ -75,7 +75,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         // Listening from now on, before the first connection.
         Trace = new BoardTrace(this, time, loggerFactory.CreateLogger<BoardTrace>());
         Expected = new ExpectedChanges(time);
-        Pulses = new AppPulses(time);
+        Pulses = new AppPulses(time, () => State);
     }
 
     /// <inheritdoc/>
@@ -139,7 +139,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     /// <summary>Whether the app's pulse on <paramref name="channel"/> still runs, as the board's latest state shows it.</summary>
     public bool IsPulsing(int channel)
     {
-        return Pulses.IsPulsing(channel, State.IsOn(channel));
+        return Pulses.IsPulsing(channel);
     }
 
     /// <summary>
@@ -508,6 +508,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         {
             var state = board.Board.State;
             Expected.Observe(state);
+            Pulses.Observe(state);
             Raise(StateChanged, state);
         }
 
@@ -641,6 +642,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
             if (ReferenceEquals(sender, Active?.Board))
             {
                 Expected.Observe(state);
+                Pulses.Observe(state);
                 Raise(StateChanged, state);
             }
         }

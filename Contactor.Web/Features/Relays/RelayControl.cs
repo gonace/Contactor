@@ -53,7 +53,9 @@ public sealed class RelayControl
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(board, mask, cancellationToken);
         EnsureAvailable(board, mask);
-        EnsureNotPulsing(board, mask);
+
+        // Checked and held in one step, so no pulse of the relay starts while the ON is on its way.
+        using var hold = board.Pulses.TryHold(mask) ?? throw new RelayPulsingException();
         await SendAsync(board, mask, on: true, cancellationToken);
 
         // The ON went out: from here it is recorded whatever happens to the caller.
@@ -91,15 +93,14 @@ public sealed class RelayControl
 
         await EnsureNotInGroupAsync(board, mask, cancellationToken);
         EnsureAvailable(board, mask);
-        EnsureNotPulsing(board, mask);
+
+        // Checked and locked in one step, from before it goes out, so no press or other pulse slips in between.
+        var started = board.Pulses.TryStart(mask, length, _changes.Notify) ?? throw new RelayPulsingException();
         var expected = board.Expected;
-        expected.Expect(mask, on: true);
+        expected.Expect(mask, on: true, owner: started);
 
         // The board's own OFF comes after the pulse, and on a board the app polls up to a poll or two later.
-        expected.Expect(mask, on: false, length + PulseOffWait);
-
-        // Locked from before it goes out, so no press slips in between; a pulse that didn't go out unlocks again.
-        board.Pulses.Start(mask, length, _changes.Notify);
+        expected.Expect(mask, on: false, length + PulseOffWait, owner: started);
         try
         {
             await board.PulseAsync(mask, length, cancellationToken);
@@ -107,9 +108,9 @@ public sealed class RelayControl
         catch
         {
             // As for ON: a failed or cancelled pulse logs nothing, and whatever the board did shows as an external change.
-            expected.Forget(mask, on: true);
-            expected.Forget(mask, on: false);
-            board.Pulses.Forget(mask);
+            // Only this pulse's lock and expectations go: another command's for the relay meanwhile stay.
+            expected.Forget(started);
+            board.Pulses.Forget(started);
             _changes.Notify();
             throw;
         }
@@ -152,10 +153,9 @@ public sealed class RelayControl
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(board, mask, cancellationToken);
         EnsureAvailable(board, mask);
-        if (!EventActors.TryInput(actor, out _))
-        {
-            EnsureNotPulsing(board, mask);
-        }
+
+        // An input's OFF goes whatever runs; a person's is checked and held in one step, so no pulse starts meanwhile.
+        using var hold = EventActors.TryInput(actor, out _) ? null : board.Pulses.TryHold(mask) ?? throw new RelayPulsingException();
 
         var sent = _clock.UtcNow;
         await SendAsync(board, mask, on: false, cancellationToken);
@@ -383,15 +383,6 @@ public sealed class RelayControl
         if (board.State.Unavailable.Overlaps(mask))
         {
             throw new RelayUnavailableException();
-        }
-    }
-
-    // The app's own pulse runs on the relay: a press would be undone by its end, or end it early (AppPulses).
-    private static void EnsureNotPulsing(LiveBoard board, ChannelMask mask)
-    {
-        if (board.Pulses.Pulsing(mask, board.State) != ChannelMask.None)
-        {
-            throw new RelayPulsingException();
         }
     }
 
