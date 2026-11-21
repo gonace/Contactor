@@ -391,6 +391,38 @@ public sealed class InputActionsTests
 
     // An input's ON refused while its board is closed for its removal is done once the board opens again (the removal
     // didn't go ahead), if the input is still as it was; its OFFs go through at once.
+    // A refused ON for an input that then goes unknown (a Shelly's input made a button on the device): its moment can't
+    // be told any more, so the retry sends nothing, though the unknown input's bit reads "open" as the change did.
+    [Fact]
+    public async Task Should_SendNothing_ForARefusedOn_OfAnInputThatWentUnknown()
+    {
+        await using var rig = await RigAsync(inputCount: 2);
+        await rig.SaveAsync(new InputActionRow(Relay(1), WhenClosed: null, WhenOpened: true));
+        var service = rig.Database.Services.GetServices<IHostedService>().OfType<InputActionService>().Single();
+        await service.StartAsync(Cancel);
+        try
+        {
+            var live = rig.Database.Services.GetRequiredService<BoardRegistry>().All[0];
+            await live.CloseAsync();
+            await rig.RunAsync(closed: false);
+            Assert.False(rig.Board.State.Relays.Contains(1));
+
+            rig.Board.SetUnknownInputs(ChannelMask.Of(1));
+            live.Reopen();
+
+            // A change queued after it, of an input whose action can be seen: once that is done, so is the retry.
+            await rig.SaveAsync(2, new InputActionRow(Relay(3), WhenClosed: true, WhenOpened: null));
+            rig.Feed.Enqueue(2, closed: true);
+            await BoardTestRig.WaitUntilAsync(() => rig.Board.State.Relays.Contains(3));
+            Assert.False(rig.Board.State.Relays.Contains(1));
+            Assert.DoesNotContain(rig.Board.Sent, c => c.Relays.Contains(1));
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
     [Fact]
     public async Task Should_DoARefusedOn_OnceTheBoardOpensAgain_IfTheInputIsStillSo()
     {

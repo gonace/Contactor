@@ -13,7 +13,10 @@ else
 }
 
 @code {
-    /// <summary>Before the board's first answer: a grey "–" instead of a state nobody knows yet.</summary>
+    /// <summary>
+    /// A grey "–" instead of a state nobody knows: before the board's first answer, and for an input whose setting was
+    /// changed on the device until the board connects again (<see cref="Contactor.Boards.BoardState.IsInputKnown"/>).
+    /// </summary>
     [Parameter]
     public bool Unknown { get; set; }
 
