@@ -47,6 +47,7 @@ public static class Vm204TraceText
             Vm204Api.StatusPath => "Ask for status",
             Vm204Api.RelayOnPath => $"Turn on {RelayList(query)}",
             Vm204Api.RelayOffPath => $"Turn off {RelayList(query)}",
+            Vm204Api.RelayPulsePath => $"Pulse {RelayList(query)} for {(PulseSeconds(query) is { } seconds ? seconds.ToString(CultureInfo.InvariantCulture) : "?")} s",
             _ => $"Ask for {Shorten(path)}",
         };
     }
@@ -134,6 +135,39 @@ public static class Vm204TraceText
         }
 
         return (byte)mask;
+    }
+
+    /// <summary>
+    /// The <c>time=</c> value of a pulse, as the firmware reads it with <c>atoi</c> (<c>Main/api.c</c>
+    /// <c>parsePulseAPICommand</c>): the last one wins, its leading digits with an optional sign, 0 when it has none.
+    /// Null when there is none, or when it doesn't fit an <c>int</c> (where <c>atoi</c> is undefined).
+    /// </summary>
+    public static int? PulseSeconds(string query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        int? seconds = null;
+        foreach (var pair in query.Split('&'))
+        {
+            var equals = pair.IndexOf('=', StringComparison.Ordinal);
+            if (equals < 0 || !pair[..equals].Equals("time", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = pair[(equals + 1)..].TrimStart(' ', '\t');
+            var end = value.Length > 0 && value[0] is '+' or '-' ? 1 : 0;
+            while (end < value.Length && char.IsAsciiDigit(value[end]))
+            {
+                end++;
+            }
+
+            var number = value[..end];
+            seconds = number.Length == 0 || number is "+" or "-"
+                ? 0
+                : int.TryParse(number, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+        }
+
+        return seconds;
     }
 
     /// <summary>The <c>relay=</c> value for a mask: "1,3".</summary>

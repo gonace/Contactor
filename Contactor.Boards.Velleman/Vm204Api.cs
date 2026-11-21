@@ -29,6 +29,28 @@ public static class Vm204Api
     /// <summary><c>GET /api/relay/off?key=K&amp;relay=1,3</c>: as <see cref="RelayOnPath"/>, turning them off.</summary>
     public const string RelayOffPath = "/api/relay/off";
 
+    /// <summary>
+    /// <c>GET /api/relay/pulse?key=K&amp;relay=1,3&amp;time=S</c>: turns the listed relays on and the board turns each off
+    /// again by itself after S seconds; answers the status JSON, or 400 for a wrong key. <c>Main/main.c</c>
+    /// <c>httpServerUriNotFoundCallback</c> (the <c>"pulse"</c> branch, lines 1065–1091), <c>Main/api.c</c>
+    /// <c>parsePulseAPICommand</c> (lines 109–160: <c>time</c> by <c>atoi</c>, in any order), <c>pulse.c</c>
+    /// <c>startPulse</c> (lines 31–55: a relay whose pulse already runs is left as it is, else its one-shot FreeRTOS timer
+    /// gets <c>periodInSeconds * 1000</c> ticks of 1 ms and the relay goes on), <c>Main/main.c</c> <c>vTimerCallback</c>
+    /// (lines 459–470: at the end the relay goes off and its <c>pulse</c> flag false). <c>/api/relay/on</c> and
+    /// <c>/off</c> don't stop the timer (<c>Main/relays.c</c> <c>setRelayValue</c>). Not on the board's own API reference
+    /// page (<c>resources/www/api_reference.shtml</c>), which lists only auth, on, off, toggle, status and names.
+    /// </summary>
+    public const string RelayPulsePath = "/api/relay/pulse";
+
+    /// <summary>The shortest pulse in seconds: the board's settings page takes 1 and more (<c>resources/www/settings.shtml</c>), and 0 is a timer period FreeRTOS doesn't take.</summary>
+    public const int PulseShortestSeconds = 1;
+
+    /// <summary>
+    /// The longest pulse in seconds: <c>startPulse</c> multiplies the seconds by 1000 in a 32-bit <c>int</c>
+    /// (<c>pulse.c</c> line 40), which overflows above 2,147,483 s, although the settings page offers up to 4,000,000.
+    /// </summary>
+    public const int PulseLongestSeconds = 2_147_483;
+
     /// <summary>The port the board's web server listens on unless someone changed it (<c>Main/VM204.c</c> LoadDefaultSettings).</summary>
     public const int DefaultPort = 80;
 
@@ -72,14 +94,33 @@ public static class Vm204Api
     /// </summary>
     public const string CredentialSymbols = "-._~!$'()*+,;:@";
 
-    /// <summary>The longest key the app takes. The firmware makes 32 letters and digits (<c>Main/main.c</c> gen_random).</summary>
-    public const int KeyMaxLength = 64;
+    /// <summary>
+    /// The longest key the app takes: the firmware always makes 32 letters and digits (<c>Main/main.c</c>
+    /// <c>gen_random(appSettings.key, 32)</c>). A longer one isn't the firmware's, and its queries wouldn't fit
+    /// <see cref="MaxQueryLength"/>.
+    /// </summary>
+    public const int KeyMaxLength = 32;
+
+    /// <summary>
+    /// The longest query the app sends: the firmware's parsers <c>strcpy</c> the whole query into a 64-byte
+    /// <c>queryString</c> (<c>Main/api.c</c> lines 16, 75, 117 and 216), so 63 characters and the terminating zero. A
+    /// longer one would overflow the board's stack.
+    /// </summary>
+    public const int MaxQueryLength = 63;
 
     /// <summary>
     /// The largest answer the app reads. The firmware's longest API answer, the status, is about 120 bytes; anything far
     /// bigger isn't a VM204.
     /// </summary>
     public const int MaxResponseBytes = 4096;
+
+    /// <summary>Whether a request's query fits the firmware's 64-byte copy of it (<see cref="MaxQueryLength"/>).</summary>
+    public static bool QueryFits(string pathAndQuery)
+    {
+        ArgumentNullException.ThrowIfNull(pathAndQuery);
+        var question = pathAndQuery.IndexOf('?', StringComparison.Ordinal);
+        return question < 0 || pathAndQuery.Length - question - 1 <= MaxQueryLength;
+    }
 
     /// <summary>Whether a character can go in a user name or password, see <see cref="CredentialSymbols"/>.</summary>
     public static bool IsCredentialCharacter(char c)

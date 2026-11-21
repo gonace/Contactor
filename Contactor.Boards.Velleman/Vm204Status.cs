@@ -4,7 +4,11 @@ namespace Contactor.Boards.Velleman;
 /// <param name="Relays">Bit per relay, bit 0 = relay 1; 1 = on.</param>
 /// <param name="Inputs">Bit per digital input, bit 0 = input 1; 1 = on (<c>true</c> in the board's JSON).</param>
 /// <param name="Analog">The analog input as the board's 10-bit converter reads it, or null when the answer had none.</param>
-public sealed record Vm204Status(byte Relays, byte Inputs, int? Analog)
+/// <param name="Pulses">
+/// Bit per relay whose pulse runs (<c>"pulse"</c>), bit 0 = relay 1; null when the answer had no such flags the app could
+/// read. Only the pulse command reads it (<see cref="Vm204Client.PulseAsync"/>).
+/// </param>
+public sealed record Vm204Status(byte Relays, byte Inputs, int? Analog, byte? Pulses = null)
 {
     /// <summary>
     /// Compares the relays and inputs only: the analog value moves a little on every reading, so it alone is no state

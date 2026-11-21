@@ -7,7 +7,7 @@ The app talks to the VM201 over its own TCP protocol, and to the VM204 and the V
 ## Sources
 
 - VM201: Velleman's protocol description, via https://github.com/tlrh314/misc/tree/main/vm201 (a Python reference implementation). Confirmed with a packet dump from the Whadda forum.
-- VM204: Velleman's firmware, https://github.com/Velleman/VM204-Firmware, branch V1.1 (CycloneTCP); each route names its firmware file in `Vm204Api`. For the analog input also Velleman's *User Manual – Ethernet Relay Card VM204*, December 2016, https://cdn.velleman.eu/downloads/0/user/usermanual_vm204_en.pdf.
+- VM204: Velleman's firmware, https://github.com/Velleman/VM204-Firmware, branch V1.1 (CycloneTCP); each route names its firmware file in `Vm204Api`. The pulse (branch `V1.1`, commit `711eb7f`, read 2026-11-20): `Main/main.c` lines 1065–1091 (the `pulse` branch of `httpServerUriNotFoundCallback`) and 459–470 (`vTimerCallback`, the pulse's end), `Main/api.c` lines 109–160 (`parsePulseAPICommand`, its 64-byte copy of the query at line 117), `pulse.c` lines 31–55 (`startPulse`), `Main/relays.c` lines 52–75 (`setRelayValue`, which doesn't stop a pulse), `Main/freertosconfig.h` lines 96 and 105 (1 ms ticks, 32-bit), `resources/www/settings.shtml` line 158 (the page's pulse time, 1–4,000,000 s) and `resources/www/api_reference.shtml` (the board's API reference page, which doesn't list the pulse). For the analog input also Velleman's *User Manual – Ethernet Relay Card VM204*, December 2016, https://cdn.velleman.eu/downloads/0/user/usermanual_vm204_en.pdf.
 - VM208: Velleman's firmware, https://github.com/Velleman/VM208 (`src/Network/server_VM208.cpp`, ESPAsyncWebServer, ArduinoJson 5), and its library https://github.com/velleman/VM208INT; each route names its firmware file in `Vm208Api`. The schedules (branch `master`, commit `0bef335`, read 2026-11-18): `src/Network/server_VM208.cpp` lines 182–211 (`/stoppulse`, `/stoptimer`), 231–281 (`/getalarms`), 283–304 (`/setalarm`) and 522–572 (`/shedule_set`); `src/config_vm208.cpp` lines 93–136 (`loadAlarms`), 252–260 (`getShedule`), 438–470 (`writeAlarm`) and 837–840 (`setShedule`); `src/ChannelShedule.cpp` (the 14 alarms and when they switch); `src/main.cpp` `checkSheduler`; `src/PulseAndTimer.cpp` (pulses and timers: `timerTask` lines 8–105, `pulseTask` 107–204). The pulses and timers in the status (same commit, read 2026-11-20): `src/Network/server_VM208.cpp` lines 85–132 (`/relay` stops the relay's pulse and timer), 164–180 (`/pulse`), 213–229 (`/timer`), 762–841 and 843–914 (the two `sendIOState`, each with its own copy of the flags); `src/IO/IO.cpp` lines 90–95 (the flags' queues, one entry each); `include/PulseAndTimer.hpp` (`TimeParameters_t`: 16-bit id and time); `data/www/js/index.js` `sendPulse`, `sendTimer` (the page's values: ms and minutes, 1–60000) and `updateIO` (how the page reads `pulseActive`, `timerActive`); `data/alarms/0.json` (the factory schedule); `data/www/js/shedule.js` `updateShedule` and `applyShedule` (how the board's own page sends and reads them).
 
 ## VM201
@@ -122,7 +122,7 @@ The VM204 is not the VM201's protocol.
 
 | Catalogue id | Name | Relays | Inputs | Pulse | Login |
 |---|---|---|---|---|---|
-| `vm204` | Velleman VM204 | 4 | 4, and 1 analog input | none | user name and password, can be empty |
+| `vm204` | Velleman VM204 | 4 | 4, and 1 analog input | 1 s to 2,147,483 s, in steps of 1 s | user name and password, can be empty |
 
 ### Protocol
 
@@ -131,6 +131,7 @@ It is controlled only through its web server: plain HTTP, port 80 unless changed
 - `GET /api/auth?user=U&password=P` → `{"ApiKey":"…"}` (32 letters and digits, kept by the board until someone makes a new one on its web page); a wrong login → 400. Factory login `admin` / `VM204`.
 - `GET /api/status?key=K` → `{"relays": [b,b,b,b],"pulse": [b,b,b,b],"inputs": [b,b,b,b],"analog": n}`; a wrong key → 400.
 - `GET /api/relay/on?key=K&relay=1,3` and `/api/relay/off?…` → switch the listed relays (1–4) and answer the status; a wrong key → 400.
+- `GET /api/relay/pulse?key=K&relay=1,3&time=S` → turns the listed relays on and answers the status, or 400 for a wrong key; the board turns each relay off again by itself after S seconds. See [The pulse](#the-pulse).
 - The analog input, `"analog": n` in every status (see [The analog input](#the-analog-input)).
 - `/api/*` needs no HTTP basic auth; the board's own pages do. The firmware doesn't percent-decode the query and copies it into small buffers, so a user name or password is at most 31 characters, 48 together, of letters, digits and `- . _ ~ ! $ ' ( ) * + , ; : @` (`Vm204Login`).
 
@@ -147,15 +148,35 @@ It is controlled only through its web server: plain HTTP, port 80 unless changed
 - Not in Velleman's documents: the divider's resistors, the input's impedance and its absolute maximum. The manual's "Do not connect external voltage to the inputs" (pp. 2 and 11) may or may not cover the analog input.
 - At 1023 the voltage may be higher than 6.6 V: `AnalogAbility.IsFullScale` says so. An answer without `analog`, or with a value outside 0–1023, has no reading for it (null in `BoardState.Analog`), but is otherwise read as usual.
 
+### The pulse
+
+| What | Value | Source |
+|---|---|---|
+| Route | `GET /api/relay/pulse?key=K&relay=1,3&time=S`, the parameters by name in any order, as `/api/relay/on` | `Main/main.c` lines 1065–1091, `Main/api.c` `parsePulseAPICommand` lines 109–160 |
+| Time | whole seconds, read with `atoi` | `Main/api.c` lines 134–143 and 153–154 |
+| Start | per relay: when its pulse already runs, nothing at all; else its one-shot FreeRTOS timer gets `seconds * 1000` ticks of 1 ms, the relay goes on and its `pulse` flag true | `pulse.c` lines 31–55, `Main/freertosconfig.h` lines 96 and 105 |
+| End | the relay goes off and its `pulse` flag false | `Main/main.c` `vTimerCallback` lines 459–470 |
+| Answer | the status JSON, as `/api/relay/on`, with the `pulse` flags | `Main/main.c` line 1085 `sendIoStatus`, `createJsonData` |
+| Shortest | 1 s: the settings page's minimum. 0 would be a timer period of 0 | `resources/www/settings.shtml` line 158 |
+| Longest | 2,147,483 s (24 days 20 h): `seconds * 1000` is a 32-bit `int`, which overflows above that, although the settings page offers up to 4,000,000 s | `pulse.c` line 40 |
+
+- A relay's pulse ends with its OFF also when `/api/relay/off` or `/on` switched it meanwhile: `setRelayValue` doesn't stop the timer. A relay turned on again during a pulse goes off when the pulse ends. So the app locks the relay's ON and OFF while its own pulse runs, as on every board with a pulse (`AppPulses`, see `docs/ARCHITECTURE.md`).
+- A second pulse while one runs on that relay is ignored: it neither turns the relay on nor starts the time again. The answer still shows the status.
+- `time` is always sent: without it the firmware uses an uninitialised value. `time=default` (the relay's pulse time from the settings page) is never sent: the firmware reads it only when another parameter follows, and then looks up the next relay's setting.
+- The query must stay within `parsePulseAPICommand`'s 64-byte copy, terminating zero included: with the firmware's 32-letter key, all four relays and the longest time it is 63 characters. Every parser copies the query so (`Main/api.c` lines 16, 75, 117 and 216), so the app never sends a query longer than 63 characters (`Vm204Api.MaxQueryLength`, checked before every request), and takes no key longer than the firmware's 32 (`Vm204Api.KeyMaxLength`): a longer key is an unreadable login answer, and the board doesn't connect.
+- The board's own API reference page doesn't list the route; it is in Velleman's firmware only. The app sends it the same way as `/api/relay/on`.
+
 ### The app's client
 
 - `Vm204Client`: `HttpClient` (no proxy, answers capped at 4 KiB, 5 s per request on `TimeProvider`), one request at a time; logs in for the key and polls through `BoardPoller` (`Vm204:PollSeconds`, default 2). A refused key is dropped and the next poll, asked for at once, logs in again. When the board answers 400 to `/auth` at the connect, `Vm204State.Problem` says why (a `ConnectionProblem`): `LoginNeeded` when the app has no login, else `LoginRefused`; a refused key is no problem. After `LoginRefused` for a login that never connected, the poller doesn't log in again by itself: it waits for a new login or a person's "Check again" (Issue #522). A login that connected before is tried every 10 minutes for 24 hours, then held the same way. It never holds the login, and `BoardPoller` clears it at the first answer, at a new address and at a new login. Commands throw `BoardNotConnectedException` while disconnected, never wait behind a poll, and their answer (the status) is the confirmation. A change of the analog value alone isn't a state change: `BoardPoller`'s comparer (`Vm204Status.SwitchesComparer`) leaves it out, and it comes as the client's `AnalogChanged` instead of `StateChanged`. Its `Traced` event gives each request and answer in plain words (`Vm204TraceText`): the key, the user name and the password never show, and the polls and unchanged answers are routine.
+- `PulseAsync(mask, seconds)` reads the status first, under the same lock as any command, and pulses, in one `/api/relay/pulse`, only the relays in the mask that are off with no pulse running: the firmware ignores a pulse of a running one, and a pulse of a relay that is on would end by turning it off. While the `pulse` flags can't be read (not four true or false), it pulses none. It returns the relays whose `pulse` flag the answer shows true. When no relay can go, or the answer shows none running, it throws `BoardNotConnectedException` ("didn't take the command"), and when no relay could go it sends no pulse at all. A pulse started on the board's own page between the read and the pulse can't be told from the app's. A time outside 1–2,147,483 s throws `ArgumentOutOfRangeException` before anything is sent. `Vm204Board.PulseAsync` takes whole seconds only (`Vm204Board.Vm204Pulse`): 1.5 s or 0 s gets `ArgumentOutOfRangeException`, and so does a length its `PulseAbility.CanDo` refuses. Apart from this, the app doesn't use the `pulse` flags: the VM204 states no own rules (`OwnRulesAbility.None`).
 - `Vm204Json` reads the answers strictly (anything else is a `Vm204ProtocolException` and counts as a failed poll). `Vm204Board` (4 relays, 4 inputs, 1 analog input, doesn't report changes; the analog value in `BoardState.Analog`, and a change of it alone as `AnalogChanged`), `Vm204Connection`, `Vm204Traffic` and `Vm204Model` (id `vm204`, port 80) are its adapters, `Features/Vm204` registers them.
 
 ### The simulator
 
 - `Vm204Simulator`: a small HTTP server on `TcpListener` with the same routes and 400s as the firmware, an optional login, relays and inputs set at the board, the analog value (0–1023, `SetAnalogAsync`, a slider on the simulator's page), a new key, and refused or dropped connections; a connection that sends no whole request head within 5 s is closed. The simulator's page offers port 8204 for a new one (`SimulatorModel.SuggestedPort`), as 80 needs rights a developer doesn't have.
-- A power cut (`ISimulatedBoardPower`): the firmware doesn't say how the relays come back (see "To check on a real board"), so the simulator brings them all back off.
+- The pulse (`ISimulatedBoardPulses`), as the firmware runs it: on at once, off when the time is up on the simulator's `TimeProvider`, the `pulse` flags in the status meanwhile; a second pulse of a running one changes nothing; `/api/relay/on` and `/off` don't stop it. A time outside 1–2,147,483 s, or none, starts nothing (the firmware's would be a period of 0, an overflow or an uninitialised value).
+- A power cut (`ISimulatedBoardPower`): the firmware doesn't say how the relays come back (see "To check on a real board"), so the simulator brings them all back off. Pulses end: their timers are in memory only.
 - A new login while it runs (`ChangeLogin`): `/api/auth` takes only the new one. The key the app has keeps working until it is made anew (`RegenerateKey`); the firmware doesn't say whether a new login makes a new key, so the simulator assumes it doesn't.
 
 ## VM208
@@ -166,7 +187,7 @@ The VM208 (ESP32, WLAN or Ethernet) is neither the VM201's nor the VM204's proto
 
 | Catalogue id | Name | Relays | Inputs | Pulse | Login |
 |---|---|---|---|---|---|
-| `vm208` | Velleman VM208 | 4 | 1 | none | none |
+| `vm208` | Velleman VM208 | 4 | 1 | none (see [Why the app doesn't pulse](#why-the-app-doesnt-pulse)) | none |
 
 Only the card itself is used (`interface=-1`); VM208EX extension modules are left out for now.
 
@@ -178,8 +199,20 @@ Plain HTTP on port 80, JSON answers, one request per connection. It never report
 - `POST /relay`, form `index=N&state=0|1&interface=-1&socket=0` → the same status. One relay per request: a mask is sent as one request per relay, all of them even when one answer can't be read (an error, `{"Channels":[]}`, broken JSON), and the last readable answer is the state, with a read at once to confirm the rest. The command returns the relays whose answer could be read. When no relay's answer can be read (always so for a single relay), the command throws "The VM208 didn't take the command: …", as the VM204 does, so nothing counts as switched, and the poller counts it as a failed poll, also when every answer was `{"Channels":[]}` (busy) after the retries below. A request that gets no answer at all stops the rest and counts as a failed poll. Either way the board is read at once. Read by position: a missing parameter or a relay outside 1–4 crashes the board, so the app only ever sends all four, with relays 1–4.
 - `GET /getalarms?channel=N` → relay N's week schedule: `{"Channel":{"alarms":[{"dow":d,"hour":h,"minute":m,"onoff":b,"enabled":b} ×14]}}`, the 7 "on" alarms Sunday (`dow` 0) first, then the 7 "off" alarms Sunday first (`Vm208Alarm`). The handler reads its first parameter by position, unchecked, as a 16-bit number and looks up `getShedule(N - 1)`: no parameter, or channel 0 (index 65535, a null the handler then uses), crashes the board, and a channel above 4 is an extension module's. The app only ever sends `channel=1` to `channel=4` (`Vm208Api.AlarmsQuery`).
 - `POST /shedule_set`, form `relay=N&alarm_time_1=HH%3AMM&alarm_enable_1=true|false&…&alarm_time_14=…&alarm_enable_14=…` (29 parameters, as the board's own page sends them) → sets relay N's whole schedule, saves it to flash (`writeAlarm`) and answers the board's settings. Read by position: pairs 1–7 are the "on" alarms Monday to Sunday, 8–14 the "off" alarms Monday to Sunday, the time as `substring(0, 2)` and `substring(3, 5)`, enabled only for the word `true`. Any other number of parameters is answered 400. The relay goes unchecked into a 16-bit index, so relay 0 writes outside the table: the app only sends relays 1–4 (`Vm208Api.ScheduleForm`).
-- Not used: `POST /setalarm` changes one alarm in memory only, and the board's restart brings the saved one back. `/stoptimer` and `/stoppulse` toggle the relay before they stop anything. `/pulse` and `/timer` (the board's own page starts pulses and timers with them).
+- Not used: `POST /setalarm` changes one alarm in memory only, and the board's restart brings the saved one back. `/stoptimer` and `/stoppulse` toggle the relay before they stop anything. `/pulse` (see [Why the app doesn't pulse](#why-the-app-doesnt-pulse)) and `/timer` (the board's own page starts pulses and timers with them).
+- `POST /pulse`, form `index=N&value=MS&interface=-1&socket=0` (as the board's own page sends it, read by position) → an empty 200. See [Why the app doesn't pulse](#why-the-app-doesnt-pulse).
 - No login: HTTP basic auth protects only the board's own pages, never `/status` or `/relay`, so `Vm208Model` has login length 0 and `Vm208Connection` takes no login but none. `m1`/`m2` are the two transistor outputs, not relays: read and traced, never counted.
+
+### Why the app doesn't pulse
+
+The firmware has a pulse route (Issue #182), but the app doesn't use it yet. Its behaviour doesn't fit what `IRelayBoard.PulseAsync` promises, and the app would warn about its own pulse. Sources: `src/Network/server_VM208.cpp` lines 164–180 (`/pulse`), `src/PulseAndTimer.cpp` lines 107–204 (`pulseTask`), `include/PulseAndTimer.hpp` (`TimeParameters_t`), `src/IO/IO.cpp` line 93 (the queue), `data/www/js/index.js` `sendPulse` and line 530 (the page's field: ms, 1–60000).
+
+- **It toggles, it doesn't turn on.** `pulseTask` toggles the relay at the start and again at the end. A relay that is on goes off for the time and then on again. A second pulse while one runs toggles it once more and starts the time again, so the relay stays on when that pulse ends, with no run left to end it.
+- **The answer confirms nothing.** The handler puts the pulse on a queue of 10 (`xQueueSend` with no wait, so a full queue drops it) and answers an empty 200 at once. Only a later status shows whether it ran.
+- **The time is 16 bits.** `TimeParameters_t.time` is a `uint16_t` of milliseconds, so a value above 65,535 wraps: the longest pulse is 65.535 s. The page offers 1–60,000 ms.
+- **The app would warn about its own pulse.** A pulse the app started sets `pulseActive`, which the app reports as a rule started on the board's own page that it can't turn off (Issue #552). The board doesn't say who started a pulse.
+
+To use it, the app would read the status first and pulse only a relay that is off with no run, and keep its own pulse out of the warnings. That is a decision for Issue #618. Until then "Try" in the setup guide turns the relay on and off through the app.
 
 ### The app's client
 
@@ -233,6 +266,8 @@ Plain HTTP on port 80, JSON answers, one request per connection. It never report
 - The key's length and characters (its buffer is 32 bytes and the terminator `gen_random` writes overruns it).
 - Days of polling every 2 s.
 - The status JSON as above.
+- `/api/relay/pulse?key=K&relay=2&time=2`: that the answer is the status with relay 2 on and `"pulse"` true for it, that relay 2 goes off by itself 2 s later with `"pulse"` false, and that it also goes off when the app stops during the pulse.
+- The pulse: that a second pulse during one is ignored, and that a relay turned off and on again during a pulse still goes off at its end (the source says so).
 - The analog input: that 0 V reads 0 and 6.6 V reads 1023 (or about 3.3 V reads 512), with the board's own page showing the same voltage as the app.
 
 ### VM208

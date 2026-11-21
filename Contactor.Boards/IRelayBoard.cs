@@ -71,7 +71,8 @@ public interface IRelayBoard
     /// <summary>
     /// Pulses the relays in <paramref name="relays"/>: turns them on, and the board turns them off again by itself after
     /// <paramref name="length"/>, also when the app stops in between. Returns the relays the board took, as
-    /// <see cref="TurnOnAsync"/>. Throws <see cref="NotSupportedException"/> on a board without a pulse
+    /// <see cref="TurnOnAsync"/>. A board whose pulse would do something else to a relay that is on, or whose pulse
+    /// already runs, may leave such a relay out, sending nothing for it (the VM204). Throws <see cref="NotSupportedException"/> on a board without a pulse
     /// (<see cref="BoardCapabilities.Pulse"/> null), and <see cref="ArgumentOutOfRangeException"/> for a length it can't
     /// do (<see cref="PulseAbility.CanDo"/>), before anything is sent.
     /// </summary>

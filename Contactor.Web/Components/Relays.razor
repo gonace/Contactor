@@ -358,6 +358,9 @@
     private UnconfirmedPress? _unconfirmed;
     private bool _inGroup;
 
+    // The last press was refused: a pulse the app started runs on that relay.
+    private bool _pulsing;
+
     // The press was refused because its board is being removed (BoardClosedException).
     private bool _beingRemoved;
 
@@ -409,6 +412,12 @@
 
     // What "Turn off all boards" asks about: the relays on now, on every board.
     private int RelaysOnNow => Boards.Sum(b => b.State.Relays.Count);
+
+    // A pulse the app started runs on the relay: its button is locked until it has ended (AppPulses).
+    private bool IsPulsing(Relay relay)
+    {
+        return Registry.Find(relay.BoardId)?.IsPulsing(relay.Channel) == true;
+    }
 
     private BoardState StateOf(int boardId)
     {
@@ -749,6 +758,7 @@
     {
         var state = StateOf(relay.BoardId);
         var on = state.IsOn(relay.Channel);
+        var pulsing = IsPulsing(relay);
         <div class="card @(on ? "on" : "") @(relay.IsActive ? "" : "inactive") @(state.HasAnswered ? "" : "unknown")" @key="relay.Id">
             <a class="text" href="relay/@relay.Id">
                 <span class="label">@Texts["Relays.RelayLabel", relay.Channel]</span>
@@ -764,8 +774,18 @@
                 {
                     <span class="error" role="alert">@Texts["Boards.BeingRemoved"]</span>
                 }
+                else if (_failedRelayId == relay.Id && _pulsing && pulsing)
+                {
+                    @* Only while the lock lasts: once the pulse has ended, the relay switches again. *@
+                    <span class="error" role="alert">@Texts["Relays.Pulsing"]</span>
+                }
             </a>
-            @if (state.HasAnswered)
+            @if (state.HasAnswered && pulsing)
+            {
+                @* A pulse the app started runs: no press until it has ended (AppPulses). *@
+                <button type="button" class="toggle" aria-pressed="@(on ? "true" : "false")" aria-label="@Texts["Common.NameAndState", relay.Name, Texts["Common.Pulsing"]]" disabled>@Texts["Common.Pulsing"]</button>
+            }
+            else if (state.HasAnswered)
             {
                 <button type="button"
                         data-vibrate
@@ -1018,7 +1038,7 @@
                 ? Control.TurnOnAsync(press.RelayId, _user!.Email, CancellationToken.None)
                 : Control.TurnOffAsync(press.RelayId, _user!.Email, CancellationToken.None),
             failedRelayId: press.RelayId);
-        if (_failedRelayId == press.RelayId && !_inGroup && !_beingRemoved)
+        if (_failedRelayId == press.RelayId && !_inGroup && !_beingRemoved && !_pulsing)
         {
             _unconfirmed = press;
             _failedRelayId = null;
@@ -1134,6 +1154,7 @@
         _allBoardsMessage = null;
         _inGroup = false;
         _beingRemoved = false;
+        _pulsing = false;
         try
         {
             await command();
@@ -1153,6 +1174,12 @@
         {
             _failedRelayId = failedRelayId;
             _inGroup = true;
+        }
+        catch (RelayPulsingException)
+        {
+            // A pulse the app started runs on it (a page that wasn't drawn again yet, or another person's "Try").
+            _failedRelayId = failedRelayId;
+            _pulsing = true;
         }
         catch (RelayUnavailableException)
         {

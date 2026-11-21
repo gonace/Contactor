@@ -49,7 +49,8 @@ public sealed class Vm208Board : IRelayBoard
         return new ChannelMask(await _client.TurnOffAsync(ToMask(relays), cancellationToken).ConfigureAwait(false));
     }
 
-    // No pulse yet (Issue #182).
+    // No pulse: the firmware's /pulse toggles the relay rather than turning it on, and the app would report its own pulse
+    // as a run started on the board's page (README, "Why the app doesn't pulse"; Issue #182).
     public Task<ChannelMask> PulseAsync(ChannelMask relays, TimeSpan length, CancellationToken cancellationToken = default)
     {
         throw new NotSupportedException("This board can't pulse a relay.");
