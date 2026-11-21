@@ -367,8 +367,8 @@ public sealed class InputActionsTests
             Assert.Equal(new InputChanged(1, Closed: true), await BoardTestRig.NextAsync(rig.Feed.Reader));
             var events = rig.InputEvents();
 
-            // Unknown, and still unknown with its terminal changed: nothing logged, nothing handed on. Input 2's change
-            // after it is the next one handed on.
+            // Unknown: nothing logged, nothing handed on (its bit already reads open, so opening its terminal changes
+            // nothing more). Input 2's change after it is the next one handed on.
             rig.Board.SetUnknownInputs(ChannelMask.Of(1));
             rig.Board.SetInput(1, on: false);
             rig.Board.SetInput(2, on: true);
@@ -389,8 +389,6 @@ public sealed class InputActionsTests
         }
     }
 
-    // An input's ON refused while its board is closed for its removal is done once the board opens again (the removal
-    // didn't go ahead), if the input is still as it was; its OFFs go through at once.
     // A refused ON for an input that then goes unknown (a Shelly's input made a button on the device): its moment can't
     // be told any more, so the retry sends nothing, though the unknown input's bit reads "open" as the change did.
     [Fact]
@@ -423,6 +421,8 @@ public sealed class InputActionsTests
         }
     }
 
+    // An input's ON refused while its board is closed for its removal is done once the board opens again (the removal
+    // didn't go ahead), if the input is still as it was; its OFFs go through at once.
     [Fact]
     public async Task Should_DoARefusedOn_OnceTheBoardOpensAgain_IfTheInputIsStillSo()
     {

@@ -35,11 +35,13 @@ public sealed class InputCountWatch : IHostedService
     }
 
     // On a board's connection loop: quick. Before its first state a board has no inputs, as a page that loaded then
-    // showed it.
+    // showed it. A board changed to a model that doesn't count its inputs forgets its count, so a change back counts
+    // again from none.
     private void OnStateChanged(object? sender, BoardStateChange change)
     {
         if (_registry.Find(change.BoardId) is not { Capabilities: { InputCountFromBoard: true } capabilities })
         {
+            _counts.TryRemove(change.BoardId, out _);
             return;
         }
 

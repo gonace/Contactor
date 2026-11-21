@@ -11,7 +11,8 @@ namespace Contactor.Boards.Waveshare;
 /// <param name="Linkage">
 /// Bit per relay in linkage mode (<see cref="WaveshareApi.ModeLinkage"/>), bit 0 = relay 1, from the last read of the
 /// modes that worked: while <see cref="Modes"/> is null after a read that failed, the relays the read before showed,
-/// kept until a read shows them otherwise (issue #567). 0 before any read worked and once the state is forgotten.
+/// kept until a read shows them otherwise; a relay whose reset the board confirmed (the FC 06 echo) leaves them too
+/// (issue #567). 0 before any read worked and once the state is forgotten.
 /// </param>
 public sealed record WaveshareStatus(ulong Relays, ulong Inputs, IReadOnlyList<ushort>? Modes = null, ulong Linkage = 0)
 {

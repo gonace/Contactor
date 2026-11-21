@@ -187,7 +187,7 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
                 {
                     throw new BoardRefusedException(before.Pulses is null
                         ? "The VM204's status doesn't say which pulses run; no pulse was sent."
-                        : $"{Vm204TraceText.Channels("relay", mask, Vm204Api.RelayCount)} is on already or its pulse runs; no pulse was sent.");
+                        : $"{Vm204TraceText.Channels("relay", mask, Vm204Api.RelayCount)} {(System.Numerics.BitOperations.PopCount(mask) == 1 ? "is" : "are")} on already or pulsing; no pulse was sent.");
                 }
 
                 var after = ReadStatusAnswer(

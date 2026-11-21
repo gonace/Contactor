@@ -115,7 +115,7 @@ public sealed record SimulatorModel(
         }
     }
 
-    // "1 s", "99 h", "0.1 s" or "3276.7 s": in the largest unit it is a whole number of, otherwise in seconds.
+    // "1 s", "99 h", "0.1 s" or "3,276.7 s": in the largest unit it is a whole number of, otherwise in seconds.
     private static string Length(TimeSpan length)
     {
         if (length.Ticks % TimeSpan.TicksPerHour == 0)
@@ -128,7 +128,7 @@ public sealed record SimulatorModel(
             return string.Create(CultureInfo.InvariantCulture, $"{length.Ticks / TimeSpan.TicksPerMinute} min");
         }
 
-        return string.Create(CultureInfo.InvariantCulture, $"{length.TotalSeconds:0.###} s");
+        return string.Create(CultureInfo.InvariantCulture, $"{length.TotalSeconds:#,0.###} s");
     }
 }
 

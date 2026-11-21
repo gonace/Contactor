@@ -140,7 +140,9 @@ public static class Vm204TraceText
     /// <summary>
     /// The <c>time=</c> value of a pulse, as the firmware reads it with <c>atoi</c> (<c>Main/api.c</c>
     /// <c>parsePulseAPICommand</c>): the last one wins, its leading digits with an optional sign, 0 when it has none.
-    /// Null when there is none, or when it doesn't fit an <c>int</c> (where <c>atoi</c> is undefined).
+    /// Null when there is none, or when it doesn't fit an <c>int</c> (where <c>atoi</c> is undefined). <c>time=default</c>
+    /// reads as 0 here, though the firmware reads it as -1 (the relay's saved setting) when another parameter follows;
+    /// the app never sends it.
     /// </summary>
     public static int? PulseSeconds(string query)
     {
