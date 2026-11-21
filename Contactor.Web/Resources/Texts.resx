@@ -1832,6 +1832,10 @@
     <value>{0} is in the list twice.</value>
     <comment>{0} is a group or relay, e.g. "Relay 4: Lighting".</comment>
   </data>
+  <data name="Inputs.SettingChanged" xml:space="preserve">
+    <value>The input's setting was changed on the device</value>
+    <comment>An input's status line, with "–", when its type was changed on the device (e.g. a Shelly's input made a button) since the app connected: its state is unknown until the next connection.</comment>
+  </data>
   <data name="Inputs.Show.Both_One" xml:space="preserve">
     <value>Show {0} inactive</value>
   </data>

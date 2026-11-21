@@ -1667,6 +1667,9 @@
   <data name="Inputs.Save.Twice" xml:space="preserve">
     <value>{0} finns två gånger i listan.</value>
   </data>
+  <data name="Inputs.SettingChanged" xml:space="preserve">
+    <value>Ingångens inställning ändrades på enheten</value>
+  </data>
   <data name="Inputs.Show.Both_One" xml:space="preserve">
     <value>Visa {0} inaktiv</value>
   </data>

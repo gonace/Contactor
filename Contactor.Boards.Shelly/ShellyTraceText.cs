@@ -47,18 +47,29 @@ public static class ShellyTraceText
             return relays;
         }
 
+        if (status.UnknownInputs != 0)
+        {
+            relays += $" · {InputList(status.UnknownInputs, status.InputCount)} unknown";
+        }
+
         if (status.Inputs == 0)
         {
             return relays + (status.InputCount == 1 ? " · input off" : " · inputs off");
         }
 
-        var on = Enumerable.Range(1, status.InputCount)
-            .Where(input => (status.Inputs & (1 << (input - 1))) != 0)
+        return $"{relays} · {InputList(status.Inputs, status.InputCount)} on";
+    }
+
+    // "input 1", "input 1 and 3".
+    private static string InputList(byte mask, int count)
+    {
+        var inputs = Enumerable.Range(1, count)
+            .Where(input => (mask & (1 << (input - 1))) != 0)
             .Select(input => input.ToString(CultureInfo.InvariantCulture))
             .ToList();
-        return on.Count == 1
-            ? $"{relays} · input {on[0]} on"
-            : $"{relays} · input {string.Join(", ", on[..^1])} and {on[^1]} on";
+        return inputs.Count == 1
+            ? $"input {inputs[0]}"
+            : $"input {string.Join(", ", inputs[..^1])} and {inputs[^1]}";
     }
 
     /// <summary>"Device SNSW-102P16EU, generation 2, firmware 1.7.1, profile switch".</summary>

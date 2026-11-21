@@ -19,7 +19,12 @@ namespace Contactor.Boards.Shelly;
 /// How many inputs the device has for the app, 0 to <see cref="ShellyApi.MaxInputCount"/>: those with a state, from
 /// <c>input:0</c> without a gap, as the connection's first status gave them (<see cref="ShellySwitches.InputCount"/>).
 /// </param>
-public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null, OwnRules? OwnRules = null, byte Inputs = 0, int InputCount = 0)
+/// <param name="UnknownInputs">
+/// Bit per input, as <paramref name="Inputs"/>: 1 for an input of the count that read no state in a status since the
+/// connect (its setting was changed on the device), unknown until the next connection, also once it has a state again.
+/// Its bit in <paramref name="Inputs"/> is 0.
+/// </param>
+public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null, OwnRules? OwnRules = null, byte Inputs = 0, int InputCount = 0, byte UnknownInputs = 0)
 {
     /// <summary>
     /// Compares the relays and the inputs only, for the poller: a change in <see cref="PowerOn"/> or
@@ -34,13 +39,13 @@ public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null, Ow
         {
             return x is null
                 ? y is null
-                : y is not null && x.Relays == y.Relays && x.Inputs == y.Inputs && x.InputCount == y.InputCount;
+                : y is not null && x.Relays == y.Relays && x.Inputs == y.Inputs && x.InputCount == y.InputCount && x.UnknownInputs == y.UnknownInputs;
         }
 
         public int GetHashCode(ShellyStatus obj)
         {
             ArgumentNullException.ThrowIfNull(obj);
-            return HashCode.Combine(obj.Relays, obj.Inputs, obj.InputCount);
+            return HashCode.Combine(obj.Relays, obj.Inputs, obj.InputCount, obj.UnknownInputs);
         }
     }
 }
@@ -63,6 +68,9 @@ public sealed record ShellyState(bool IsConnected, ShellyStatus? Status, DateTim
 
     /// <summary>The inputs that are on, bit 0 = input 1, kept while disconnected.</summary>
     public byte Inputs => Status?.Inputs ?? 0;
+
+    /// <summary>The inputs whose setting was changed on the device during the connection: unknown, kept while disconnected.</summary>
+    public byte UnknownInputs => Status?.UnknownInputs ?? 0;
 
     /// <summary>How many inputs the device has for the app, kept while disconnected; 0 before it answered.</summary>
     public int InputCount => Status?.InputCount ?? 0;

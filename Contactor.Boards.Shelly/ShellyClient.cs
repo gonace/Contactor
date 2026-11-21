@@ -113,11 +113,10 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     private DateTimeOffset _schedulesReadUtc;
 
     // Only used under the poller's lock: how many inputs the device has for the current connection, from the connect's
-    // status, the inputs as last read, and the inputs that read no state since the connect, held until the next one.
+    // status, and the inputs of that count that read no state since the connect, unknown until the next one.
     // ConnectAsync starts them afresh.
     private int _inputCount;
-    private byte _inputs;
-    private byte _held;
+    private byte _unknownInputs;
 
     // The reading last reported, to tell which part of it changed when the poller's comparer sees no change.
     private ShellyStatus? _lastReported;
@@ -442,11 +441,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
         // The inputs the device has, for this whole connection: a change of its settings while connected (an input made
         // a button, or turned off) must never look like an input that changed, which would run its actions.
-        // The connect's own status is the first reading, so an input that loses its state before the first poll keeps
-        // what it read here.
         _inputCount = switches.InputCount;
-        _inputs = (byte)(switches.InputsOn & ((1 << _inputCount) - 1));
-        _held = 0;
+        _unknownInputs = 0;
         var stopped = await ReadPowerOnAsync(target, switches.ConfigRevision, cancellationToken).ConfigureAwait(false);
         await ReadSchedulesAsync(target, switches.ScheduleRevision, skip: stopped, cancellationToken).ConfigureAwait(false);
     }
@@ -632,23 +628,22 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             await ReadSchedulesAsync(target, switches.ScheduleRevision, skip: stopped, cancellationToken).ConfigureAwait(false);
         }
 
-        var status = new ShellyStatus((byte)switches.Outputs, _powerOn, CurrentOwnRules(), ReadInputs(switches), _inputCount);
+        var inputs = ReadInputs(switches);
+        var status = new ShellyStatus((byte)switches.Outputs, _powerOn, CurrentOwnRules(), inputs, _inputCount, _unknownInputs);
         var routine = Interlocked.Exchange(ref _lastTraced, status) == status;
         Trace(BoardTraceDirection.Received, ShellyTraceText.Status(status, _model.Capabilities.RelayCount), isRoutine: routine);
         return status;
     }
 
-    // Under the poller's lock: the inputs of the connection's count. One that reads no state (made a button or turned
-    // off at the device since the connect) keeps its last state until the next connection, also once it has a state
-    // again, and one beyond the count isn't read until then: a change of the device's settings never shows as an input
-    // that changed, which would run its actions.
+    // Under the poller's lock: the inputs of the connection's count that are on. One that reads no state (its setting
+    // changed on the device since the connect: made a button, analog or count, or turned off) is unknown until the next
+    // connection, also once it has a state again, and one beyond the count isn't read until then: a change of the
+    // device's settings never shows as an input that changed, which would run its actions.
     private byte ReadInputs(ShellySwitches switches)
     {
         var counted = (byte)((1 << _inputCount) - 1);
-        _held |= (byte)(counted & ~switches.Inputs);
-        var read = (byte)(switches.Inputs & counted & ~_held);
-        _inputs = (byte)((switches.InputsOn & read) | (_inputs & counted & ~read));
-        return _inputs;
+        _unknownInputs |= (byte)(counted & ~switches.Inputs);
+        return (byte)(switches.InputsOn & counted & ~_unknownInputs);
     }
 
     // Under the poller's lock: each switch's initial_state, one Switch.GetConfig each, after the status that gave

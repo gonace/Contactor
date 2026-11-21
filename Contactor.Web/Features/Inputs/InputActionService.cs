@@ -177,7 +177,9 @@ public sealed partial class InputActionService : BackgroundService, IBoardWatche
         if (change.Again)
         {
             // Only while the input is still as it was: an input's moment has passed once it changed.
-            if (channels.InputChannel(change.InputId) is not { } inputChannel || board.State.Inputs.Contains(inputChannel) != change.Closed)
+            if (channels.InputChannel(change.InputId) is not { } inputChannel
+                || !board.State.IsInputKnown(inputChannel)
+                || board.State.Inputs.Contains(inputChannel) != change.Closed)
             {
                 return;
             }

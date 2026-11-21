@@ -107,16 +107,19 @@ The app reads the inputs from the same `Shelly.GetStatus` it polls, with no othe
   that count, from `input:0` without a gap. An input after a gap isn't shown, so an input keeps its number. Before
   the device answered, the board has no inputs. While disconnected, the last count is kept.
 - During a connection the count stays as it was:
-  - An input that reads no state in a poll, for example made a button at the device, keeps its last state until the
-    next connection, also when it has a state again before then.
-  - The connect's own status is the first reading: an input that loses its state before the first poll keeps the
-    state the connect read.
+  - An input of the count that reads no state in a status, because its setting was changed at the device (made a
+    `button`, `analog` or `count`, or turned off), is unknown until the next connection (`ShellyStatus.UnknownInputs`,
+    `BoardState.UnknownInputs`). It stays unknown when it has a state again before then. The app never shows an old or
+    a new state for it: the screens show "–" and "The input's setting was changed on the device".
   - An input that only now has a state isn't read until the next connection.
-  - So a change of the device's settings never looks like an input that changed, and no input action runs for it.
-  - At the next connection, the app logs what changed as noticed, which runs no action.
+  - So a change of the device's settings never looks like an input that changed. The app logs nothing and runs no
+    input action when an input goes unknown.
+  - At the next connection, every input is read afresh. The app compares an input that was unknown with its last
+    known state and logs a difference as noticed, which runs no action.
 - An input that changed is a state change (`ShellyStatus.StateComparer`), as a relay is. The input actions take it as
   they do on every board.
-- The status trace adds the inputs: "Status: relay 2 on · input 1 on", "Status: all off · inputs off".
+- The status trace adds the inputs: "Status: relay 2 on · input 1 on", "Status: all off · inputs off", and
+  "· input 1 unknown" for an unknown input.
 
 ### The state after a power cut
 

@@ -198,6 +198,50 @@ public sealed class BoardEventRecorderTests
         }
     }
 
+    // A closed input whose setting was changed on the board (a Shelly's input 2 made a button), and a reconnect at which
+    // the board counts one input fewer: input 2 isn't logged as gone off.
+    [Fact]
+    public async Task Should_LogNoInputOff_ForAnInputAReconnectNoLongerCounts()
+    {
+        var board = new FakeRelayBoard(relayCount: 4, inputCount: 2);
+        await using var database = TestDatabase.Create((services, configuration) =>
+        {
+            services.AddLocalClock(configuration);
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(BoardTestRig.Start)));
+            services.AddBoards(configuration);
+            services.AddEvents(configuration);
+            services.AddRelays(configuration);
+            services.AddGroups(configuration);
+            services.AddOwnRules(configuration);
+        });
+        await database.Services.InitializeDatabaseAsync(relayCount: 4, inputCount: 2, Cancel);
+        await database.Services.UseFakeBoardAsync(board);
+        var recorder = database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
+        await recorder.StartAsync(Cancel);
+        try
+        {
+            board.SetRelay(1, on: true);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count(e => e.RelayId == 1) == 1);
+            board.SetInput(2, on: true);
+            await BoardTestRig.WaitUntilAsync(() => InputEvents(database).Count == 1);
+
+            board.SetUnknownInputs(ChannelMask.Of(2));
+            board.SetConnected(false);
+            board.SetInputCount(1);
+            board.SetUnknownInputs(ChannelMask.None);
+            board.SetConnected(true);
+
+            // A marker after it: relay 1 turned off at the board is logged once the reconnect was handled.
+            board.SetRelay(1, on: false);
+            await BoardTestRig.WaitUntilAsync(() => Events(database).Count(e => e.RelayId == 1) == 2);
+            Assert.Single(InputEvents(database));
+        }
+        finally
+        {
+            await recorder.StopAsync(CancellationToken.None);
+        }
+    }
+
     // Why a board refuses the connection comes as states of their own, before its first answer and after a loss. They
     // change nothing that is recorded: the new board's first status is still taken as at start, and a change made
     // while contact was lost is still logged when it comes back.

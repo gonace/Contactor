@@ -49,7 +49,32 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// </summary>
     public TimeProvider? Time { get; set; }
 
-    public BoardCapabilities Capabilities { get; }
+    /// <summary>What it has; <see cref="SetInputCount"/> changes its inputs, as a board that says its count does.</summary>
+    public BoardCapabilities Capabilities { get; private set; }
+
+    /// <summary>
+    /// How many inputs it says it has now, as a Shelly does at each connection
+    /// (<see cref="BoardCapabilities.InputCountFromBoard"/>). Reports nothing by itself: the next state comes with it.
+    /// </summary>
+    public void SetInputCount(int count)
+    {
+        Capabilities = Capabilities with { InputCount = count, InputCountFromBoard = true };
+    }
+
+    /// <summary>
+    /// The board can't tell these inputs any more, e.g. their setting was changed on a Shelly
+    /// (<see cref="BoardState.UnknownInputs"/>), or can tell them all again with none; it reports it.
+    /// </summary>
+    public void SetUnknownInputs(ChannelMask inputs)
+    {
+        BoardState state;
+        lock (_lock)
+        {
+            state = _state = Stamp(_state with { UnknownInputs = inputs, Inputs = _state.Inputs.Except(inputs) });
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
 
     public BoardState State
     {
