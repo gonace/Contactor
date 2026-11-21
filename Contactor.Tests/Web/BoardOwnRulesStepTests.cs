@@ -85,7 +85,7 @@ public sealed class BoardOwnRulesStepTests
         var text = await page.TextAsync();
         Assert.Contains("Running on the board right now", text, StringComparison.Ordinal);
         Assert.Contains("Started on the board's own web page. It ends by itself, and Contactor can't stop it.", text, StringComparison.Ordinal);
-        Assert.Contains("The relay's schedule can be turned off or kept once it has ended.", text, StringComparison.Ordinal);
+        Assert.Contains("Once the pulse or timer has ended, a schedule on the relay can be turned off or kept.", text, StringComparison.Ordinal);
         Assert.False(await page.HasAsync(Button("Turn them off")));
         Assert.False(await page.HasAsync(Button("Keep them")));
 

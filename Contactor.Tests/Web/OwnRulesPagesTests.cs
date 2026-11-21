@@ -297,7 +297,7 @@ public sealed partial class OwnRulesPagesTests
         Assert.Equal(2, Regex.Count(card, ">Keep</button>"));
         Assert.Single(DisabledKeep().Matches(card));
         Assert.True(card.IndexOf(">Turn off</button>", StringComparison.Ordinal) < card.IndexOf("Running on the board right now", StringComparison.Ordinal));
-        Assert.Matches("The relay(&#x27;|&#39;|')s schedule can be turned off or kept once it has ended\\.", card);
+        Assert.Contains("Once the pulse or timer has ended, a schedule on the relay can be turned off or kept.", card, StringComparison.Ordinal);
         Assert.Single(Regex.Matches(card, "Started on the board&#x27;s own web page\\. It ends by itself, and Contactor can|Started on the board's own web page\\. It ends by itself, and Contactor can"));
 
         using var page = await PageRenderer.StartAsync<BoardPage>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardPage.Id)] = BoardId });
@@ -317,7 +317,7 @@ public sealed partial class OwnRulesPagesTests
         Assert.Single(DisabledKeep().Matches(box));
 
         // A "Keep" sent while it runs (from a page drawn before it started) is refused, and nothing is saved or logged.
-        Assert.Equal("The relay's schedule can be turned off or kept once it has ended.", await handler.KeepAsync(BoardId, 3, OwnRuleKind.Timer, John, Cancel));
+        Assert.Equal("Once the pulse or timer has ended, a schedule on the relay can be turned off or kept.", await handler.KeepAsync(BoardId, 3, OwnRuleKind.Timer, John, Cancel));
         Assert.Null(await handler.KeepAllAsync(BoardId, [Timer3], John, Cancel));
         Assert.All(Service(app).Rows(BoardId), r => Assert.Null(r.KeptUtc));
         Assert.DoesNotContain(await EventsAsync(app), e => e.Action == EventActions.BoardOwnRuleKept);
@@ -325,6 +325,14 @@ public sealed partial class OwnRulesPagesTests
         // Once it has ended, it can be kept.
         board.SetOwnRules(new OwnRules([Timer3]));
         Assert.Null(await handler.KeepAsync(BoardId, 3, OwnRuleKind.Timer, John, Cancel));
+
+        // A rule kept before a run starts stays in the list as kept, out of the running group.
+        board.SetOwnRules(new OwnRules([Timer3], null, [Timer3]));
+        await Wait.UntilAsync(() => Service(app).Rows(BoardId).Single().KeptUtc is not null);
+        card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+        Assert.Contains("Kept on purpose", card, StringComparison.Ordinal);
+        Assert.DoesNotContain("Running on the board right now", card, StringComparison.Ordinal);
+        Assert.DoesNotContain("</button>", card, StringComparison.Ordinal);
         Assert.Empty(page.Errors);
     }
 
