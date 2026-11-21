@@ -110,7 +110,7 @@
             }
             @* A relay the board controls by itself is never kept: with only such relays, the step is left as it is. *@
             @* A board being added has no groups yet; "Keep them" checks them anyway (KeepAllAsync). *@
-            var keepable = asked.Count(r => OwnRulesHandler.CanKeep(r.Kind, inGroup: false));
+            var keepable = asked.Count(r => OwnRulesHandler.CanKeep(r.Kind, inGroup: false) && !OwnRules.RunsOnBoard(_boardId!.Value, r));
             <button type="button" class="secondary" disabled="@Busy" @onclick="KeepRulesAsync">@(keepable > 0 ? OwnRulesWords.KeepAll(keepable) : Texts["OwnRules.Step.Later"])</button>
         }
         else if (step < StepRelays)

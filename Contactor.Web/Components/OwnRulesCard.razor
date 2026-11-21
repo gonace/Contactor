@@ -17,8 +17,8 @@
 @inject AppLanguage Language
 
 @* The board's own rules (issue #497), on the board's page and on Settings with one board: each rule the app found,
-   with "Turn off" and "Keep" ("Reset" alone for a relay the board controls by itself; "Keep" alone, with a line why,
-   for a rule the board can't turn off now, issue #552), or a line for a board that may have rules the app can't see. None for a board that has
+   with "Turn off" and "Keep" ("Reset" alone for a relay the board controls by itself; a rule that runs on the board
+   right now in a group of its own, issue #552), or a line for a board that may have rules the app can't see. None for a board that has
    none. A rule whose turn-off takes other relays' rules with it says so under it ("Also turns off the board's timer
    for Heat."). A board that answers but couldn't read its rules (issue #551) gets a line saying so, under any rows
    from before. *@
@@ -32,8 +32,11 @@
         @if (_rows.Count > 0)
         {
             <p class="hint">@Texts["OwnRules.Card.Hint"]</p>
+        }
+        @if (_rows.Where(r => !Running(r)).ToList() is { Count: > 0 } listed)
+        {
             <ul class="rules">
-                @foreach (var row in _rows)
+                @foreach (var row in listed)
                 {
                     var kept = row.KeptUtc is not null;
                     var canTurnOff = Handler.CanTurnOff(BoardId, new OwnRule(row.Channel, row.Kind));
@@ -48,11 +51,6 @@
                             {
                                 @* Said before the press: the other relays' rules this "Turn off" takes with it. *@
                                 <span class="also">@also</span>
-                            }
-                            else if (ability.TurnsOff && !canTurnOff)
-                            {
-                                @* A rule the board runs now and ends by itself, e.g. a timer started on the VM208's own page. *@
-                                <span class="also">@Texts["OwnRules.CantTurnOff"]</span>
                             }
                         </span>
                         <span class="buttons">
@@ -76,6 +74,8 @@
                 }
             </ul>
         }
+        @* A rule that runs on the board right now, in a group of its own: no "Turn off", "Keep" once it has ended. *@
+        <OwnRulesRunning Channels="@([.. _rows.Where(Running).Select(r => r.Channel).Distinct()])" Names="_names" />
         @if (couldntRead)
         {
             @* In place of "may also have": the app doesn't know even the rules it can read. *@
@@ -158,6 +158,12 @@
         Registry.StateChanged -= OnBoardChanged;
         Registry.OwnRulesChanged -= OnBoardChanged;
         Rows.Changed -= OnRowsChanged;
+    }
+
+    // Whether the row's rule runs on the board right now (OwnRulesHandler.RunsOnBoard).
+    private bool Running(OwnRuleRow row)
+    {
+        return Handler.RunsOnBoard(BoardId, new OwnRule(row.Channel, row.Kind));
     }
 
     // "Also turns off the board's timer for Heat.": what turning off the row's rule takes with it, or null.

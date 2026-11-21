@@ -131,6 +131,17 @@ public sealed partial class OwnRulesHandler
             && board.State.OwnRules?.CanTurnOff(rule) != false;
     }
 
+    /// <summary>
+    /// Whether <paramref name="rule"/> runs on the board right now and ends by itself: the board's state names it among
+    /// the rules the app can't turn off (<see cref="OwnRules.CantTurnOff"/>), e.g. a pulse or a timer started on the
+    /// VM208's own page. The screens show it in a group of its own, "Running on the board right now", with no "Turn off"
+    /// and a "Keep" that can't be pressed; <see cref="KeepAsync"/> refuses it until it has ended (issue #552).
+    /// </summary>
+    public bool RunsOnBoard(int boardId, OwnRule rule)
+    {
+        return _registry.Find(boardId)?.State.OwnRules?.CantTurnOff.Contains(rule) == true;
+    }
+
     /// <summary>The rules of <paramref name="rules"/> the app can turn off now (<see cref="CanTurnOff(int, OwnRule)"/>), in the order given.</summary>
     public IReadOnlyList<OwnRule> TurnsOff(int boardId, IEnumerable<OwnRule> rules)
     {
@@ -215,7 +226,8 @@ public sealed partial class OwnRulesHandler
 
     /// <summary>
     /// "Keep them" while the board is being added: keeps each of <paramref name="rules"/> a person may keep
-    /// (<see cref="CanKeep"/>, on the board's relays as they are in groups now), as <see cref="KeepAsync"/> does, at once: a rule the app hasn't noted yet is noted now
+    /// (<see cref="CanKeep"/>, on the board's relays as they are in groups now, and none that runs on the board right now,
+    /// <see cref="RunsOnBoard"/>), as <see cref="KeepAsync"/> does, at once: a rule the app hasn't noted yet is noted now
     /// (<see cref="OwnRulesService.KeepReportedAsync"/>). The others are left as they are, nothing saved for them.
     /// Returns null when all are kept (or none could be), otherwise the message to show; then none is kept.
     /// </summary>
@@ -229,7 +241,8 @@ public sealed partial class OwnRulesHandler
             grouped = await OwnRulesService.GroupedRelaysAsync(db, boardId, cancellationToken);
         }
 
-        List<OwnRule> keepable = [.. rules.Where(r => CanKeep(r.Kind, grouped.ContainsKey(r.Relay)))];
+        // Never one that runs on the board right now: it can be kept once it has ended (RunsOnBoard).
+        List<OwnRule> keepable = [.. rules.Where(r => CanKeep(r.Kind, grouped.ContainsKey(r.Relay)) && !RunsOnBoard(boardId, r))];
         if (keepable.Count == 0)
         {
             return null;
@@ -306,7 +319,7 @@ public sealed partial class OwnRulesHandler
     /// Keeps the board's own rule for the relay on <paramref name="channel"/>, as <paramref name="userEmail"/> chose: the
     /// app no longer warns about it, until the board no longer has it. Logged once. Returns null when kept, otherwise
     /// the message to show, also for a rule a person may not keep (<see cref="CanKeep"/>, e.g. the auto-on of a relay in
-    /// a group).
+    /// a group), and for one that runs on the board right now (<see cref="RunsOnBoard"/>), until it has ended.
     /// </summary>
     public async Task<string?> KeepAsync(int boardId, int channel, OwnRuleKind kind, string userEmail, CancellationToken cancellationToken)
     {
@@ -315,6 +328,12 @@ public sealed partial class OwnRulesHandler
         {
             // No "Keep" is offered for it; nothing is saved.
             return _texts["OwnRules.Keep.Unavailable"].Value;
+        }
+
+        if (RunsOnBoard(boardId, new OwnRule(channel, kind)))
+        {
+            // Its "Keep" can't be pressed while it runs; a page drawn before the run started gets this. Nothing is saved.
+            return _texts["OwnRules.Running.Later"].Value;
         }
 
         // The service refuses the auto-on of a relay in a group in the same write that keeps it (no "Keep" is offered

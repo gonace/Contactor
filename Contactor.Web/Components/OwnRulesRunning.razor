@@ -1,0 +1,46 @@
+@* The board's own rules that run on it right now and end by themselves (issue #552), e.g. a pulse or a timer started on
+   the VM208's own web page, which the app can't turn off: a group of their own, "Running on the board right now", each
+   relay in a dashed box with why, a "Keep" that can't be pressed, and when it can. No "Turn off". Shared by the board's
+   card, the warning on Relays and the step while a board is added. Nothing without such a relay. *@
+@if (Channels.Count > 0)
+{
+    <section class="running" aria-label="@Texts["OwnRules.Running.Title"]">
+        <p class="title">@Texts["OwnRules.Running.Title"]</p>
+        @foreach (var channel in Channels)
+        {
+            var name = Names?.GetValueOrDefault(channel);
+            <div class="run" @key="channel">
+                <div class="what">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2.5 2"></path><path d="M9.5 2.5h5"></path></svg>
+                    <div class="text">
+                        @if (!string.IsNullOrWhiteSpace(name))
+                        {
+                            <span class="label">@Texts["Relays.RelayLabel", channel]</span>
+                            <span class="name">@name</span>
+                        }
+                        else
+                        {
+                            <span class="name">@Texts["Relays.DefaultName", channel]</span>
+                        }
+                        <span class="why">@Texts["OwnRules.CantTurnOff"]</span>
+                    </div>
+                </div>
+                <div class="later">
+                    <button type="button" disabled>@Texts["OwnRules.Keep"]</button>
+                    <span>@Texts["OwnRules.Running.Later"]</span>
+                </div>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    /// <summary>The relays with such a rule, by their channel on the board, in the order shown.</summary>
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<int> Channels { get; set; } = [];
+
+    /// <summary>The relays' names by channel; a relay without one shows as "Relay 3".</summary>
+    [Parameter]
+    public IReadOnlyDictionary<int, string>? Names { get; set; }
+}
