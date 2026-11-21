@@ -160,10 +160,11 @@
         Rows.Changed -= OnRowsChanged;
     }
 
-    // Whether the row's rule runs on the board right now (OwnRulesHandler.RunsOnBoard).
+    // Whether the row goes in the running group: a rule no person kept that runs on the board right now
+    // (OwnRulesHandler.RunsOnBoard). A kept one stays in the list as kept, with no button.
     private bool Running(OwnRuleRow row)
     {
-        return Handler.RunsOnBoard(BoardId, new OwnRule(row.Channel, row.Kind));
+        return row.KeptUtc is null && Handler.RunsOnBoard(BoardId, new OwnRule(row.Channel, row.Kind));
     }
 
     // "Also turns off the board's timer for Heat.": what turning off the row's rule takes with it, or null.

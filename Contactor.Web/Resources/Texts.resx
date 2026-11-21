@@ -2050,7 +2050,7 @@
     <value>Reset relay {0}</value>
   </data>
   <data name="OwnRules.Running.Later" xml:space="preserve">
-    <value>The relay's schedule can be turned off or kept once it has ended.</value>
+    <value>Once the pulse or timer has ended, a schedule on the relay can be turned off or kept.</value>
     <comment>Under a disabled "Keep" for a pulse or a timer that runs on the board now; also why a "Keep" is refused then.</comment>
   </data>
   <data name="OwnRules.Running.Title" xml:space="preserve">
