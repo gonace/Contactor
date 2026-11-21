@@ -29,7 +29,7 @@ public sealed class Vm204ClientTests
 
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        Assert.Equal(new Vm204Status(0b0010, 0b1000, 512), run.Client.State.Status);
+        Assert.Equal(new Vm204Status(0b0010, 0b1000, 512, Pulses: 0), run.Client.State.Status);
         Assert.True(run.Client.State.IsOn(2));
         Assert.NotNull(run.Client.State.LastContactUtc);
         Assert.Equal($"{Vm204Api.AuthPath}?user=&password=", simulator.ReceivedTargets[0]);
@@ -690,6 +690,22 @@ public sealed class Vm204ClientTests
     /// A VM204 the test drives: it logs anyone in, switches relays, and answers the status, or never answers it while
     /// <see cref="HangStatus"/> is set. Also used by <see cref="Boards.Vm204BoardTests"/>.
     /// </summary>
+    // The firmware's key is 32 letters and digits; a longer one would make queries that overflow its 64-byte copy of the
+    // query (Main/api.c), so the app never logs in with it, and no command goes out.
+    [Fact]
+    public async Task Should_NeverSendACommand_WithAKeyLongerThanTheFirmwares()
+    {
+        await using var board = ScriptedBoard.Start();
+        board.Key = new string('k', 33);
+        await using var run = ClientRun.Start(board.Port);
+        await Wait.UntilAsync(() => board.Targets.Count >= 1 && run.Traces.Any(t => t.Text.StartsWith("Connection lost", StringComparison.Ordinal)));
+
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOnAsync(0b0001, Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.PulseAsync(0b0001, 2, Cancel));
+        Assert.All(board.Targets, t => Assert.StartsWith(Vm204Api.AuthPath, t, StringComparison.Ordinal));
+        Assert.False(run.Client.State.IsConnected);
+    }
+
     internal sealed class ScriptedBoard : IAsyncDisposable
     {
         private readonly TcpListener _listener;
@@ -710,6 +726,9 @@ public sealed class Vm204ClientTests
         public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
         public bool HangStatus { get; set; }
+
+        /// <summary>The key a login gets.</summary>
+        public string Key { get; set; } = "abc123";
 
         /// <summary>The raw analog value the status gives, also one the converter can't give.</summary>
         public int Analog
@@ -810,7 +829,7 @@ public sealed class Vm204ClientTests
                     string body;
                     if (target.StartsWith(Vm204Api.AuthPath, StringComparison.Ordinal))
                     {
-                        body = Vm204Json.WriteKey("abc123");
+                        body = Vm204Json.WriteKey(Key);
                     }
                     else if ((target.StartsWith(Vm204Api.StatusPath, StringComparison.Ordinal) && HangStatus) || HangAll)
                     {

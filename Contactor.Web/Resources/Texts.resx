@@ -87,11 +87,25 @@
   <data name="Analog.Scale" xml:space="preserve">
     <value>SCALE</value>
   </data>
+  <data name="Analog.Scale.Above" xml:space="preserve">
+    <value>This board reads at most {0} V. Above {1} the app shows "{2}".</value>
+    <comment>{0} is the most the board reads, e.g. 3.3; {1} the scale's value there with its unit, e.g. 66.0 °C; {2} what the screens show at the board's top value, e.g. ≥ 66.0 °C.</comment>
+  </data>
+  <data name="Analog.Scale.Below" xml:space="preserve">
+    <value>This board reads at most {0} V. Below {1} the app shows "{2}".</value>
+    <comment>{0} is the most the board reads, e.g. 3.3; {1} the scale's value there with its unit, e.g. 66.0 °C; {2} what the screens show at the board's top value, e.g. ≥ 66.0 °C.</comment>
+  </data>
   <data name="Analog.Scale.Hint" xml:space="preserve">
     <value>Two readings from the sensor's label, e.g. 0–5 V for −20 to 80 °C.</value>
   </data>
   <data name="Analog.ShowAs" xml:space="preserve">
     <value>+ Show it as °C, %, bar …</value>
+  </data>
+  <data name="Analog.TopValue.Less" xml:space="preserve">
+    <value>The board's top value: it may be less</value>
+  </data>
+  <data name="Analog.TopValue.More" xml:space="preserve">
+    <value>The board's top value: it may be more</value>
   </data>
   <data name="Analog.Unit" xml:space="preserve">
     <value>UNIT</value>
@@ -647,6 +661,10 @@
   <data name="Common.PageTitle" xml:space="preserve">
     <value>{0} · Contactor</value>
     <comment>The browser tab's title: {0} is the screen's name.</comment>
+  </data>
+  <data name="Common.Pulsing" xml:space="preserve">
+    <value>Pulsing…</value>
+    <comment>On a relay's button while a pulse the app started runs on it (e.g. "Try"): the button can't be pressed then.</comment>
   </data>
   <data name="Common.Reconnecting" xml:space="preserve">
     <value>Reconnecting…</value>
@@ -1906,6 +1924,10 @@
     <value>They can switch {0} without Contactor.</value>
     <comment>Under OwnRules.Warning: {0} is e.g. "relays 3 and 5" (OwnRules.Relays).</comment>
   </data>
+  <data name="OwnRules.CantTurnOff" xml:space="preserve">
+    <value>Started on the board's own web page. It ends by itself, and Contactor can't stop it.</value>
+    <comment>In place of "Turn off" for a rule the board runs now, e.g. a pulse or a timer started on the VM208's own page.</comment>
+  </data>
   <data name="OwnRules.Card.CantTell" xml:space="preserve">
     <value>This board may have timers of its own. Check its own web page.</value>
     <comment>A board whose own rules the app can't see.</comment>
@@ -2044,6 +2066,14 @@
   </data>
   <data name="OwnRules.Reset.Label" xml:space="preserve">
     <value>Reset relay {0}</value>
+  </data>
+  <data name="OwnRules.Running.Later" xml:space="preserve">
+    <value>Once the pulse or timer has ended, a schedule on the relay can be turned off or kept.</value>
+    <comment>Under a disabled "Keep" for a pulse or a timer that runs on the board now; also why a "Keep" is refused then.</comment>
+  </data>
+  <data name="OwnRules.Running.Title" xml:space="preserve">
+    <value>Running on the board right now</value>
+    <comment>Heads the relays with a pulse or a timer started on the board's own page, which the app can't turn off.</comment>
   </data>
   <data name="OwnRules.Step.Intro_One" xml:space="preserve">
     <value>It can turn a relay on and off without Contactor.</value>
@@ -2470,6 +2500,10 @@
   <data name="Relays.Problem.SeeSettings" xml:space="preserve">
     <value>{0} See Settings.</value>
     <comment>{0} is why the board refuses the connection, as Boards.Problem.* gives it.</comment>
+  </data>
+  <data name="Relays.Pulsing" xml:space="preserve">
+    <value>This relay is pulsing. Switch it when the pulse has ended.</value>
+    <comment>Under a relay whose ON or OFF was refused because a pulse the app started (e.g. "Try") still runs on it; it goes when the pulse has ended.</comment>
   </data>
   <data name="Relays.RelayLabel" xml:space="preserve">
     <value>RELAY {0}</value>

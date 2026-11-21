@@ -15,7 +15,7 @@ namespace Contactor.Boards.Velleman;
 /// per connection. It never tells the app anything by itself, as the real board. Used by the tests and, in
 /// development, by Contactor.Simulator. It listens on the loopback interface only.
 /// </summary>
-public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
+public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConnections, ISimulatedBoardPower, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin, ISimulatedBoardPulses
 {
     /// <summary>How long a client may take to send its whole request head before the connection is closed.</summary>
     public static readonly TimeSpan RequestHeadTimeout = TimeSpan.FromSeconds(5);
@@ -49,6 +49,7 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
     private int _analog;
     private string _key = NewKey();
     private Vm204Status? _lastStatusSent;
+    private SimulatedPulses? _pulses;
     private int _deniedLoginCount;
     private int _requestCount;
 
@@ -77,8 +78,26 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
 
     public BoardModel Model => Vm204Model.Model;
 
-    /// <summary>The clock for the traffic's times and for who counts as connected.</summary>
+    /// <summary>The clock for the traffic's times, for who counts as connected and for the end of a pulse.</summary>
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+
+    /// <summary>The relays whose pulse is still running: the <c>pulse</c> flags of the status.</summary>
+    public ChannelMask Pulsing => new(Pulses.Running);
+
+    // Made on first use, so it takes the TimeProvider set by the initializer.
+    private SimulatedPulses Pulses
+    {
+        get
+        {
+            if (Volatile.Read(ref _pulses) is { } pulses)
+            {
+                return pulses;
+            }
+
+            var created = new SimulatedPulses(TimeProvider);
+            return Interlocked.CompareExchange(ref _pulses, created, null) ?? created;
+        }
+    }
 
     public int Port { get; private set; }
 
@@ -227,7 +246,10 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
 
     public string AfterPowerCut => "Every relay comes back off (not yet checked on a real VM204).";
 
-    /// <summary>Cuts the power: connections drop, new ones are closed at once, pulses end and every relay goes off.</summary>
+    /// <summary>
+    /// Cuts the power: connections drop, new ones are closed at once, pulses end (their timers are in the board's memory
+    /// only) and every relay goes off.
+    /// </summary>
     public Task CutPowerAsync()
     {
         if (Interlocked.Exchange(ref _poweredOff, 1) != 0)
@@ -238,6 +260,7 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         DropConnections();
         Change(() =>
         {
+            Pulses.Cancel(ulong.MaxValue);
             _relays = (byte)0;
         }, power: true);
         return Task.CompletedTask;
@@ -271,6 +294,7 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
 
     public async ValueTask DisposeAsync()
     {
+        Pulses.Dispose();
         await _stopping.CancelAsync().ConfigureAwait(false);
         _listener?.Stop();
         DropConnections();
@@ -428,6 +452,17 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
             return RespondStatus();
         }
 
+        if (first == "relay" && second == "pulse")
+        {
+            if (!HasKey(parameters))
+            {
+                return RefuseKey();
+            }
+
+            Pulse(Vm204TraceText.RelayMask(query), Vm204TraceText.PulseSeconds(query));
+            return RespondStatus();
+        }
+
         if (first.Equals("status", StringComparison.OrdinalIgnoreCase))
         {
             return HasKey(parameters) ? RespondStatus() : RefuseKey();
@@ -448,8 +483,30 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
             return Respond(HttpStatusCode.BadRequest, "The request is badly formed", "Wrong user name or password", isError: true);
         }
 
-        // Toggle, pulse and the names aren't simulated; the app doesn't use them.
+        // Toggle and the names aren't simulated; the app doesn't use them.
         return Respond(HttpStatusCode.BadRequest, "The request is badly formed", "Refused: not simulated", isError: true);
+    }
+
+    // As startPulse (pulse.c lines 31–55) for each relay: one whose pulse runs is left as it is, neither turned on nor
+    // started again; any other goes on, and off again when its time is up (vTimerCallback, Main/main.c lines 459–470),
+    // also when /api/relay/on or /off switched it meanwhile, which don't stop the timer. A time outside 1 s to
+    // 2,147,483 s, or none, starts nothing: the firmware's would be a period of 0, an overflow of seconds * 1000 or an
+    // uninitialised value, which the app never sends.
+    private void Pulse(byte mask, int? seconds)
+    {
+        if (seconds is not ({ } time and >= Vm204Api.PulseShortestSeconds and <= Vm204Api.PulseLongestSeconds))
+        {
+            return;
+        }
+
+        Change(() =>
+        {
+            var start = (byte)(mask & ~Pulses.Running);
+            _relays |= start;
+
+            // The end takes its relays under the gate (see SimulatedPulses).
+            Pulses.Start(start, TimeSpan.FromSeconds(time), take => Change(() => _relays &= (byte)~take()));
+        });
     }
 
     // As the firmware's parsers: name=value pairs split on "&", names in any case, the last one wins, not decoded.
@@ -485,7 +542,7 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         bool routine;
         lock (_lock)
         {
-            status = new Vm204Status(_relays, _inputs, _analog);
+            status = new Vm204Status(_relays, _inputs, _analog, (byte)Pulses.Running);
             routine = status.SameSwitches(_lastStatusSent);
             _lastStatusSent = status;
         }
@@ -532,9 +589,9 @@ public sealed class Vm204Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
                 return;
             }
 
-            var before = (_relays, _inputs, _analog);
+            var before = (_relays, _inputs, _analog, Pulses.Running);
             change();
-            changed = before != (_relays, _inputs, _analog);
+            changed = before != (_relays, _inputs, _analog, Pulses.Running);
         }
 
         if (changed)

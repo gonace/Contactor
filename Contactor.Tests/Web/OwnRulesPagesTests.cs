@@ -257,6 +257,85 @@ public sealed partial class OwnRulesPagesTests
         Assert.Empty(page.Errors);
     }
 
+    // A rule the board runs now and ends by itself (relay 3, e.g. a timer started on the VM208's own page): warned about,
+    // in a group of its own, "Running on the board right now", with no "Turn off", a "Keep" that can't be pressed and
+    // when it can; the handler refuses its "Keep" too. Once the run has ended, the open card shows it as usual.
+    [Fact]
+    public async Task Should_OfferNoTurnOff_ForARuleTheBoardCantTurnOff()
+    {
+        const string CantTurnOff = "Started on the board's own web page. It ends by itself, and Contactor can't stop it.";
+        var board = Board();
+        await using var app = App(board);
+        await RulesAsync(app, board, new OwnRules([Timer3, Timer5], null, [Timer3]));
+        var handler = app.Services.GetRequiredService<OwnRulesHandler>();
+        Assert.False(handler.CanTurnOff(BoardId, Timer3));
+        Assert.Equal([Timer5], handler.TurnsOff(BoardId, [Timer3, Timer5]));
+
+        var box = Box(await PageAsync(app, "/"));
+        Assert.Contains("They can switch relays 3 and 5 without Contactor.", box, StringComparison.Ordinal);
+        Assert.Contains(">Turn it off</button>", box, StringComparison.Ordinal);
+        Assert.Contains("Running on the board right now", box, StringComparison.Ordinal);
+        Assert.Single(DisabledKeep().Matches(box));
+
+        // Relays' "Turn it off" sends only relay 5's: relay 3's stays, unlogged, and still warned about.
+        using (var relays = await PageRenderer.StartAsync<Relays>(app.Services, John, "John"))
+        {
+            await relays.ClickAsync(PageRenderer.WithText("Turn it off"));
+            Assert.Equal(new OwnRules([Timer3], null, [Timer3]), board.State.OwnRules);
+            Assert.Equal(1, board.OwnRulesTurnOffs);
+            var entry = (await EventsAsync(app)).Single(e => e.Action == EventActions.BoardOwnRulesTurnedOff);
+            Assert.Contains("\"relays\":[5]", entry.Details, StringComparison.Ordinal);
+            await Wait.UntilAsync(() => Service(app).Rows(BoardId).Count == 1);
+            Assert.Contains("It can switch relay 3 without Contactor.", Box(await PageAsync(app, "/")), StringComparison.Ordinal);
+            Assert.Empty(relays.Errors);
+        }
+
+        await RulesAsync(app, board, new OwnRules([Timer3, Timer5], null, [Timer3]));
+
+        var card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+        Assert.Single(Regex.Matches(card, ">Turn off</button>"));
+        Assert.Equal(2, Regex.Count(card, ">Keep</button>"));
+        Assert.Single(DisabledKeep().Matches(card));
+        Assert.True(card.IndexOf(">Turn off</button>", StringComparison.Ordinal) < card.IndexOf("Running on the board right now", StringComparison.Ordinal));
+        Assert.Contains("Once the pulse or timer has ended, a schedule on the relay can be turned off or kept.", card, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(card, "Started on the board&#x27;s own web page\\. It ends by itself, and Contactor can|Started on the board's own web page\\. It ends by itself, and Contactor can"));
+
+        using var page = await PageRenderer.StartAsync<BoardPage>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardPage.Id)] = BoardId });
+        await Wait.UntilAsync(() => page.TextAsync().GetAwaiter().GetResult().Contains(CantTurnOff, StringComparison.Ordinal));
+        board.SetOwnRules(new OwnRules([Timer3, Timer5]));
+        await Wait.UntilAsync(() => !page.TextAsync().GetAwaiter().GetResult().Contains(CantTurnOff, StringComparison.Ordinal));
+        Assert.DoesNotContain("Running on the board right now", await page.TextAsync(), StringComparison.Ordinal);
+        await page.ClickAsync(PageRenderer.WithText("Turn off"), 1);
+        Assert.Equal(new OwnRules([Timer3]), board.State.OwnRules);
+
+        // With only such a rule, the warning on Relays has no "Turn off", only the "Keep" that can't be pressed.
+        board.SetOwnRules(new OwnRules([Timer3], null, [Timer3]));
+        await Wait.UntilAsync(() => Service(app).Rows(BoardId).Count == 1);
+        box = Box(await PageAsync(app, "/"));
+        Assert.DoesNotContain("Turn ", box, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(box, "</button>"));
+        Assert.Single(DisabledKeep().Matches(box));
+
+        // A "Keep" sent while it runs (from a page drawn before it started) is refused, and nothing is saved or logged.
+        Assert.Equal("Once the pulse or timer has ended, a schedule on the relay can be turned off or kept.", await handler.KeepAsync(BoardId, 3, OwnRuleKind.Timer, John, Cancel));
+        Assert.Null(await handler.KeepAllAsync(BoardId, [Timer3], John, Cancel));
+        Assert.All(Service(app).Rows(BoardId), r => Assert.Null(r.KeptUtc));
+        Assert.DoesNotContain(await EventsAsync(app), e => e.Action == EventActions.BoardOwnRuleKept);
+
+        // Once it has ended, it can be kept.
+        board.SetOwnRules(new OwnRules([Timer3]));
+        Assert.Null(await handler.KeepAsync(BoardId, 3, OwnRuleKind.Timer, John, Cancel));
+
+        // A rule kept before a run starts stays in the list as kept, out of the running group.
+        board.SetOwnRules(new OwnRules([Timer3], null, [Timer3]));
+        await Wait.UntilAsync(() => Service(app).Rows(BoardId).Single().KeptUtc is not null);
+        card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+        Assert.Contains("Kept on purpose", card, StringComparison.Ordinal);
+        Assert.DoesNotContain("Running on the board right now", card, StringComparison.Ordinal);
+        Assert.DoesNotContain("</button>", card, StringComparison.Ordinal);
+        Assert.Empty(page.Errors);
+    }
+
     [Fact]
     public async Task Should_KeepAndTurnOff_FromTheBoardsPage()
     {
@@ -376,6 +455,10 @@ public sealed partial class OwnRulesPagesTests
     {
         return new FakeRelayBoard(ownRules: ability ?? OwnRulesAbility.ReadsAndTurnsOff);
     }
+
+    // A "Keep" that can't be pressed, for a rule that runs on the board right now.
+    [GeneratedRegex("<button[^>]*disabled[^>]*>Keep</button>")]
+    private static partial Regex DisabledKeep();
 
     private static TestWebApp App(FakeRelayBoard board, TimeProvider? time = null)
     {

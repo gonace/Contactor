@@ -71,7 +71,8 @@ public interface IRelayBoard
     /// <summary>
     /// Pulses the relays in <paramref name="relays"/>: turns them on, and the board turns them off again by itself after
     /// <paramref name="length"/>, also when the app stops in between. Returns the relays the board took, as
-    /// <see cref="TurnOnAsync"/>. Throws <see cref="NotSupportedException"/> on a board without a pulse
+    /// <see cref="TurnOnAsync"/>. A board whose pulse would do something else to a relay that is on, or whose pulse
+    /// already runs, may leave such a relay out, sending nothing for it (the VM204). Throws <see cref="NotSupportedException"/> on a board without a pulse
     /// (<see cref="BoardCapabilities.Pulse"/> null), and <see cref="ArgumentOutOfRangeException"/> for a length it can't
     /// do (<see cref="PulseAbility.CanDo"/>), before anything is sent.
     /// </summary>
@@ -85,7 +86,9 @@ public interface IRelayBoard
     /// once. Returns the rules the board took, each once, and none (sending nothing) for none asked; when it took none
     /// of them, it throws instead. Turning off a rule turns off the units behind it (<see cref="OwnRules.Units"/>), so it
     /// may also remove other rules (<see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/>), e.g. a schedule that switches
-    /// two relays: those aren't returned. The next state confirms what is gone (<see cref="BoardState.OwnRules"/>).
+    /// two relays: those aren't returned. A rule the app can't turn off (<see cref="OwnRules.CantTurnOff"/>, as the
+    /// board last reported) isn't taken and nothing is sent for it. The next state confirms what is gone
+    /// (<see cref="BoardState.OwnRules"/>).
     /// Throws <see cref="NotSupportedException"/> on a board that can't turn its rules off
     /// (<see cref="OwnRulesAbility.TurnsOff"/>), the default.
     /// </summary>

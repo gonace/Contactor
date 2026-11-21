@@ -18,19 +18,24 @@
     <h1 tabindex="-1" @ref="_heading">@Words.StepTitle(_rules)</h1>
     <p>@Words.StepIntro(_rules.Count)</p>
 </div>
-<ul class="rules">
-    @foreach (var rule in _rules)
-    {
-        <li @key="rule">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
-            <span>@Texts["Relays.DefaultName", rule.Relay]</span>
-            @if (rule.Kind == OwnRuleKind.InputLinkage)
-            {
-                <span class="note">@Texts["OwnRules.Unavailable.Step"]</span>
-            }
-        </li>
-    }
-</ul>
+@if (_rules.Any(r => !_running.Contains(r.Relay)))
+{
+    <ul class="rules">
+        @foreach (var rule in _rules.Where(r => !_running.Contains(r.Relay)))
+        {
+            <li @key="rule">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                <span>@Texts["Relays.DefaultName", rule.Relay]</span>
+                @if (rule.Kind == OwnRuleKind.InputLinkage)
+                {
+                    <span class="note">@Texts["OwnRules.Unavailable.Step"]</span>
+                }
+            </li>
+        }
+    </ul>
+}
+@* A rule that runs on the board right now, in a group of its own (issue #552): neither turned off nor kept here. *@
+<OwnRulesRunning Channels="_running" />
 <p class="hint">@Words.Recommend(_rules.Count)</p>
 @if (Words.AlsoTurnsOff(_also, null) is { } also)
 {
@@ -50,7 +55,14 @@
     // doesn't change under it.
     private IReadOnlyList<OwnRule> _rules = [];
 
-    // The other rules turning _rules off takes with it (OwnRulesHandler.AlsoTurnsOff): none on a board that can't.
+    // The rules of _rules "Turn them off" turns off (OwnRulesHandler.TurnsOff): not one the board runs now and ends by
+    // itself.
+    private IReadOnlyList<OwnRule> _turnsOff = [];
+
+    // The relays of _rules whose rule runs on the board right now (OwnRulesHandler.RunsOnBoard), in relay order.
+    private IReadOnlyList<int> _running = [];
+
+    // The other rules turning _turnsOff off takes with it (OwnRulesHandler.AlsoTurnsOff): none on a board that can't.
     private IReadOnlyList<OwnRule> _also = [];
 
     /// <summary>The board being added; it must have a model.</summary>
@@ -116,7 +128,11 @@
     /// </summary>
     public Task<bool> TurnOffAsync()
     {
-        return PressAsync((boardId, rules, email) => Handler.TurnOffAndConfirmAsync(boardId, rules, email, CancellationToken.None), "Turning off the board's own rules failed");
+        // Only those it can turn off, as shown: the others stay, and Relays warns about them. None: no button is shown.
+        var turnsOff = _turnsOff;
+        return turnsOff.Count == 0
+            ? Task.FromResult(false)
+            : PressAsync((boardId, _, email) => Handler.TurnOffAndConfirmAsync(boardId, turnsOff, email, CancellationToken.None), "Turning off the board's own rules failed");
     }
 
     /// <summary>"Keep them": the app stops warning about them (<see cref="OwnRulesHandler.KeepAllAsync"/>). True when kept.</summary>
@@ -161,7 +177,14 @@
     private void Show(IReadOnlyList<OwnRule> rules)
     {
         _rules = rules;
-        _also = Also(rules);
+        _turnsOff = Handler.TurnsOff(Board.BoardId, rules);
+        _running = Running(rules);
+        _also = Also(_turnsOff);
+    }
+
+    private IReadOnlyList<int> Running(IReadOnlyList<OwnRule> rules)
+    {
+        return [.. rules.Where(r => Handler.RunsOnBoard(Board.BoardId, r)).Select(r => r.Relay).Distinct().Order()];
     }
 
     private IReadOnlyList<OwnRule> Also(IReadOnlyList<OwnRule> rules)
@@ -208,7 +231,8 @@
                 }
 
                 var now = Handler.ToAsk(_watched);
-                if (!now.SequenceEqual(_rules) || !Also(now).SequenceEqual(_also))
+                var turnsOff = Handler.TurnsOff(_watched, now);
+                if (!now.SequenceEqual(_rules) || !turnsOff.SequenceEqual(_turnsOff) || !Running(now).SequenceEqual(_running) || !Also(turnsOff).SequenceEqual(_also))
                 {
                     Show(now);
                     StateHasChanged();

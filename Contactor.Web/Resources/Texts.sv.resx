@@ -84,11 +84,23 @@
   <data name="Analog.Scale" xml:space="preserve">
     <value>SKALA</value>
   </data>
+  <data name="Analog.Scale.Above" xml:space="preserve">
+    <value>Kortet läser högst {0} V. Över {1} visar appen "{2}".</value>
+  </data>
+  <data name="Analog.Scale.Below" xml:space="preserve">
+    <value>Kortet läser högst {0} V. Under {1} visar appen "{2}".</value>
+  </data>
   <data name="Analog.Scale.Hint" xml:space="preserve">
     <value>Två värden från givarens etikett, t.ex. 0–5 V för −20 till 80 °C.</value>
   </data>
   <data name="Analog.ShowAs" xml:space="preserve">
     <value>+ Visa den som °C, %, bar …</value>
+  </data>
+  <data name="Analog.TopValue.Less" xml:space="preserve">
+    <value>Kortets högsta värde: det kan vara mindre</value>
+  </data>
+  <data name="Analog.TopValue.More" xml:space="preserve">
+    <value>Kortets högsta värde: det kan vara mer</value>
   </data>
   <data name="Analog.Unit" xml:space="preserve">
     <value>ENHET</value>
@@ -599,6 +611,9 @@
   </data>
   <data name="Common.PageTitle" xml:space="preserve">
     <value>{0} · Contactor</value>
+  </data>
+  <data name="Common.Pulsing" xml:space="preserve">
+    <value>Pulsar…</value>
   </data>
   <data name="Common.Reconnecting" xml:space="preserve">
     <value>Ansluter igen…</value>
@@ -1730,6 +1745,9 @@
   <data name="OwnRules.CanSwitch_Other" xml:space="preserve">
     <value>De kan slå om {0} utan Contactor.</value>
   </data>
+  <data name="OwnRules.CantTurnOff" xml:space="preserve">
+    <value>Startad på kortets egen webbsida. Den slutar av sig själv, och Contactor kan inte stoppa den.</value>
+  </data>
   <data name="OwnRules.Card.CantTell" xml:space="preserve">
     <value>Kortet kan ha egna timers. Titta på kortets egen webbsida.</value>
   </data>
@@ -1846,6 +1864,12 @@
   </data>
   <data name="OwnRules.Reset.Label" xml:space="preserve">
     <value>Återställ relä {0}</value>
+  </data>
+  <data name="OwnRules.Running.Later" xml:space="preserve">
+    <value>När pulsen eller timern är klar kan ett schema på reläet stängas av eller behållas.</value>
+  </data>
+  <data name="OwnRules.Running.Title" xml:space="preserve">
+    <value>Pågår på kortet just nu</value>
   </data>
   <data name="OwnRules.Step.Intro_One" xml:space="preserve">
     <value>Den kan slå på och stänga av ett relä utan Contactor.</value>
@@ -2230,6 +2254,9 @@
   </data>
   <data name="Relays.Problem.SeeSettings" xml:space="preserve">
     <value>{0} Se Inställningar.</value>
+  </data>
+  <data name="Relays.Pulsing" xml:space="preserve">
+    <value>Reläet pulsar. Slå om det när pulsen är slut.</value>
   </data>
   <data name="Relays.RelayLabel" xml:space="preserve">
     <value>RELÄ {0}</value>

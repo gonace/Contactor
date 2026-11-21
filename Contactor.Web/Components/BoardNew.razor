@@ -102,13 +102,15 @@
         @if (step == StepRules && !gone)
         {
             var asked = OwnRules.ToAsk(_boardId!.Value);
-            @if (Chosen!.Capabilities.OwnRulesOrCantTell.TurnsOff)
+            @* Only the rules the app can turn off: not a timer the board runs now and ends by itself. *@
+            var turnsOff = OwnRules.TurnsOff(_boardId!.Value, asked);
+            @if (turnsOff.Count > 0)
             {
-                <button type="button" class="finish" disabled="@Busy" @onclick="TurnOffRulesAsync">@(asked.Count > 0 && asked.All(r => r.Kind == OwnRuleKind.InputLinkage) ? Texts["OwnRules.Reset"] : OwnRulesWords.TurnOffAll(asked.Count))</button>
+                <button type="button" class="finish" disabled="@Busy" @onclick="TurnOffRulesAsync">@(turnsOff.All(r => r.Kind == OwnRuleKind.InputLinkage) ? Texts["OwnRules.Reset"] : OwnRulesWords.TurnOffAll(turnsOff.Count))</button>
             }
             @* A relay the board controls by itself is never kept: with only such relays, the step is left as it is. *@
             @* A board being added has no groups yet; "Keep them" checks them anyway (KeepAllAsync). *@
-            var keepable = asked.Count(r => OwnRulesHandler.CanKeep(r.Kind, inGroup: false));
+            var keepable = asked.Count(r => OwnRulesHandler.CanKeep(r.Kind, inGroup: false) && !OwnRules.RunsOnBoard(_boardId!.Value, r));
             <button type="button" class="secondary" disabled="@Busy" @onclick="KeepRulesAsync">@(keepable > 0 ? OwnRulesWords.KeepAll(keepable) : Texts["OwnRules.Step.Later"])</button>
         }
         else if (step < StepRelays)

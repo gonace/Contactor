@@ -333,6 +333,21 @@
                                                 }
                                             </div>
                                             <span class="hint">A relay's checkbox turns all its alarms on or off, as the app's "Turn them off" does.</span>
+                                            <h4 class="label" id="runs-head">PULSE AND TIMER, AS ON THE BOARD'S OWN PAGE</h4>
+                                            <div class="schedule-list" role="group" aria-labelledby="runs-head">
+                                                @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                                {
+                                                    var number = relay;
+                                                    var running = vm208.RunningPulses.Contains(number) ? "pulse running" : vm208.RunningTimers.Contains(number) ? "timer running" : "";
+                                                    <div class="rule-line" @key="number">
+                                                        <span>Relay @number</span>
+                                                        <span class="hint">@running</span>
+                                                        <button type="button" @onclick="() => current.StartVm208RunAsync(number, timer: false)">Pulse 5 s</button>
+                                                        <button type="button" @onclick="() => current.StartVm208RunAsync(number, timer: true)">Timer 1 min</button>
+                                                    </div>
+                                                }
+                                            </div>
+                                            <span class="hint">Each toggles the relay now and again when it ends, as the firmware does. Switching the relay from the app stops it.</span>
                                         }
                                     }
                                     @if (current.Shelly is { } rules)

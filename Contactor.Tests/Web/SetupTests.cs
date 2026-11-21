@@ -558,6 +558,85 @@ public sealed class SetupTests
         Assert.Equal((JohnEmail, EventActions.Pulse, """{"milliseconds":2000}"""), (entry.Actor, entry.Action, entry.Details));
     }
 
+    // While the app's pulse runs, nobody switches the relay by hand: on the VM204 an ON would be undone by the pulse's
+    // end. A person's ON and OFF and another pulse are refused, sending and logging nothing; "All off" and an input's
+    // OFF still go. Once the pulse has ended and the board shows the relay off, it switches as usual.
+    [Fact]
+    public async Task Should_LockTheRelay_WhileTheAppsPulseRuns()
+    {
+        var time = new ManualTimeProvider(new DateTimeOffset(Now));
+        await using var rig = await Rig.StartAsync(pulse: TenthsUpTo25s, time: time);
+        var control = rig.Database.Services.GetRequiredService<RelayControl>();
+        var live = rig.Database.Services.Live();
+
+        await control.PulseAsync(3, TimeSpan.FromSeconds(2), JohnEmail, Cancel);
+
+        Assert.True(live.IsPulsing(3));
+        Assert.False(live.IsPulsing(4));
+        await Assert.ThrowsAsync<RelayPulsingException>(() => control.TurnOnAsync(3, JohnEmail, Cancel));
+        await Assert.ThrowsAsync<RelayPulsingException>(() => control.TurnOffAsync(3, JohnEmail, Cancel));
+        await Assert.ThrowsAsync<RelayPulsingException>(() => control.PulseAsync(3, TimeSpan.FromSeconds(2), JohnEmail, Cancel));
+        await Assert.ThrowsAsync<RelayPulsingException>(() => control.TurnOnAsync(3, EventActors.ForInput(1), Cancel));
+        // The fake board's pulse switches the relay on through its ON: that is all that went out.
+        Assert.Equal([(ChannelMask.Of(3), true)], rig.Board.Sent);
+        Assert.Single(rig.Board.Pulses);
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.Equal([EventActions.Pulse], await db.EventLog.Select(e => e.Action).ToListAsync(Cancel));
+        }
+
+        // "All off" and an input's OFF aren't locked: the relay ends off anyway.
+        await control.TurnOffAsync(3, EventActors.ForInput(1), Cancel);
+        await control.TurnAllOffAsync(live.BoardId, JohnEmail, Cancel);
+        Assert.Equal([(ChannelMask.Of(3), true), (ChannelMask.Of(3), false), (rig.Board.Capabilities.AllRelays, false)], rig.Board.Sent);
+        Assert.False(rig.Board.State.IsOn(3));
+        Assert.True(live.IsPulsing(3));
+
+        // Over for good once the board has shown it off after the pulse's length: a person's ON and then OFF both go.
+        time.Advance(TimeSpan.FromSeconds(2));
+        Assert.False(live.IsPulsing(3));
+        await control.TurnOnAsync(3, JohnEmail, Cancel);
+        Assert.True(rig.Board.State.IsOn(3));
+        Assert.False(live.IsPulsing(3));
+        await control.TurnOffAsync(3, JohnEmail, Cancel);
+        Assert.False(rig.Board.State.IsOn(3));
+    }
+
+    // Two pulses of the same relay at once: one goes and locks the relay, the other is refused without touching its
+    // lock or its expectations.
+    [Fact]
+    public async Task Should_RefuseTheSecondOfTwoPulsesAtOnce_AndKeepTheFirstsLock()
+    {
+        var time = new ManualTimeProvider(new DateTimeOffset(Now));
+        await using var rig = await Rig.StartAsync(pulse: TenthsUpTo25s, time: time);
+        var control = rig.Database.Services.GetRequiredService<RelayControl>();
+        var live = rig.Database.Services.Live();
+
+        var results = await Task.WhenAll(
+            Attempt(() => control.PulseAsync(3, TimeSpan.FromSeconds(2), JohnEmail, Cancel)),
+            Attempt(() => control.PulseAsync(3, TimeSpan.FromSeconds(2), JohnEmail, Cancel)));
+
+        Assert.Single(results, r => r is null);
+        Assert.IsType<RelayPulsingException>(Assert.Single(results, r => r is not null));
+        Assert.Single(rig.Board.Pulses);
+        Assert.True(live.IsPulsing(3));
+        Assert.True(live.Expected.IsPending(3, on: false));
+        await Assert.ThrowsAsync<RelayPulsingException>(() => control.TurnOnAsync(3, JohnEmail, Cancel));
+
+        static async Task<Exception?> Attempt(Func<Task> pulse)
+        {
+            try
+            {
+                await pulse();
+                return null;
+            }
+            catch (RelayPulsingException ex)
+            {
+                return ex;
+            }
+        }
+    }
+
     // A board whose pulse can't do 2 s: "Try" turns the relay on and off itself, as on a board without one.
     [Fact]
     public async Task Should_TryWithOnAndOff_WhenThePulseCantDoTheTry()

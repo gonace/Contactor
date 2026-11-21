@@ -26,8 +26,40 @@ public sealed class Vm208JsonTests
         Assert.Equal(FirmwareStatus, Vm208Json.WriteStatus(new Vm208Status(0b0101, Input: true, Outputs: 0b10)));
     }
 
+    // A pulse on relay 1 and a timer on relay 3, as sendIOState writes pulseStatus.status[j] and timerStatus.status[j].
     [Fact]
-    public void Should_IgnoreTheNamesAndFlags_WhateverTheyHold()
+    public void Should_ReadThePulsesAndTimersRunning_AsTheFirmwareWritesThem()
+    {
+        var json = FirmwareStatus
+            .Replace("\"RELAY1\",\"state\":true,\"pulseActive\":false", "\"RELAY1\",\"state\":true,\"pulseActive\":true", StringComparison.Ordinal)
+            .Replace("\"RELAY3\",\"state\":true,\"pulseActive\":false,\"timerActive\":false", "\"RELAY3\",\"state\":true,\"pulseActive\":false,\"timerActive\":true", StringComparison.Ordinal);
+        var expected = new Vm208Status(0b0101, Input: true, Outputs: 0b10) { Pulses = 0b0001, Timers = 0b0100 };
+
+        Assert.Equal(expected, Vm208Json.ReadStatus(Bytes(json)));
+        Assert.Equal((byte)0b0101, expected.Running);
+        Assert.Equal(json, Vm208Json.WriteStatus(expected));
+    }
+
+    // A flag that isn't true or false makes those flags unknown, never the status unreadable: the relays still count.
+    [Theory]
+    [InlineData("\"pulseActive\":false", "\"pulseActive\":1", true)]
+    [InlineData("\"pulseActive\":false,", "", true)]
+    [InlineData("\"timerActive\":false", "\"timerActive\":null", false)]
+    public void Should_ReadTheStatus_WhenAFlagIsUnreadable(string flag, string replacement, bool pulse)
+    {
+        var at = FirmwareStatus.LastIndexOf(flag, StringComparison.Ordinal);
+        var json = FirmwareStatus[..at] + replacement + FirmwareStatus[(at + flag.Length)..];
+
+        var status = Vm208Json.ReadStatus(Bytes(json));
+
+        Assert.Equal((byte)0b0101, status.Relays);
+        Assert.Equal(pulse ? null : (byte?)0, status.Pulses);
+        Assert.Equal(pulse ? (byte?)0 : null, status.Timers);
+        Assert.Null(status.Running);
+    }
+
+    [Fact]
+    public void Should_IgnoreTheNames_WhateverTheyHold()
     {
         // Names are typed on the board's own page: quotes, non-ASCII and bytes that aren't UTF-8 must not matter.
         var written = Vm208Json.WriteStatus(new Vm208Status(0b1000, false, 0), ["Fläkt \"1\"", "\\", "", new string('x', 1000)]);
@@ -37,8 +69,7 @@ public sealed class Vm208JsonTests
         broken[Array.IndexOf(broken, (byte)0xC3)] = 0xFF;
         Assert.Equal(0b0101, Vm208Json.ReadStatus(broken).Relays);
 
-        var odd = FirmwareStatus.Replace("\"pulseActive\":false", "\"pulseActive\":1", StringComparison.Ordinal)
-            .Replace("\"m2\":true", "\"m2\":\"on\"", StringComparison.Ordinal);
+        var odd = FirmwareStatus.Replace("\"m2\":true", "\"m2\":\"on\"", StringComparison.Ordinal);
         Assert.Equal(new Vm208Status(0b0101, true, 0), Vm208Json.ReadStatus(Bytes(odd)));
     }
 

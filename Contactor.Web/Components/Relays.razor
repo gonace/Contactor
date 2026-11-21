@@ -309,6 +309,9 @@
     // the page is drawn.
     private readonly Dictionary<int, IReadOnlyList<OwnRule>> _shownAlso = [];
 
+    // The rules each board's "Turn them off" turns off (OwnRulesHandler.TurnsOff), by board id: kept as the page is drawn.
+    private readonly Dictionary<int, IReadOnlyList<OwnRule>> _shownTurnsOff = [];
+
     // The relays each board controls by itself, by board id: kept as the page is drawn.
     private readonly Dictionary<int, ChannelMask> _shownUnavailable = [];
 
@@ -354,6 +357,9 @@
     // A press the board didn't confirm, shown under its relay until the person chooses.
     private UnconfirmedPress? _unconfirmed;
     private bool _inGroup;
+
+    // The last press was refused: a pulse the app started runs on that relay.
+    private bool _pulsing;
 
     // The press was refused because its board is being removed (BoardClosedException).
     private bool _beingRemoved;
@@ -406,6 +412,12 @@
 
     // What "Turn off all boards" asks about: the relays on now, on every board.
     private int RelaysOnNow => Boards.Sum(b => b.State.Relays.Count);
+
+    // A pulse the app started runs on the relay: its button is locked until it has ended (AppPulses).
+    private bool IsPulsing(Relay relay)
+    {
+        return Registry.Find(relay.BoardId)?.IsPulsing(relay.Channel) == true;
+    }
 
     private BoardState StateOf(int boardId)
     {
@@ -534,14 +546,17 @@
             <div>
                 <strong>@OwnRulesText.Heading(rules, boardName)</strong>
                 <span>@OwnRulesText.CanSwitch(rules)</span>
-                @if (board.Capabilities.OwnRulesOrCantTell.TurnsOff)
+                @* A rule that runs on the board right now, in a group of its own (issue #552). *@
+                <OwnRulesRunning Channels="@([.. rules.Where(r => OwnRules.RunsOnBoard(board.BoardId, r)).Select(r => r.Relay).Distinct()])" Names="RelayNames(board.BoardId)" />
+                @* Only the rules the app can turn off: not a timer the board runs now and ends by itself. *@
+                @if (_shownTurnsOff.GetValueOrDefault(board.BoardId) is { Count: > 0 } turnsOff)
                 {
                     @* Said before the press: other relays' rules that go with these ("Also turns off the board's timer for Heat."). *@
                     @if (_shownAlso.GetValueOrDefault(board.BoardId) is { Count: > 0 } also)
                     {
                         <span class="also">@OwnRulesText.AlsoTurnsOff(also, RelayNames(board.BoardId))</span>
                     }
-                    <button type="button" class="turn-off-rules" disabled="@(_busy || !board.State.IsConnected)" @onclick="() => TurnOffRulesAsync(board.BoardId, rules)">@OwnRulesText.TurnOffAll(rules.Count)</button>
+                    <button type="button" class="turn-off-rules" disabled="@(_busy || !board.State.IsConnected)" @onclick="() => TurnOffRulesAsync(board.BoardId, turnsOff)">@OwnRulesText.TurnOffAll(turnsOff.Count)</button>
                 }
                 @if (_rulesError is { } error && error.BoardId == board.BoardId)
                 {
@@ -743,6 +758,7 @@
     {
         var state = StateOf(relay.BoardId);
         var on = state.IsOn(relay.Channel);
+        var pulsing = IsPulsing(relay);
         <div class="card @(on ? "on" : "") @(relay.IsActive ? "" : "inactive") @(state.HasAnswered ? "" : "unknown")" @key="relay.Id">
             <a class="text" href="relay/@relay.Id">
                 <span class="label">@Texts["Relays.RelayLabel", relay.Channel]</span>
@@ -758,8 +774,18 @@
                 {
                     <span class="error" role="alert">@Texts["Boards.BeingRemoved"]</span>
                 }
+                else if (_failedRelayId == relay.Id && _pulsing && pulsing)
+                {
+                    @* Only while the lock lasts: once the pulse has ended, the relay switches again. *@
+                    <span class="error" role="alert">@Texts["Relays.Pulsing"]</span>
+                }
             </a>
-            @if (state.HasAnswered)
+            @if (state.HasAnswered && pulsing)
+            {
+                @* A pulse the app started runs: no press until it has ended (AppPulses). *@
+                <button type="button" class="toggle" aria-pressed="@(on ? "true" : "false")" aria-label="@Texts["Common.NameAndState", relay.Name, Texts["Common.Pulsing"]]" disabled>@Texts["Common.Pulsing"]</button>
+            }
+            else if (state.HasAnswered)
             {
                 <button type="button"
                         data-vibrate
@@ -822,7 +848,8 @@
         </div>
     };
 
-    // An analog input: its value on the right, as large as its name, and a line only when there is no value to show.
+    // An analog input: its value on the right, as large as its name, and a line only when there is no value to show or
+    // the value is the board's top value ("≥ 66.0 °C").
     // No outline around the value: it isn't a button.
     private RenderFragment AnalogCard(AnalogInputView input) => __builder =>
     {
@@ -842,9 +869,14 @@
                 {
                     <span class="status problem">@Texts[value.State == AnalogValueState.NoReading ? "Analog.NoReading" : "Analog.AboveRange"]</span>
                 }
+                else if (value.State == AnalogValueState.TopValue)
+                {
+                    @* "≥ 66.0 °C": a value, so no red, but the reason it may be more. *@
+                    <span class="status">@Texts[AnalogValueText.Rises(input.Scale) ? "Analog.TopValue.More" : "Analog.TopValue.Less"]</span>
+                }
             </a>
             @* Without a value, a screen reader hears "No value" rather than the dash. *@
-            <span class="value @(value.State == AnalogValueState.Value ? null : "none")">@if (value.State == AnalogValueState.Value)
+            <span class="value @(value.State is AnalogValueState.Value or AnalogValueState.TopValue ? null : "none")">@if (value.State is AnalogValueState.Value or AnalogValueState.TopValue)
                 {
                     <span class="number">@value.Text</span>
                 }
@@ -1006,7 +1038,7 @@
                 ? Control.TurnOnAsync(press.RelayId, _user!.Email, CancellationToken.None)
                 : Control.TurnOffAsync(press.RelayId, _user!.Email, CancellationToken.None),
             failedRelayId: press.RelayId);
-        if (_failedRelayId == press.RelayId && !_inGroup && !_beingRemoved)
+        if (_failedRelayId == press.RelayId && !_inGroup && !_beingRemoved && !_pulsing)
         {
             _unconfirmed = press;
             _failedRelayId = null;
@@ -1122,6 +1154,7 @@
         _allBoardsMessage = null;
         _inGroup = false;
         _beingRemoved = false;
+        _pulsing = false;
         try
         {
             await command();
@@ -1141,6 +1174,12 @@
         {
             _failedRelayId = failedRelayId;
             _inGroup = true;
+        }
+        catch (RelayPulsingException)
+        {
+            // A pulse the app started runs on it (a page that wasn't drawn again yet, or another person's "Try").
+            _failedRelayId = failedRelayId;
+            _pulsing = true;
         }
         catch (RelayUnavailableException)
         {
@@ -1220,6 +1259,12 @@
         return board.State.IsConnected ? [.. OwnRules.Warnings(board.BoardId).Where(r => r.Kind != OwnRuleKind.InputLinkage)] : [];
     }
 
+    // The warning's rules that "Turn them off" turns off: none on a board that can't, nor a rule it can't turn off now.
+    private IReadOnlyList<OwnRule> TurnsOffToShow(LiveBoard board, IReadOnlyList<OwnRule> rules)
+    {
+        return rules.Count > 0 ? OwnRules.TurnsOff(board.BoardId, rules) : [];
+    }
+
     // What turning off the warning's rules takes with it: only for a board that turns them off.
     private IReadOnlyList<OwnRule> AlsoToShow(LiveBoard board, IReadOnlyList<OwnRule> rules)
     {
@@ -1236,11 +1281,13 @@
     {
         _shownRules.Clear();
         _shownAlso.Clear();
+        _shownTurnsOff.Clear();
         _shownUnavailable.Clear();
         foreach (var board in Boards)
         {
             _shownRules[board.BoardId] = RulesToShow(board);
-            _shownAlso[board.BoardId] = AlsoToShow(board, _shownRules[board.BoardId]);
+            _shownTurnsOff[board.BoardId] = TurnsOffToShow(board, _shownRules[board.BoardId]);
+            _shownAlso[board.BoardId] = AlsoToShow(board, _shownTurnsOff[board.BoardId]);
             _shownUnavailable[board.BoardId] = board.State.Unavailable;
         }
 
@@ -1340,8 +1387,10 @@
                 }
 
                 var rules = RulesToShow(board);
+                var turnsOff = TurnsOffToShow(board, rules);
                 if (!rules.SequenceEqual(_shownRules.GetValueOrDefault(boardId) ?? [])
-                    || !AlsoToShow(board, rules).SequenceEqual(_shownAlso.GetValueOrDefault(boardId) ?? [])
+                    || !turnsOff.SequenceEqual(_shownTurnsOff.GetValueOrDefault(boardId) ?? [])
+                    || !AlsoToShow(board, turnsOff).SequenceEqual(_shownAlso.GetValueOrDefault(boardId) ?? [])
                     || board.State.Unavailable != _shownUnavailable.GetValueOrDefault(boardId))
                 {
                     StateHasChanged();

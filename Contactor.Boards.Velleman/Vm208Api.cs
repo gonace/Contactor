@@ -40,9 +40,12 @@ public static class Vm208Api
     public const int DefaultPort = 80;
 
     /// <summary>
-    /// What the app knows of the board's own rules: it reads each relay's week schedule and turns it off; it can't see a
-    /// pulse or timer started on the board's own page, which lives only in the board's memory and can switch a relay
-    /// hours later (<c>src/PulseAndTimer.cpp</c>), so a person should still check the board's own page.
+    /// What the app knows of the board's own rules: it reads each relay's week schedule and turns it off. It sees a pulse
+    /// or a timer started on the board's own page in the status (<c>pulseActive</c>, <c>timerActive</c>), which lives only
+    /// in the board's memory and can switch a relay hours later (<c>src/PulseAndTimer.cpp</c>), but can't turn it off
+    /// (<see cref="Boards.OwnRules.CantTurnOff"/>). The status can miss one: the board hands each change of those flags
+    /// to whichever answer reads it first, and its answer to <c>/mosfet</c> (the transistor outputs, on its own page)
+    /// takes it without showing it. So a person should still check the board's own page.
     /// </summary>
     public static OwnRulesAbility OwnRules { get; } = new(Reads: true, TurnsOff: true, MayHaveUnseen: true);
 

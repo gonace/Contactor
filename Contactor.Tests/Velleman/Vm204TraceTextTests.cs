@@ -32,4 +32,26 @@ public sealed class Vm204TraceTextTests
         Assert.Equal(0b0101, Vm204TraceText.RelayMask("key=k&relay=1,3"));
         Assert.Equal(0b1000, Vm204TraceText.RelayMask("RELAY=4,5,0,-1,04x"));
     }
+
+    // atoi, as parsePulseAPICommand reads time (Main/api.c): leading digits with a sign, 0 for none, the last one wins.
+    [Theory]
+    [InlineData("key=k&relay=1&time=2", 2)]
+    [InlineData("time=2&relay=1&TIME=7", 7)]
+    [InlineData("time=12s", 12)]
+    [InlineData("time=-3", -3)]
+    [InlineData("time=default", 0)]
+    [InlineData("time=", 0)]
+    [InlineData("time=99999999999", null)]
+    [InlineData("key=k&relay=1", null)]
+    public void Should_ReadThePulseTime_AsTheFirmwareDoes(string query, int? seconds)
+    {
+        Assert.Equal(seconds, Vm204TraceText.PulseSeconds(query));
+    }
+
+    [Fact]
+    public void Should_SayWhatAPulseDoes()
+    {
+        Assert.Equal("Pulse relay 2 and 3 for 2 s", Vm204TraceText.Request("/api/relay/pulse?key=k&relay=2,3&time=2"));
+        Assert.Equal("Pulse relay 1 for ? s", Vm204TraceText.Request("/api/relay/pulse?key=k&relay=1"));
+    }
 }

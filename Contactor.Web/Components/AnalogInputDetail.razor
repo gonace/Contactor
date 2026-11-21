@@ -61,7 +61,7 @@
                     }
                     else
                     {
-                        <p class="now value @(value.State == AnalogValueState.Value ? null : "none")"><span class="number">@value.Text</span>@if (value.Unit.Length > 0)
+                        <p class="now value @(value.State is AnalogValueState.Value or AnalogValueState.TopValue ? null : "none")"><span class="number">@value.Text</span>@if (value.Unit.Length > 0)
                             {
                                 <span class="unit">@value.Unit</span>
                             }</p>
@@ -76,6 +76,9 @@
                             break;
                         case AnalogValueState.AboveRange:
                             <p class="error">@Texts["Analog.AboveRange"]</p>
+                            break;
+                        case AnalogValueState.TopValue:
+                            <p class="hint">@Texts[AnalogValueText.Rises(_input.Scale) ? "Analog.TopValue.More" : "Analog.TopValue.Less"]</p>
                             break;
                         case AnalogValueState.Value when _input.Scale.HasScale:
                             <p class="hint">@Texts["Analog.BoardReads", value.VoltsText]</p>
@@ -114,6 +117,14 @@
                                 @Point(1)
                                 <button type="button" class="use" disabled="@(value.State != AnalogValueState.Value)" @onclick="UseReading">@(value.State == AnalogValueState.Value ? Texts["Analog.UseReading", value.VoltsText] : Texts["Analog.UseReading.None"])</button>
                             </div>
+                            @if (TypedBeyondRange is { } beyond)
+                            {
+                                @* A point above what the board reads: a neutral note on what the screens show at its top value. *@
+                                <div class="note" role="note">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 11v6"></path><path d="M12 7.5v.01"></path></svg>
+                                    <p>@Texts[beyond.Rises ? "Analog.Scale.Above" : "Analog.Scale.Below", beyond.MaxVolts, beyond.Value, beyond.Shown]</p>
+                                </div>
+                            }
                             <p class="hint">@Texts["Analog.Calibrate"]</p>
                         </div>
                     }
@@ -167,6 +178,16 @@
 
     // The unit after a typed value: none until one is chosen.
     private string ValueUnit => _unit == AnalogUnits.None ? "" : AnalogValueText.Unit(new AnalogScale(_unit, _unitText, null, null, null, null));
+
+    // The scale as typed, when it goes beyond what the board reads: the note follows the points as they are typed,
+    // as they would save. Nothing while a point isn't a number or out of range, or no unit is chosen (Save says why).
+    private AnalogBeyondRange? TypedBeyondRange =>
+        _unit != AnalogUnits.None
+        && AnalogNumbers.TryParse(_volts[0], out var volts1) && AnalogNumbers.TryParse(_values[0], out var value1)
+        && AnalogNumbers.TryParse(_volts[1], out var volts2) && AnalogNumbers.TryParse(_values[1], out var value2)
+        && AnalogInputsHandler.AsSaved(_unit, _unitText, volts1, value1, volts2, value2) is { } scale
+            ? AnalogValueText.BeyondRange(scale, Ability)
+            : null;
 
     // One point: "BOARD READS 0.00 V = IT IS −20 °C".
     private RenderFragment Point(int point) => __builder =>

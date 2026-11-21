@@ -103,9 +103,18 @@
                 {
                 <section class="status @(IsOn ? "on" : "")">
                     <p>@StatusSentence</p>
-                    <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy)" @onclick="ToggleAsync">@Texts[IsOn ? "Relays.Detail.TurnOff" : "Relays.Detail.TurnOn"]</button>
-                    @if (_toggleFailed)
+                    @if (IsPulsing)
                     {
+                        @* A pulse the app started runs: no press until it has ended (AppPulses). *@
+                        <button type="button" class="toggle" aria-pressed="@(IsOn ? "true" : "false")" disabled>@Texts["Common.Pulsing"]</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="toggle" data-vibrate aria-pressed="@(IsOn ? "true" : "false")" disabled="@(!State.IsConnected || _busy)" @onclick="ToggleAsync">@Texts[IsOn ? "Relays.Detail.TurnOff" : "Relays.Detail.TurnOn"]</button>
+                    }
+                    @if (_toggleFailed && !(_pulsing && !IsPulsing))
+                    {
+                        @* A refusal for a pulse shows only while the lock lasts: once it has ended, the relay switches again. *@
                         @if (_inGroup)
                         {
                             <p class="error" role="alert">@Texts["Relays.InGroup"]</p>
@@ -113,6 +122,10 @@
                         else if (_beingRemoved)
                         {
                             <p class="error" role="alert">@Texts["Boards.BeingRemoved"]</p>
+                        }
+                        else if (_pulsing)
+                        {
+                            <p class="error" role="alert">@Texts["Relays.Pulsing"]</p>
                         }
                         else
                         {
@@ -396,6 +409,9 @@
     private bool _wanted;
     private bool _inGroup;
 
+    // The press was refused: a pulse the app started runs on the relay (RelayPulsingException).
+    private bool _pulsing;
+
     // The press was refused because the relay's board is being removed (BoardClosedException).
     private bool _beingRemoved;
     private string? _saveError;
@@ -410,6 +426,9 @@
     private int _channel;
 
     private bool IsOn => _channel >= 1 && _channel <= Capabilities.RelayCount && State.IsOn(_channel);
+
+    // A pulse the app started runs on the relay: its button is locked until it has ended (AppPulses).
+    private bool IsPulsing => _channel >= 1 && Board?.IsPulsing(_channel) == true;
 
     private string StatusSentence
     {
@@ -513,6 +532,7 @@
 
         _busy = true;
         _toggleFailed = false;
+        _pulsing = false;
         _wanted = on;
         try
         {
@@ -542,6 +562,13 @@
             _toggleFailed = true;
             _inGroup = true;
             _beingRemoved = false;
+        }
+        catch (RelayPulsingException)
+        {
+            _toggleFailed = true;
+            _inGroup = false;
+            _beingRemoved = false;
+            _pulsing = true;
         }
         catch (RelayUnavailableException)
         {
@@ -665,6 +692,13 @@
                 if (_toggleFailed && !_inGroup && new UnconfirmedPress(Id, _channel, _wanted).IsSettledBy(State))
                 {
                     _toggleFailed = false;
+                }
+
+                // A refusal for a pulse that has ended since: the relay switches again.
+                if (_pulsing && !IsPulsing)
+                {
+                    _toggleFailed = false;
+                    _pulsing = false;
                 }
 
                 StateHasChanged();

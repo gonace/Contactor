@@ -42,16 +42,17 @@ public sealed class ExpectedChanges
 
     /// <summary>
     /// Expects every relay (channel) in <paramref name="mask"/> to become <paramref name="on"/>, for <see cref="Lifetime"/>, or
-    /// <paramref name="lifetime"/> for a change the board makes later by itself, e.g. the end of a pulse.
+    /// <paramref name="lifetime"/> for a change the board makes later by itself, e.g. the end of a pulse. An
+    /// <paramref name="owner"/> lets <see cref="Forget(object)"/> drop exactly these again.
     /// </summary>
-    public void Expect(ChannelMask mask, bool on, TimeSpan? lifetime = null)
+    public void Expect(ChannelMask mask, bool on, TimeSpan? lifetime = null, object? owner = null)
     {
         var expires = _utcNow() + (lifetime ?? Lifetime);
         lock (_lock)
         {
             foreach (var channel in mask.Channels)
             {
-                _expected.Add(new Entry(channel, on, expires, Seen: false));
+                _expected.Add(new Entry(channel, on, expires, Seen: false, owner));
             }
 
             if (_expected.Count > MaxExpected)
@@ -83,6 +84,19 @@ public sealed class ExpectedChanges
                     _expected.RemoveAt(index);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Drops the expectations <see cref="Expect"/> added with <paramref name="owner"/>, and only those: for a pulse that
+    /// failed, so the expectations of a command for the same relay meanwhile stay.
+    /// </summary>
+    public void Forget(object owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        lock (_lock)
+        {
+            _expected.RemoveAll(e => ReferenceEquals(e.Owner, owner));
         }
     }
 
@@ -204,5 +218,5 @@ public sealed class ExpectedChanges
     }
 
     // Seen: a status showed the change, so it is no longer on its way; the recorder still uses it up.
-    private readonly record struct Entry(int Channel, bool On, DateTime ExpiresUtc, bool Seen);
+    private readonly record struct Entry(int Channel, bool On, DateTime ExpiresUtc, bool Seen, object? Owner = null);
 }
