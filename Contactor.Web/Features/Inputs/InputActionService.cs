@@ -216,6 +216,11 @@ public sealed partial class InputActionService : BackgroundService, IBoardWatche
             {
                 LogRelayInGroup(change.InputId, action.RelayId);
             }
+            catch (RelayPulsingException)
+            {
+                // The app's own pulse runs on that relay: its end would undo an ON. Nothing was sent.
+                LogPulsing(change.InputId, action.RelayId);
+            }
             catch (Exception ex) when (ex is RelayUnavailableException or GroupUnavailableException)
             {
                 // The board controls that relay by itself: nothing was sent.
@@ -406,6 +411,9 @@ public sealed partial class InputActionService : BackgroundService, IBoardWatche
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Input {InputId} didn't switch its relay or group: the board controls the relay itself")]
     private partial void LogUnavailable(int inputId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Input {InputId} didn't turn on relay {RelayId}: a pulse the app started runs on it")]
+    private partial void LogPulsing(int inputId, int? relayId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Input {InputId}'s actions failed")]
     private partial void LogFailed(Exception exception, int inputId);

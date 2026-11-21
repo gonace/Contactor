@@ -1,5 +1,6 @@
 using Contactor.Boards;
 using Contactor.Web.Features.Events;
+using Contactor.Web.Features.Relays;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -74,6 +75,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         // Listening from now on, before the first connection.
         Trace = new BoardTrace(this, time, loggerFactory.CreateLogger<BoardTrace>());
         Expected = new ExpectedChanges(time);
+        Pulses = new AppPulses(time);
     }
 
     /// <inheritdoc/>
@@ -127,6 +129,18 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     /// change outside the app. Only this board's: a channel means a relay on this board.
     /// </summary>
     public ExpectedChanges Expected { get; }
+
+    /// <summary>
+    /// The pulses the app started on this board, by channel: while one runs, the relay's ON and OFF are locked
+    /// (<see cref="IsPulsing"/>). Only this board's.
+    /// </summary>
+    public AppPulses Pulses { get; }
+
+    /// <summary>Whether the app's pulse on <paramref name="channel"/> still runs, as the board's latest state shows it.</summary>
+    public bool IsPulsing(int channel)
+    {
+        return Pulses.IsPulsing(channel, State.IsOn(channel));
+    }
 
     /// <summary>
     /// The latest steps on this board's connection, for the Debug screen: kept when its model is replaced, and in
@@ -280,7 +294,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
 
     /// <summary>
     /// Moves the board to <paramref name="endpoint"/>. At a new address the changes the app just asked the old one for
-    /// are no longer expected (<see cref="Expected"/>): another board may be there, and its changes are its own.
+    /// are no longer expected (<see cref="Expected"/>), and its pulses are forgotten (<see cref="Pulses"/>): another board may be there, and its changes are its own.
     /// </summary>
     /// <exception cref="InvalidOperationException">Before a model is chosen: it has no address to change.</exception>
     public void SetEndpoint(BoardEndpoint endpoint)
@@ -292,6 +306,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         if (moved)
         {
             Expected.Clear();
+            Pulses.Clear();
         }
     }
 
@@ -554,6 +569,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
         }
 
         Trace.Dispose();
+        Pulses.Dispose();
         if (slot is null)
         {
             return;

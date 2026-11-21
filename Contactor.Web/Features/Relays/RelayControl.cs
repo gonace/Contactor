@@ -16,7 +16,10 @@ namespace Contactor.Web.Features.Relays;
 /// a group is only turned on and off through its group (<see cref="GroupSequencer"/>), which keeps the group's order and
 /// interlock. A relay its board controls by itself and ignores commands for (<see cref="BoardState.Unavailable"/>, e.g. a
 /// Waveshare relay in linkage mode) is refused with <see cref="RelayUnavailableException"/> before anything is sent or
-/// logged: a command would change nothing, and an event would say it had.
+/// logged: a command would change nothing, and an event would say it had. While a pulse the app started runs on a relay
+/// (<see cref="AppPulses"/>), its ON, its OFF by a person and another pulse are refused with
+/// <see cref="RelayPulsingException"/>, before anything is sent or logged. An input's OFF still goes, and so do "All off",
+/// auto-off, the schedules and the groups, which don't come through here or never meet a pulse.
 /// </summary>
 public sealed class RelayControl
 {
@@ -50,6 +53,7 @@ public sealed class RelayControl
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(board, mask, cancellationToken);
         EnsureAvailable(board, mask);
+        EnsureNotPulsing(board, mask);
         await SendAsync(board, mask, on: true, cancellationToken);
 
         // The ON went out: from here it is recorded whatever happens to the caller.
@@ -87,11 +91,15 @@ public sealed class RelayControl
 
         await EnsureNotInGroupAsync(board, mask, cancellationToken);
         EnsureAvailable(board, mask);
+        EnsureNotPulsing(board, mask);
         var expected = board.Expected;
         expected.Expect(mask, on: true);
 
         // The board's own OFF comes after the pulse, and on a board the app polls up to a poll or two later.
         expected.Expect(mask, on: false, length + PulseOffWait);
+
+        // Locked from before it goes out, so no press slips in between; a pulse that didn't go out unlocks again.
+        board.Pulses.Start(mask, length, _changes.Notify);
         try
         {
             await board.PulseAsync(mask, length, cancellationToken);
@@ -101,6 +109,8 @@ public sealed class RelayControl
             // As for ON: a failed or cancelled pulse logs nothing, and whatever the board did shows as an external change.
             expected.Forget(mask, on: true);
             expected.Forget(mask, on: false);
+            board.Pulses.Forget(mask);
+            _changes.Notify();
             throw;
         }
 
@@ -132,13 +142,21 @@ public sealed class RelayControl
     /// <summary>How long after a pulse's end its OFF is still expected: a slow or failed poll or two on a polled board.</summary>
     public static readonly TimeSpan PulseOffWait = TimeSpan.FromSeconds(30);
 
-    /// <summary>Turns a relay off for a person or an input, as a press of its button.</summary>
+    /// <summary>
+    /// Turns a relay off for a person or an input, as a press of its button. A person's is refused while the app's pulse
+    /// on the relay runs (<see cref="RelayPulsingException"/>); an input's OFF still goes.
+    /// </summary>
     public async Task TurnOffAsync(int relayId, string actor, CancellationToken cancellationToken)
     {
         var (board, mask) = await TargetAsync(relayId, cancellationToken);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         await EnsureNotInGroupAsync(board, mask, cancellationToken);
         EnsureAvailable(board, mask);
+        if (!EventActors.TryInput(actor, out _))
+        {
+            EnsureNotPulsing(board, mask);
+        }
+
         var sent = _clock.UtcNow;
         await SendAsync(board, mask, on: false, cancellationToken);
 
@@ -368,6 +386,15 @@ public sealed class RelayControl
         }
     }
 
+    // The app's own pulse runs on the relay: a press would be undone by its end, or end it early (AppPulses).
+    private static void EnsureNotPulsing(LiveBoard board, ChannelMask mask)
+    {
+        if (board.Pulses.Pulsing(mask, board.State) != ChannelMask.None)
+        {
+            throw new RelayPulsingException();
+        }
+    }
+
     private async Task EnsureNotInGroupAsync(LiveBoard board, ChannelMask mask, CancellationToken cancellationToken)
     {
         if ((await _groups.MemberMaskAsync(board.BoardId, cancellationToken)).Overlaps(mask))
@@ -431,6 +458,28 @@ public sealed class RelayUnavailableException : InvalidOperationException
     }
 
     public RelayUnavailableException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+/// <summary>
+/// A relay was to be switched or pulsed while a pulse the app started runs on it (<see cref="AppPulses"/>). Nothing was
+/// sent or logged; the relay can be switched again once the pulse has ended.
+/// </summary>
+public sealed class RelayPulsingException : InvalidOperationException
+{
+    public RelayPulsingException()
+        : base("The relay is pulsing; switch it once the pulse has ended.")
+    {
+    }
+
+    public RelayPulsingException(string message)
+        : base(message)
+    {
+    }
+
+    public RelayPulsingException(string message, Exception innerException)
         : base(message, innerException)
     {
     }

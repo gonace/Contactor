@@ -8,6 +8,7 @@
 @using Contactor.Web.Persistence
 @inject SetupHandler Setup
 @inject BoardRegistry Registry
+@inject RelayChanges Changes
 @inject ILogger<BoardRelaysStep> Log
 @inject AppLanguage Language
 
@@ -31,6 +32,9 @@
     @foreach (var relay in Rows)
     {
         var on = Board.State.IsOn(relay.Channel);
+
+        // A pulse the app started ("Try" on a board with a pulse) runs: locked until it has ended (AppPulses).
+        var pulsing = Board.IsPulsing(relay.Channel);
         <li class="relay" @key="relay.Id">
             <label class="label" for="@($"relay-{relay.Id}")">@Texts["Relays.RelayLabel", relay.Channel]</label>
             <div class="row">
@@ -38,8 +42,8 @@
                        placeholder="@relay.DefaultName" @bind="relay.Name" @bind:event="oninput" />
                 <button type="button" class="small try" aria-pressed="@(on ? "true" : "false")"
                         aria-label="@Texts["Boards.Relays.TryLabel", relay.Channel]"
-                        disabled="@(on || relay.Trying || relay.GroupName is not null || !Board.State.IsConnected)"
-                        @onclick="() => TryAsync(relay)">@Texts[on ? "Boards.Relays.On" : "Boards.Relays.Try"]</button>
+                        disabled="@(on || pulsing || relay.Trying || relay.GroupName is not null || !Board.State.IsConnected)"
+                        @onclick="() => TryAsync(relay)">@Texts[pulsing ? "Common.Pulsing" : on ? "Boards.Relays.On" : "Boards.Relays.Try"]</button>
             </div>
             <label class="check" for="@($"use-{relay.Id}")">
                 <input id="@($"use-{relay.Id}")" type="checkbox" @bind="relay.IsActive" />
@@ -111,6 +115,8 @@
             Registry.StateChanged += OnBoardChanged;
             Registry.OwnRulesChanged -= OnOwnRulesChanged;
             Registry.OwnRulesChanged += OnOwnRulesChanged;
+            Changes.Changed -= OnRelaysChanged;
+            Changes.Changed += OnRelaysChanged;
             _watched = Board.BoardId;
         }
     }
@@ -124,6 +130,7 @@
     {
         Registry.StateChanged -= OnBoardChanged;
         Registry.OwnRulesChanged -= OnOwnRulesChanged;
+        Changes.Changed -= OnRelaysChanged;
     }
 
     // The text's key of the line about the board's own rules, or null for none: "couldn't read" for a board that answers
@@ -170,6 +177,10 @@
         {
             relay.Error = Texts["OwnRules.Unavailable.Refused"];
         }
+        catch (RelayPulsingException)
+        {
+            relay.Error = Texts["Relays.Pulsing"];
+        }
         catch (Exception ex)
         {
             Log.LogError(ex, "\"Try\" failed for relay {RelayId}", relay.Id);
@@ -188,6 +199,12 @@
         {
             _ = RefreshAsync();
         }
+    }
+
+    // A relay was switched or pulsed, or a pulse the app started ended (AppPulses): the "Try" buttons may change.
+    private void OnRelaysChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshAsync();
     }
 
     // From the board's read loop, when only its own rules changed: the line may change, nothing else on the step.

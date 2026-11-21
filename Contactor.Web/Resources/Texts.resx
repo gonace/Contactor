@@ -648,6 +648,10 @@
     <value>{0} · Contactor</value>
     <comment>The browser tab's title: {0} is the screen's name.</comment>
   </data>
+  <data name="Common.Pulsing" xml:space="preserve">
+    <value>Pulsing…</value>
+    <comment>On a relay's button while a pulse the app started runs on it (e.g. "Try"): the button can't be pressed then.</comment>
+  </data>
   <data name="Common.Reconnecting" xml:space="preserve">
     <value>Reconnecting…</value>
     <comment>The bar at the bottom while the page's connection is broken.</comment>
@@ -2482,6 +2486,9 @@
   <data name="Relays.Problem.SeeSettings" xml:space="preserve">
     <value>{0} See Settings.</value>
     <comment>{0} is why the board refuses the connection, as Boards.Problem.* gives it.</comment>
+  </data>
+  <data name="Relays.Pulsing" xml:space="preserve">
+    <value>This relay is pulsing. Switch it when the pulse has ended.</value>
   </data>
   <data name="Relays.RelayLabel" xml:space="preserve">
     <value>RELAY {0}</value>

@@ -600,6 +600,9 @@
   <data name="Common.PageTitle" xml:space="preserve">
     <value>{0} · Contactor</value>
   </data>
+  <data name="Common.Pulsing" xml:space="preserve">
+    <value>Pulsar…</value>
+  </data>
   <data name="Common.Reconnecting" xml:space="preserve">
     <value>Ansluter igen…</value>
   </data>
@@ -2239,6 +2242,9 @@
   </data>
   <data name="Relays.Problem.SeeSettings" xml:space="preserve">
     <value>{0} Se Inställningar.</value>
+  </data>
+  <data name="Relays.Pulsing" xml:space="preserve">
+    <value>Reläet pulsar. Slå om det när pulsen är slut.</value>
   </data>
   <data name="Relays.RelayLabel" xml:space="preserve">
     <value>RELÄ {0}</value>
