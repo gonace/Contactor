@@ -119,13 +119,32 @@ h2 {
     color: var(--muted);
 }
 
-/* A save that failed, and a scale beyond what the board reads: in red, as the person should act on both. */
-.error,
-.warning {
+.error {
     margin: 0;
     font-size: 14px;
     font-weight: 600;
     color: var(--danger-ink);
+}
+
+/* A scale beyond what the board reads: a neutral note with an "i", not an error, as the scale still saves. */
+.note {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--chip);
+    color: var(--ink);
+}
+
+.note svg {
+    flex-shrink: 0;
+    color: var(--muted);
+}
+
+.note p {
+    margin: 0;
+    font-size: 14px;
 }
 
 .save {
