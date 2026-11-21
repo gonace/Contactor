@@ -2049,6 +2049,14 @@
   <data name="OwnRules.Reset.Label" xml:space="preserve">
     <value>Reset relay {0}</value>
   </data>
+  <data name="OwnRules.Running.Later" xml:space="preserve">
+    <value>The relay's schedule can be turned off or kept once it has ended.</value>
+    <comment>Under a disabled "Keep" for a pulse or a timer that runs on the board now; also why a "Keep" is refused then.</comment>
+  </data>
+  <data name="OwnRules.Running.Title" xml:space="preserve">
+    <value>Running on the board right now</value>
+    <comment>Heads the relays with a pulse or a timer started on the board's own page, which the app can't turn off.</comment>
+  </data>
   <data name="OwnRules.Step.Intro_One" xml:space="preserve">
     <value>It can turn a relay on and off without Contactor.</value>
     <comment>Under the own rules step's heading, for one rule.</comment>

@@ -68,7 +68,8 @@ public sealed class BoardOwnRulesStepTests
         Assert.Empty(Errors(page));
     }
 
-    // Relay 3's timer runs on the board now and can't be turned off: the step says so under it, "Turn it off" sends only
+    // Relay 3's timer runs on the board now and can't be turned off: the step shows it in its own group, "Turn it off" and
+    // "Keep it" are for relay 5's alone, and "Turn it off" sends only
     // relay 5's and goes on once that is gone. Relay 3's is neither sent, turned off nor logged; it stays a rule, and
     // Relays warns about it.
     [Fact]
@@ -82,8 +83,11 @@ public sealed class BoardOwnRulesStepTests
         await page.ClickAsync(Button("Next"));
 
         var text = await page.TextAsync();
+        Assert.Contains("Running on the board right now", text, StringComparison.Ordinal);
         Assert.Contains("Started on the board's own web page. It ends by itself, and Contactor can't stop it.", text, StringComparison.Ordinal);
+        Assert.Contains("The relay's schedule can be turned off or kept once it has ended.", text, StringComparison.Ordinal);
         Assert.False(await page.HasAsync(Button("Turn them off")));
+        Assert.False(await page.HasAsync(Button("Keep them")));
 
         await page.ClickAsync(Button("Turn it off"));
 

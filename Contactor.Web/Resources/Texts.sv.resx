@@ -1850,6 +1850,12 @@
   <data name="OwnRules.Reset.Label" xml:space="preserve">
     <value>Återställ relä {0}</value>
   </data>
+  <data name="OwnRules.Running.Later" xml:space="preserve">
+    <value>Reläets schema kan stängas av eller behållas när den är klar.</value>
+  </data>
+  <data name="OwnRules.Running.Title" xml:space="preserve">
+    <value>Pågår på kortet just nu</value>
+  </data>
   <data name="OwnRules.Step.Intro_One" xml:space="preserve">
     <value>Den kan slå på och stänga av ett relä utan Contactor.</value>
   </data>
