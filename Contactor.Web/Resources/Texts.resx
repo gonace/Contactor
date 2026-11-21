@@ -1925,11 +1925,11 @@
     <comment>As OwnRules.Also.AutoOn, for toggle rules.</comment>
   </data>
   <data name="OwnRules.CanSwitch_One" xml:space="preserve">
-    <value>It can switch {0} without Contactor.</value>
+    <value>It can switch {0} on and off without Contactor.</value>
     <comment>Under OwnRules.Warning: {0} is e.g. "relay 3" (OwnRules.Relay).</comment>
   </data>
   <data name="OwnRules.CanSwitch_Other" xml:space="preserve">
-    <value>They can switch {0} without Contactor.</value>
+    <value>They can switch {0} on and off without Contactor.</value>
     <comment>Under OwnRules.Warning: {0} is e.g. "relays 3 and 5" (OwnRules.Relays).</comment>
   </data>
   <data name="OwnRules.CantTurnOff" xml:space="preserve">
@@ -1993,7 +1993,7 @@
     <comment>On a relay's card on Relays.</comment>
   </data>
   <data name="OwnRules.CardLine.Timer" xml:space="preserve">
-    <value>The board's timer can switch it</value>
+    <value>The relay is also run by a timer on the board</value>
     <comment>On a relay's card on Relays.</comment>
   </data>
   <data name="OwnRules.CardLine.Toggle" xml:space="preserve">
@@ -2165,11 +2165,19 @@
   <data name="OwnRules.TurnOff.NotTaken" xml:space="preserve">
     <value>The relay board didn't turn them off. Try again.</value>
   </data>
+  <data name="OwnRules.TurnOffAllRelays" xml:space="preserve">
+    <value>Turn them all off</value>
+    <comment>The warning's button on Relays when two or more relays have rules of the board that can be turned off: turns them all off. With one, the button is only on that relay's card.</comment>
+  </data>
   <data name="OwnRules.TurnOffAll_One" xml:space="preserve">
     <value>Turn it off</value>
   </data>
   <data name="OwnRules.TurnOffAll_Other" xml:space="preserve">
     <value>Turn them off</value>
+  </data>
+  <data name="OwnRules.TurnOffTimer" xml:space="preserve">
+    <value>Turn off the timer</value>
+    <comment>The button on a relay's card on Relays, under OwnRules.CardLine.Timer: turns off only that relay's timers on the board.</comment>
   </data>
   <data name="OwnRules.Unavailable.GroupText_One" xml:space="preserve">
     <value>The board controls it itself. Reset it to start the group.</value>

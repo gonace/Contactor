@@ -33,7 +33,7 @@ public sealed class OwnRulesText
         return _texts[$"OwnRules.Warning.{Kind(rules.Select(r => r.Kind))}{Plurals.Form(rules.Count)}", boardName ?? _texts["OwnRules.TheBoard"]];
     }
 
-    /// <summary>The warning's text: "They can switch relays 3 and 5 without Contactor."</summary>
+    /// <summary>The warning's text: "They can switch relays 3 and 5 on and off without Contactor."</summary>
     public string CanSwitch(IReadOnlyCollection<OwnRule> rules)
     {
         ArgumentNullException.ThrowIfNull(rules);
@@ -44,6 +44,23 @@ public sealed class OwnRulesText
     public string TurnOffAll(int count)
     {
         return _texts["OwnRules.TurnOffAll" + Plurals.Form(count)];
+    }
+
+    /// <summary>
+    /// The warning's button on Relays, there only with two or more relays to turn off (Issue #616): "Turn them all off".
+    /// </summary>
+    public string TurnOffAllRelays()
+    {
+        return _texts["OwnRules.TurnOffAllRelays"];
+    }
+
+    /// <summary>
+    /// The button on a relay's card on Relays that turns off only that relay's rules: "Turn off the timer" for timers,
+    /// "Turn off" for any other kind.
+    /// </summary>
+    public string TurnOffRelay(IEnumerable<OwnRuleKind> kinds)
+    {
+        return _texts[Kind(kinds) == "Timer" ? "OwnRules.TurnOffTimer" : "OwnRules.TurnOff"];
     }
 
     /// <summary>The step's heading while the board is being added: "This board has timers of its own".</summary>
@@ -71,7 +88,7 @@ public sealed class OwnRulesText
         return _texts["OwnRules.KeepAll" + Plurals.Form(count)];
     }
 
-    /// <summary>The line on a relay's card: "The board's timer can switch it".</summary>
+    /// <summary>The line on a relay's card: "The relay is also run by a timer on the board".</summary>
     public string CardLine(IEnumerable<OwnRuleKind> kinds)
     {
         return _texts[$"OwnRules.CardLine.{Kind(kinds)}"];
