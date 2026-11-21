@@ -35,7 +35,7 @@ public sealed class ShellySimulatedBoardTests
 
         var status = Body(await PostAsync(device.Port, "{\"id\":2,\"method\":\"Shelly.GetStatus\"}"));
         var frame = ShellyJson.ReadFrame(Encoding.UTF8.GetBytes(status), 2);
-        Assert.Equal(new ShellySwitches(2, 0b10, 10, 0, Inputs: 0b11, InputsOn: 0), ShellyJson.ReadSwitches(frame.Result!.Value));
+        Assert.Equal(new ShellySwitches(2, 0b10, 10, 0, Inputs: 0b11, InputsOn: 0, InputsPresent: 0b11), ShellyJson.ReadSwitches(frame.Result!.Value));
     }
 
     [Fact]

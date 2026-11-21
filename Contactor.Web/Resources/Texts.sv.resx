@@ -1622,6 +1622,9 @@
   <data name="Inputs.NoEvents" xml:space="preserve">
     <value>Den här ingången har inte ändrats än.</value>
   </data>
+  <data name="Inputs.NotSwitch" xml:space="preserve">
+    <value>Ingången är inte inställd som brytare på enheten</value>
+  </data>
   <data name="Inputs.Nothing" xml:space="preserve">
     <value>Inget</value>
   </data>
@@ -1743,10 +1746,10 @@
     <value>Gör också att ingångarna inte längre slår om {0}.</value>
   </data>
   <data name="OwnRules.CanSwitch_One" xml:space="preserve">
-    <value>Den kan slå om {0} utan Contactor.</value>
+    <value>Den kan slå på och av {0} utan Contactor.</value>
   </data>
   <data name="OwnRules.CanSwitch_Other" xml:space="preserve">
-    <value>De kan slå om {0} utan Contactor.</value>
+    <value>De kan slå på och av {0} utan Contactor.</value>
   </data>
   <data name="OwnRules.CantTurnOff" xml:space="preserve">
     <value>Startad på kortets egen webbsida. Den slutar av sig själv, och Contactor kan inte stoppa den.</value>
@@ -1800,7 +1803,7 @@
     <value>Kortets egen regel kan slå om det</value>
   </data>
   <data name="OwnRules.CardLine.Timer" xml:space="preserve">
-    <value>Kortets timer kan slå om det</value>
+    <value>Reläet styrs också av en timer på kortet</value>
   </data>
   <data name="OwnRules.CardLine.Toggle" xml:space="preserve">
     <value>En puls på dess ingång kan slå om det</value>
@@ -1949,11 +1952,23 @@
   <data name="OwnRules.TurnOff.NotTaken" xml:space="preserve">
     <value>Reläkortet stängde inte av dem. Försök igen.</value>
   </data>
+  <data name="OwnRules.TurnOffAllRelays" xml:space="preserve">
+    <value>Stäng av alla</value>
+  </data>
   <data name="OwnRules.TurnOffAll_One" xml:space="preserve">
     <value>Stäng av den</value>
   </data>
   <data name="OwnRules.TurnOffAll_Other" xml:space="preserve">
     <value>Stäng av dem</value>
+  </data>
+  <data name="OwnRules.TurnOffTimer" xml:space="preserve">
+    <value>Stäng av timern</value>
+  </data>
+  <data name="OwnRules.TurnOffTimer.Label" xml:space="preserve">
+    <value>Stäng av timern för relä {0}</value>
+  </data>
+  <data name="OwnRules.TurnOffTimer.LabelNamed" xml:space="preserve">
+    <value>Stäng av timern för relä {0} ({1})</value>
   </data>
   <data name="OwnRules.Unavailable.GroupText_One" xml:space="preserve">
     <value>Kortet styr det självt. Återställ det för att starta gruppen.</value>

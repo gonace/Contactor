@@ -90,7 +90,7 @@ public sealed class ShellyBoard : IRelayBoard
     public static BoardState ToBoardState(ShellyState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc, state.Problem, OwnRules: state.OwnRules, PowerOn: state.PowerOn, UnknownInputs: new ChannelMask(state.UnknownInputs));
+        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc, state.Problem, OwnRules: state.OwnRules, PowerOn: state.PowerOn, UnknownInputs: new ChannelMask(state.UnknownInputs), NotSwitchInputs: new ChannelMask(state.NotSwitchInputs));
     }
 
     // Only relays the entry has; throws before anything is sent.

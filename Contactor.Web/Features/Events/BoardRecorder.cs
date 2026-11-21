@@ -351,9 +351,10 @@ public sealed partial class BoardRecorder : IBoardPart, IAsyncDisposable
     }
 
     // How many inputs to look at: the board's, or more while the status in hand has an input above them on. A board that
-    // says its count at each connection (a Shelly) may have had more when that status came, e.g. one handled again
-    // after a reconnect with fewer: an input it shows on is still logged. Only the status in hand widens it, never the
-    // one before: an input a reconnect no longer counts isn't logged as gone off.
+    // says its count at each connection (a Shelly, which counts every input it has) may have had more when that status
+    // came, e.g. one handled again after the device was replaced by one with fewer: an input it shows on is still
+    // logged. Only the status in hand widens it, never the one before: an input a reconnect no longer counts isn't
+    // logged as gone off.
     private int InputChannels(ChannelMask inputs)
     {
         return Math.Max(_board.Capabilities.InputCount, 64 - System.Numerics.BitOperations.LeadingZeroCount(inputs.Bits));

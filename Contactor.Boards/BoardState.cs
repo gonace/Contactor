@@ -38,12 +38,17 @@ namespace Contactor.Boards;
 /// Ignored while <see cref="OwnRules"/> is known.
 /// </param>
 /// <param name="UnknownInputs">
-/// The inputs whose state the board can't tell now, though it has them: a Shelly's input whose setting was changed on
-/// the device during the connection (made a button, or turned off), until the next connection. Their bit in
-/// <see cref="Inputs"/> is 0. The screens show them as unknown, and the app never logs a change of them or acts on one.
-/// None on every other board.
+/// The inputs whose state the board can't tell now, though it has them: a Shelly's input not set as a switch on the
+/// device (<see cref="NotSwitchInputs"/>), or whose setting was changed on the device during the connection (made a
+/// button, or turned off), until the next connection. Their bit in <see cref="Inputs"/> is 0. The screens show them as
+/// unknown, and the app never logs a change of them or acts on one. None on every other board.
 /// </param>
-public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null, AnalogReadings? Analog = null, OwnRules? OwnRules = null, PowerOnStates? PowerOn = null, ChannelMask KeptUnavailable = default, ChannelMask UnknownInputs = default)
+/// <param name="NotSwitchInputs">
+/// The inputs of <see cref="UnknownInputs"/> that aren't set as a switch on the device (a Shelly's button, analog or
+/// count input, or one turned off), so the screens can say why. The others had their setting changed during the
+/// connection. None on every other board.
+/// </param>
+public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMask Inputs, DateTimeOffset? LastContactUtc, ConnectionProblem? Problem = null, AnalogReadings? Analog = null, OwnRules? OwnRules = null, PowerOnStates? PowerOn = null, ChannelMask KeptUnavailable = default, ChannelMask UnknownInputs = default, ChannelMask NotSwitchInputs = default)
 {
     public static BoardState Initial { get; } = new(false, ChannelMask.None, ChannelMask.None, null);
 
@@ -66,6 +71,15 @@ public sealed record BoardState(bool IsConnected, ChannelMask Relays, ChannelMas
     public bool IsInputKnown(int input)
     {
         return HasAnswered && !UnknownInputs.Contains(input);
+    }
+
+    /// <summary>
+    /// Whether the input is unknown because it isn't set as a switch on the device, 1 being the first: it has answered,
+    /// and the input is one of <see cref="UnknownInputs"/> and of <see cref="NotSwitchInputs"/>.
+    /// </summary>
+    public bool IsInputNotSwitch(int input)
+    {
+        return HasAnswered && UnknownInputs.Contains(input) && NotSwitchInputs.Contains(input);
     }
 
     /// <summary>Whether a relay is on, 1 being the first.</summary>

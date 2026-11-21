@@ -312,11 +312,17 @@
     // The rules each board's "Turn them off" turns off (OwnRulesHandler.TurnsOff), by board id: kept as the page is drawn.
     private readonly Dictionary<int, IReadOnlyList<OwnRule>> _shownTurnsOff = [];
 
+    // Each relay's own "Turn off the timer" on its card (issue #616), by board id: the timers of that relay it turns off
+    // and what it takes with it, in relay order. Timers only: other kinds stay on the warning's button. Kept as the page
+    // is drawn.
+    private readonly Dictionary<int, IReadOnlyList<RelayTurnOff>> _shownRelayTurnOffs = [];
+
     // The relays each board controls by itself, by board id: kept as the page is drawn.
     private readonly Dictionary<int, ChannelMask> _shownUnavailable = [];
 
-    // "Turn them off" that went wrong, on the board's warning.
-    private (int BoardId, string Message)? _rulesError;
+    // "Turn them all off" that went wrong, on the board's warning (no channel), or a relay's "Turn off the timer", on
+    // that relay's card.
+    private (int BoardId, int? Channel, string Message)? _rulesError;
 
     // "Reset" that went wrong, under the relay's or the group's card, by the relay's or the group's key.
     private (string Key, string Message)? _resetError;
@@ -548,17 +554,18 @@
                 <span>@OwnRulesText.CanSwitch(rules)</span>
                 @* A rule that runs on the board right now, in a group of its own (issue #552). *@
                 <OwnRulesRunning Channels="@([.. rules.Where(r => OwnRules.RunsOnBoard(board.BoardId, r)).Select(r => r.Relay).Distinct()])" Names="RelayNames(board.BoardId)" />
-                @* Only the rules the app can turn off: not a timer the board runs now and ends by itself. *@
-                @if (_shownTurnsOff.GetValueOrDefault(board.BoardId) is { Count: > 0 } turnsOff)
+                @* Only the rules the app can turn off: not a timer the board runs now and ends by itself. Each relay's card has
+                   its own button (issue #616); this one turns them all off (TurnOffAllText). *@
+                @if (_shownTurnsOff.GetValueOrDefault(board.BoardId) is { Count: > 0 } turnsOff && TurnOffAllText(board.BoardId, turnsOff) is { } turnOffAll)
                 {
                     @* Said before the press: other relays' rules that go with these ("Also turns off the board's timer for Heat."). *@
                     @if (_shownAlso.GetValueOrDefault(board.BoardId) is { Count: > 0 } also)
                     {
                         <span class="also">@OwnRulesText.AlsoTurnsOff(also, RelayNames(board.BoardId))</span>
                     }
-                    <button type="button" class="turn-off-rules" disabled="@(_busy || !board.State.IsConnected)" @onclick="() => TurnOffRulesAsync(board.BoardId, turnsOff)">@OwnRulesText.TurnOffAll(turnsOff.Count)</button>
+                    <button type="button" class="turn-off-rules" disabled="@(_busy || !board.State.IsConnected)" @onclick="() => TurnOffRulesAsync(board.BoardId, turnsOff, null)">@turnOffAll</button>
                 }
-                @if (_rulesError is { } error && error.BoardId == board.BoardId)
+                @if (_rulesError is { Channel: null } error && error.BoardId == board.BoardId)
                 {
                     <span class="rules-error" role="alert">@error.Message</span>
                 }
@@ -566,19 +573,74 @@
         </div>
     };
 
-    // A line on the card of a relay the board's own rules can switch: "(clock) The board's timer can switch it".
+    // A line on the card of a relay the board's own rules can switch: "(clock) The relay is also run by a timer on the
+    // board". In the card's link, for the rules without a "Turn off the timer": the timers that have one go under the
+    // card with it (OwnRuleTurnOff).
     private RenderFragment OwnRuleLine(Relay relay) => __builder =>
     {
-        if (_shownRules.GetValueOrDefault(relay.BoardId) is not { Count: > 0 } rules || !rules.Any(r => r.Relay == relay.Channel))
+        var underCard = RelayTurnOffOf(relay)?.Rules ?? [];
+        List<OwnRule> rules = [.. _shownRules.GetValueOrDefault(relay.BoardId)?.Where(r => r.Relay == relay.Channel && !underCard.Contains(r)) ?? []];
+        if (rules.Count == 0)
         {
             return;
         }
 
+        @OwnRuleLineText(rules)
+    };
+
+    private RenderFragment OwnRuleLineText(IEnumerable<OwnRule> rules) => __builder =>
+    {
         <span class="input-line own-rule-line">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
-            <span>@OwnRulesText.CardLine(rules.Where(r => r.Relay == relay.Channel).Select(r => r.Kind))</span>
+            <span>@OwnRulesText.CardLine(rules.Select(r => r.Kind))</span>
         </span>
     };
+
+    // Under the card of a relay with timers of the board the app can turn off (issue #616): the line, what else goes with
+    // them, and "Turn off the timer" for this relay's timers only. Not a relay whose rule runs on the board now (the
+    // warning's "Running on the board right now"), nor a kept rule, nor another kind (e.g. an auto-on): a "Turn off" next
+    // to the relay's ON/OFF could be pressed to turn the relay off, and change the device's setting instead.
+    private RenderFragment OwnRuleTurnOff(Relay relay) => __builder =>
+    {
+        if (RelayTurnOffOf(relay) is not { } turnOff)
+        {
+            return;
+        }
+
+        var connected = StateOf(relay.BoardId).IsConnected;
+        <div class="own-rule-row">
+            @OwnRuleLineText(turnOff.Rules)
+            @if (OwnRulesText.AlsoTurnsOff(turnOff.Also, RelayNames(relay.BoardId)) is { } also)
+            {
+                <span class="also">@also</span>
+            }
+            <button type="button" class="turn-off-rule" aria-label="@OwnRulesText.TurnOffTimerLabel(relay.Channel, relay.Name)" disabled="@(_busy || !connected)" @onclick="() => TurnOffRulesAsync(relay.BoardId, turnOff.Rules, relay.Channel)">@OwnRulesText.TurnOffTimer()</button>
+            @if (_rulesError is { } error && error.BoardId == relay.BoardId && error.Channel == relay.Channel)
+            {
+                <span class="rules-error" role="alert">@error.Message</span>
+            }
+        </div>
+    };
+
+    // The warning's button, or null for none: "Turn them all off" with two or more relays to turn off. With one, only
+    // when one of its rules has no button on a card shown on the page (not a timer, or a relay in a group or an inactive
+    // one hidden), so every rule has a button somewhere: "Turn it off", "Turn them off".
+    private string? TurnOffAllText(int boardId, IReadOnlyList<OwnRule> turnsOff)
+    {
+        if (turnsOff.Select(r => r.Relay).Distinct().Count() >= 2)
+        {
+            return OwnRulesText.TurnOffAllRelays();
+        }
+
+        var onCards = VisibleRelays.Where(r => r.BoardId == boardId).SelectMany(r => RelayTurnOffOf(r)?.Rules ?? []).ToHashSet();
+        return turnsOff.Any(r => !onCards.Contains(r)) ? OwnRulesText.TurnOffAll(turnsOff.Count) : null;
+    }
+
+    // The relay's own "Turn off the timer", or null without one.
+    private RelayTurnOff? RelayTurnOffOf(Relay relay)
+    {
+        return _shownRelayTurnOffs.GetValueOrDefault(relay.BoardId)?.FirstOrDefault(t => t.Channel == relay.Channel);
+    }
 
     // A line on the card of a group whose relays the board's own rules can switch, naming them by their role in the
     // group: "(clock) The board's timer can switch Heat". The relays have no card of their own.
@@ -806,6 +868,7 @@
                     <UnconfirmedBox CanTryAgain="@(state.IsConnected && !_busy)" OnTryAgain="() => TryAgainAsync(unconfirmed)" OnLeave="() => _unconfirmed = null" />
                 </div>
             }
+            @OwnRuleTurnOff(relay)
         </div>
     };
 
@@ -830,7 +893,8 @@
         var closed = state.Inputs.Contains(input.Channel);
         var status = InputsText.Status(input, closed, state.IsConnected, Clock.Now, Clock.ToLocal);
 
-        // Its setting was changed on the device: its state is unknown until the board connects again.
+        // Not set as a switch on the device, or its setting was changed there: its state is unknown until the board
+        // connects again.
         var settingChanged = state.HasAnswered && !state.IsInputKnown(input.Channel);
         <div class="card input @(input.IsActive ? "" : "inactive") @(state.IsInputKnown(input.Channel) ? "" : "unknown")" @key="@($"i{input.Id}")">
             @* The label and name link to the input's screen; the status line stays outside the link, so its ⓘ can be a button. *@
@@ -840,7 +904,7 @@
                     <span class="name">@input.Name</span>
                 </a>
                 <span class="status">
-                    @(settingChanged ? Texts["Inputs.SettingChanged"] : state.HasAnswered ? status.Text : StatusText.Waiting)
+                    @(settingChanged ? Texts[state.IsInputNotSwitch(input.Channel) ? "Inputs.NotSwitch" : "Inputs.SettingChanged"] : state.HasAnswered ? status.Text : StatusText.Waiting)
                     @if (state.HasAnswered && !settingChanged && status.SinceUnknown)
                     {
                         <WhyUnknown Label="@Texts["Relays.WhyUnknown", input.Name]" For="input.Id" />
@@ -1195,9 +1259,10 @@
         }
     }
 
-    // "Turn them off": the board's own rules the warning shows, at once, as the person pressed. The board's next state
-    // takes the warning away; nothing is queued without a connection, and the warning says why.
-    private async Task TurnOffRulesAsync(int boardId, IReadOnlyList<OwnRule> rules)
+    // "Turn them all off" (no channel), or a relay's "Turn off the timer": the board's own rules shown there, at once, as
+    // the person pressed. The board's next state takes them away; nothing is queued without a connection, and the
+    // warning or the card says why.
+    private async Task TurnOffRulesAsync(int boardId, IReadOnlyList<OwnRule> rules, int? channel)
     {
         if (_user is null || _busy)
         {
@@ -1210,14 +1275,14 @@
         {
             if (await OwnRules.TurnOffAsync(boardId, rules, _user.Email, CancellationToken.None) is { } message)
             {
-                _rulesError = (boardId, message);
+                _rulesError = (boardId, channel, message);
             }
         }
         catch (Exception ex)
         {
             // An exception that leaves the handler would end the page's live connection.
             Log.LogError(ex, "Turning off the own rules of relay board {BoardId} failed", boardId);
-            _rulesError = (boardId, Texts["Common.SomethingWrongTryAgain"]);
+            _rulesError = (boardId, channel, Texts["Common.SomethingWrongTryAgain"]);
         }
         finally
         {
@@ -1274,6 +1339,21 @@
         return rules.Count > 0 && board.Capabilities.OwnRulesOrCantTell.TurnsOff ? OwnRules.AlsoTurnsOff(board.BoardId, rules) : [];
     }
 
+    // Each relay's own "Turn off the timer": the timers the warning's would turn off, by relay, with what each relay's
+    // take with them (only for a board that turns them off).
+    private IReadOnlyList<RelayTurnOff> RelayTurnOffsToShow(LiveBoard board, IReadOnlyList<OwnRule> turnsOff)
+    {
+        return [.. turnsOff
+            .Where(r => r.Kind == OwnRuleKind.Timer)
+            .GroupBy(r => r.Relay)
+            .OrderBy(g => g.Key)
+            .Select(g =>
+            {
+                IReadOnlyList<OwnRule> rules = [.. g];
+                return new RelayTurnOff(g.Key, rules, AlsoToShow(board, rules));
+            })];
+    }
+
     // A board's relays by their channel, to their names.
     private Dictionary<int, string> RelayNames(int boardId)
     {
@@ -1285,12 +1365,14 @@
         _shownRules.Clear();
         _shownAlso.Clear();
         _shownTurnsOff.Clear();
+        _shownRelayTurnOffs.Clear();
         _shownUnavailable.Clear();
         foreach (var board in Boards)
         {
             _shownRules[board.BoardId] = RulesToShow(board);
             _shownTurnsOff[board.BoardId] = TurnsOffToShow(board, _shownRules[board.BoardId]);
             _shownAlso[board.BoardId] = AlsoToShow(board, _shownTurnsOff[board.BoardId]);
+            _shownRelayTurnOffs[board.BoardId] = RelayTurnOffsToShow(board, _shownTurnsOff[board.BoardId]);
             _shownUnavailable[board.BoardId] = board.State.Unavailable;
         }
 
@@ -1394,6 +1476,7 @@
                 if (!rules.SequenceEqual(_shownRules.GetValueOrDefault(boardId) ?? [])
                     || !turnsOff.SequenceEqual(_shownTurnsOff.GetValueOrDefault(boardId) ?? [])
                     || !AlsoToShow(board, turnsOff).SequenceEqual(_shownAlso.GetValueOrDefault(boardId) ?? [])
+                    || !RelayTurnOff.Same(RelayTurnOffsToShow(board, turnsOff), _shownRelayTurnOffs.GetValueOrDefault(boardId) ?? [])
                     || board.State.Unavailable != _shownUnavailable.GetValueOrDefault(boardId))
                 {
                     StateHasChanged();
@@ -1498,6 +1581,15 @@
         {
             // Not shown to the person: the page keeps what it shows, and the next refresh tries again.
             Log.LogWarning(ex, "The page could not reload {What}", "the relays, groups and inputs");
+        }
+    }
+
+    // A relay's own "Turn off the timer": the rules of that relay it turns off, and what else goes with them.
+    private sealed record RelayTurnOff(int Channel, IReadOnlyList<OwnRule> Rules, IReadOnlyList<OwnRule> Also)
+    {
+        public static bool Same(IReadOnlyList<RelayTurnOff> a, IReadOnlyList<RelayTurnOff> b)
+        {
+            return a.Count == b.Count && a.Zip(b).All(p => p.First.Channel == p.Second.Channel && p.First.Rules.SequenceEqual(p.Second.Rules) && p.First.Also.SequenceEqual(p.Second.Also));
         }
     }
 }

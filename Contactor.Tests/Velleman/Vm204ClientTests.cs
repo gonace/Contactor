@@ -163,6 +163,32 @@ public sealed class Vm204ClientTests
         Assert.Contains(run.Traces, t => t.Text == "Ask for status" && t.IsRoutine);
     }
 
+    // A pulse that ends on a relay already off changes only the status's pulse flag: neither a state change nor an
+    // analog change (Issue #620).
+    [Fact]
+    public async Task Should_ReportNoAnalogChange_WhenOnlyThePulseFlagsChange()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new Vm204Simulator { TimeProvider = boardTime };
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Equal((byte)0b0001, await run.Client.PulseAsync(0b0001, 2, Cancel));
+        await run.Client.TurnOffAsync(0b0001, Cancel);
+        await run.PollAsync();
+        Assert.Equal((0, (byte?)0b0001), (run.Client.State.Relays, run.Client.State.Status?.Pulses));
+        var reported = run.Changes.Count;
+
+        boardTime.Advance(TimeSpan.FromSeconds(2));
+        await Wait.UntilAsync(() => simulator.Pulsing.IsEmpty);
+        await run.PollAsync();
+
+        Assert.Equal((byte?)0, run.Client.State.Status?.Pulses);
+        Assert.Equal(reported, run.Changes.Count);
+        Assert.Empty(run.AnalogChanges);
+    }
+
     [Fact]
     public async Task Should_Reconnect_AfterTheBoardWasUnreachable()
     {

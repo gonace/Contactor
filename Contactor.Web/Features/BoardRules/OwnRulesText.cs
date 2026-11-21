@@ -33,7 +33,7 @@ public sealed class OwnRulesText
         return _texts[$"OwnRules.Warning.{Kind(rules.Select(r => r.Kind))}{Plurals.Form(rules.Count)}", boardName ?? _texts["OwnRules.TheBoard"]];
     }
 
-    /// <summary>The warning's text: "They can switch relays 3 and 5 without Contactor."</summary>
+    /// <summary>The warning's text: "They can switch relays 3 and 5 on and off without Contactor."</summary>
     public string CanSwitch(IReadOnlyCollection<OwnRule> rules)
     {
         ArgumentNullException.ThrowIfNull(rules);
@@ -44,6 +44,30 @@ public sealed class OwnRulesText
     public string TurnOffAll(int count)
     {
         return _texts["OwnRules.TurnOffAll" + Plurals.Form(count)];
+    }
+
+    /// <summary>
+    /// The warning's button on Relays, there only with two or more relays to turn off (Issue #616): "Turn them all off".
+    /// </summary>
+    public string TurnOffAllRelays()
+    {
+        return _texts["OwnRules.TurnOffAllRelays"];
+    }
+
+    /// <summary>The button on a relay's card on Relays that turns off only that relay's timers: "Turn off the timer".</summary>
+    public string TurnOffTimer()
+    {
+        return _texts["OwnRules.TurnOffTimer"];
+    }
+
+    /// <summary>
+    /// The card's button for a screen reader, naming the relay: "Turn off the timer for relay 5 (Fan heater)", or
+    /// "… for relay 5" without a name.
+    /// </summary>
+    public string TurnOffTimerLabel(int channel, string? name)
+    {
+        var relay = channel.ToString(CultureInfo.CurrentCulture);
+        return string.IsNullOrWhiteSpace(name) ? _texts["OwnRules.TurnOffTimer.Label", relay] : _texts["OwnRules.TurnOffTimer.LabelNamed", relay, name];
     }
 
     /// <summary>The step's heading while the board is being added: "This board has timers of its own".</summary>
@@ -71,7 +95,7 @@ public sealed class OwnRulesText
         return _texts["OwnRules.KeepAll" + Plurals.Form(count)];
     }
 
-    /// <summary>The line on a relay's card: "The board's timer can switch it".</summary>
+    /// <summary>The line on a relay's card: "The relay is also run by a timer on the board".</summary>
     public string CardLine(IEnumerable<OwnRuleKind> kinds)
     {
         return _texts[$"OwnRules.CardLine.{Kind(kinds)}"];

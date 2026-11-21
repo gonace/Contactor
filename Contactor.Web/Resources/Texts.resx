@@ -1786,6 +1786,10 @@
   <data name="Inputs.NoEvents" xml:space="preserve">
     <value>This input hasn't changed yet.</value>
   </data>
+  <data name="Inputs.NotSwitch" xml:space="preserve">
+    <value>The input isn't set as a switch on the device</value>
+    <comment>An input's status line, with "–", when the device has the input set as something other than a switch (e.g. a Shelly's input set as a button, analog, count or turned off): the app can't read whether it is open or closed.</comment>
+  </data>
   <data name="Inputs.Nothing" xml:space="preserve">
     <value>Nothing</value>
   </data>
@@ -1921,11 +1925,11 @@
     <comment>As OwnRules.Also.AutoOn, for toggle rules.</comment>
   </data>
   <data name="OwnRules.CanSwitch_One" xml:space="preserve">
-    <value>It can switch {0} without Contactor.</value>
+    <value>It can switch {0} on and off without Contactor.</value>
     <comment>Under OwnRules.Warning: {0} is e.g. "relay 3" (OwnRules.Relay).</comment>
   </data>
   <data name="OwnRules.CanSwitch_Other" xml:space="preserve">
-    <value>They can switch {0} without Contactor.</value>
+    <value>They can switch {0} on and off without Contactor.</value>
     <comment>Under OwnRules.Warning: {0} is e.g. "relays 3 and 5" (OwnRules.Relays).</comment>
   </data>
   <data name="OwnRules.CantTurnOff" xml:space="preserve">
@@ -1989,7 +1993,7 @@
     <comment>On a relay's card on Relays.</comment>
   </data>
   <data name="OwnRules.CardLine.Timer" xml:space="preserve">
-    <value>The board's timer can switch it</value>
+    <value>The relay is also run by a timer on the board</value>
     <comment>On a relay's card on Relays.</comment>
   </data>
   <data name="OwnRules.CardLine.Toggle" xml:space="preserve">
@@ -2161,11 +2165,27 @@
   <data name="OwnRules.TurnOff.NotTaken" xml:space="preserve">
     <value>The relay board didn't turn them off. Try again.</value>
   </data>
+  <data name="OwnRules.TurnOffAllRelays" xml:space="preserve">
+    <value>Turn them all off</value>
+    <comment>The warning's button on Relays when two or more relays have rules of the board that can be turned off: turns them all off. A relay's timer also has its own button on its card.</comment>
+  </data>
   <data name="OwnRules.TurnOffAll_One" xml:space="preserve">
     <value>Turn it off</value>
   </data>
   <data name="OwnRules.TurnOffAll_Other" xml:space="preserve">
     <value>Turn them off</value>
+  </data>
+  <data name="OwnRules.TurnOffTimer" xml:space="preserve">
+    <value>Turn off the timer</value>
+    <comment>The button on a relay's card on Relays, under OwnRules.CardLine.Timer: turns off only that relay's timers on the board.</comment>
+  </data>
+  <data name="OwnRules.TurnOffTimer.Label" xml:space="preserve">
+    <value>Turn off the timer for relay {0}</value>
+    <comment>OwnRules.TurnOffTimer for a screen reader, for a relay without a name: {0} is its number.</comment>
+  </data>
+  <data name="OwnRules.TurnOffTimer.LabelNamed" xml:space="preserve">
+    <value>Turn off the timer for relay {0} ({1})</value>
+    <comment>OwnRules.TurnOffTimer for a screen reader: {0} is the relay's number, {1} its name, e.g. "Fan heater".</comment>
   </data>
   <data name="OwnRules.Unavailable.GroupText_One" xml:space="preserve">
     <value>The board controls it itself. Reset it to start the group.</value>
