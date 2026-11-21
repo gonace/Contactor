@@ -1786,6 +1786,10 @@
   <data name="Inputs.NoEvents" xml:space="preserve">
     <value>This input hasn't changed yet.</value>
   </data>
+  <data name="Inputs.NotSwitch" xml:space="preserve">
+    <value>The input isn't set as a switch on the device</value>
+    <comment>An input's status line, with "–", when the device has the input set as something other than a switch (e.g. a Shelly's input set as a button, analog, count or turned off): the app can't read whether it is open or closed.</comment>
+  </data>
   <data name="Inputs.Nothing" xml:space="preserve">
     <value>Nothing</value>
   </data>

@@ -16,15 +16,20 @@ namespace Contactor.Boards.Shelly;
 /// </param>
 /// <param name="Inputs">Bit per input, bit 0 = input 1 (<c>input:0</c>); 1 = its <c>state</c> is true.</param>
 /// <param name="InputCount">
-/// How many inputs the device has for the app, 0 to <see cref="ShellyApi.MaxInputCount"/>: those with a state, from
-/// <c>input:0</c> without a gap, as the connection's first status gave them (<see cref="ShellySwitches.InputCount"/>).
+/// How many inputs the device has for the app, 0 to <see cref="ShellyApi.MaxInputCount"/>: every <c>input:N</c>, whatever
+/// its type, from <c>input:0</c> without a gap, as the connection's first status gave them
+/// (<see cref="ShellySwitches.InputCount"/>).
 /// </param>
 /// <param name="UnknownInputs">
-/// Bit per input, as <paramref name="Inputs"/>: 1 for an input of the count that read no state in a status since the
-/// connect (its setting was changed on the device), unknown until the next connection, also once it has a state again.
-/// Its bit in <paramref name="Inputs"/> is 0.
+/// Bit per input, as <paramref name="Inputs"/>: 1 for an input of the count whose state the app doesn't read until the
+/// next connection: one not set as a switch at the connect (<paramref name="NotSwitchInputs"/>), and one whose setting
+/// was changed on the device since, also once it is as it was again. Its bit in <paramref name="Inputs"/> is 0.
 /// </param>
-public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null, OwnRules? OwnRules = null, byte Inputs = 0, int InputCount = 0, byte UnknownInputs = 0)
+/// <param name="NotSwitchInputs">
+/// The inputs of <paramref name="UnknownInputs"/> not set as a switch on the device (a button, analog, count, or turned
+/// off) since the connect; the others had their setting changed during the connection.
+/// </param>
+public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null, OwnRules? OwnRules = null, byte Inputs = 0, int InputCount = 0, byte UnknownInputs = 0, byte NotSwitchInputs = 0)
 {
     /// <summary>
     /// Compares the relays and the inputs only, for the poller: a change in <see cref="PowerOn"/> or
@@ -39,13 +44,13 @@ public sealed record ShellyStatus(byte Relays, PowerOnStates? PowerOn = null, Ow
         {
             return x is null
                 ? y is null
-                : y is not null && x.Relays == y.Relays && x.Inputs == y.Inputs && x.InputCount == y.InputCount && x.UnknownInputs == y.UnknownInputs;
+                : y is not null && x.Relays == y.Relays && x.Inputs == y.Inputs && x.InputCount == y.InputCount && x.UnknownInputs == y.UnknownInputs && x.NotSwitchInputs == y.NotSwitchInputs;
         }
 
         public int GetHashCode(ShellyStatus obj)
         {
             ArgumentNullException.ThrowIfNull(obj);
-            return HashCode.Combine(obj.Relays, obj.Inputs, obj.InputCount, obj.UnknownInputs);
+            return HashCode.Combine(obj.Relays, obj.Inputs, obj.InputCount, obj.UnknownInputs, obj.NotSwitchInputs);
         }
     }
 }
@@ -69,8 +74,11 @@ public sealed record ShellyState(bool IsConnected, ShellyStatus? Status, DateTim
     /// <summary>The inputs that are on, bit 0 = input 1, kept while disconnected.</summary>
     public byte Inputs => Status?.Inputs ?? 0;
 
-    /// <summary>The inputs whose setting was changed on the device during the connection: unknown, kept while disconnected.</summary>
+    /// <summary>The inputs whose state the app doesn't read this connection: unknown, kept while disconnected.</summary>
     public byte UnknownInputs => Status?.UnknownInputs ?? 0;
+
+    /// <summary>The unknown inputs not set as a switch on the device, kept while disconnected.</summary>
+    public byte NotSwitchInputs => Status?.NotSwitchInputs ?? 0;
 
     /// <summary>How many inputs the device has for the app, kept while disconnected; 0 before it answered.</summary>
     public int InputCount => Status?.InputCount ?? 0;

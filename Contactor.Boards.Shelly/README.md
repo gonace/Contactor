@@ -92,28 +92,30 @@ frames of "RPC Protocol" (-105) and
 
 The app reads the inputs from the same `Shelly.GetStatus` it polls, with no other request. `input:0` is input 1.
 
-- An input counts when its status has a `state` that is true or false. The docs give one only for type `switch`.
-  True is on (closed).
-- These are left out:
+- Every `input:N` the status has counts, whatever its type (Issue #623). `input:0` to `input:3` only: 4 is the app's
+  own limit, as many as the Pro 4PM has. So the inputs of an add-on, such as the Plus Add-on's `input:100` and up, are
+  left out. An input with another key (`input:01`) is left out too.
+- How many inputs the device has is decided at each new connection, from the connect's status: every input that
+  counts, from `input:0` without a gap. An input after a gap isn't shown, so an input keeps its number. Before the
+  device answered, the board has no inputs. While disconnected, the last count is kept. The count changes only when
+  the device itself is replaced, never with an input's setting.
+- The app reads an input's state only when its status has a `state` that is true or false. The docs give one only for
+  type `switch`. True is on (closed).
+- An input whose state the app doesn't read at the connect is unknown for the whole connection
+  (`ShellyStatus.UnknownInputs` and `NotSwitchInputs`, `BoardState.UnknownInputs` and `NotSwitchInputs`). The screens
+  show "–" and "The input isn't set as a switch on the device". These are:
   - a `button`: its `state` is null;
   - a disabled input: its `state` is null;
   - an `analog` input (`percent`) and a `count` input (`counts`);
-  - `input:4` and higher: 4 is the app's own limit, as many as the Pro 4PM has. So the inputs of an add-on, such as
-    the Plus Add-on's `input:100` and up, are left out too;
-  - an input the app can't read: another key (`input:01`), an `id` that isn't the key's, a `state` of another kind,
-    or the same key twice.
-- An input never fails the poll. The inputs only decide what the app shows.
-- How many inputs the device has is decided at each new connection, from the connect's status. They are the inputs
-  that count, from `input:0` without a gap. An input after a gap isn't shown, so an input keeps its number. Before
-  the device answered, the board has no inputs. While disconnected, the last count is kept.
-- During a connection the count stays as it was:
-  - An input of the count that reads no state in a status, because its setting was changed at the device (made a
-    `button`, `analog` or `count`, or turned off), is unknown until the next connection (`ShellyStatus.UnknownInputs`,
-    `BoardState.UnknownInputs`). It stays unknown when it has a state again before then. The app never shows an old or
-    a new state for it: the screens show "–" and "The input's setting was changed on the device".
-  - An input that only now has a state isn't read until the next connection.
+  - an input the app can't read: an `id` that isn't the key's, a `state` of another kind, or the same key twice.
+- An input never fails the poll. The inputs only decide what the app shows and which input actions run.
+- During a connection the count and what the app reads of each input stay as they were:
+  - An input whose setting was changed at the device since the connect (a switch made a `button`, `analog` or
+    `count`, or turned off, or another type made a switch) is unknown until the next connection. It stays unknown when
+    it is as it was again before then. The app never shows an old or a new state for it: the screens show "–" and
+    "The input's setting was changed on the device".
   - So a change of the device's settings never looks like an input that changed. The app logs nothing and runs no
-    input action when an input goes unknown.
+    input action for an unknown input.
   - At the next connection, every input is read afresh. The app compares an input that was unknown with its last
     known state and logs a difference as noticed, which runs no action.
 - An input that changed is a state change (`ShellyStatus.StateComparer`), as a relay is. The input actions take it as

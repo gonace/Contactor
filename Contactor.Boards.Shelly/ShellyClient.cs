@@ -113,10 +113,11 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     private DateTimeOffset _schedulesReadUtc;
 
     // Only used under the poller's lock: how many inputs the device has for the current connection, from the connect's
-    // status, and the inputs of that count that read no state since the connect, unknown until the next one.
-    // ConnectAsync starts them afresh.
+    // status; those of them not set as a switch then (no state); and those whose setting changed since the connect,
+    // unknown until the next one. ConnectAsync starts them afresh.
     private int _inputCount;
-    private byte _unknownInputs;
+    private byte _notSwitchInputs;
+    private byte _changedInputs;
 
     // The reading last reported, to tell which part of it changed when the poller's comparer sees no change.
     private ShellyStatus? _lastReported;
@@ -439,10 +440,12 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         var switches = await GetSwitchesAsync(target, routine: false, cancellationToken).ConfigureAwait(false);
         CheckCount(switches);
 
-        // The inputs the device has, for this whole connection: a change of its settings while connected (an input made
-        // a button, or turned off) must never look like an input that changed, which would run its actions.
+        // The inputs the device has, whatever their type, for this whole connection: a change of their settings while
+        // connected (an input made a button, or turned off) must never look like an input that changed, which would run
+        // its actions. Only an input set as a switch now is read.
         _inputCount = switches.InputCount;
-        _unknownInputs = 0;
+        _notSwitchInputs = (byte)(CountedInputs() & ~switches.Inputs);
+        _changedInputs = 0;
         var stopped = await ReadPowerOnAsync(target, switches.ConfigRevision, cancellationToken).ConfigureAwait(false);
         await ReadSchedulesAsync(target, switches.ScheduleRevision, skip: stopped, cancellationToken).ConfigureAwait(false);
     }
@@ -629,21 +632,29 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         }
 
         var inputs = ReadInputs(switches);
-        var status = new ShellyStatus((byte)switches.Outputs, _powerOn, CurrentOwnRules(), inputs, _inputCount, _unknownInputs);
+        var status = new ShellyStatus((byte)switches.Outputs, _powerOn, CurrentOwnRules(), inputs, _inputCount, (byte)(_notSwitchInputs | _changedInputs), (byte)(_notSwitchInputs & ~_changedInputs));
         var routine = Interlocked.Exchange(ref _lastTraced, status) == status;
         Trace(BoardTraceDirection.Received, ShellyTraceText.Status(status, _model.Capabilities.RelayCount), isRoutine: routine);
         return status;
     }
 
-    // Under the poller's lock: the inputs of the connection's count that are on. One that reads no state (its setting
-    // changed on the device since the connect: made a button, analog or count, or turned off) is unknown until the next
-    // connection, also once it has a state again, and one beyond the count isn't read until then: a change of the
-    // device's settings never shows as an input that changed, which would run its actions.
+    // Under the poller's lock: the inputs of the connection's count that are on. One not set as a switch at the connect
+    // is unknown for the whole connection. One whose setting changed since the connect (a switch that reads no state
+    // now: made a button, analog or count, or turned off; or one that reads a state now and didn't then) is unknown until
+    // the next connection, also once it is as it was again: a change of the device's settings never shows as an input
+    // that changed, which would run its actions.
     private byte ReadInputs(ShellySwitches switches)
     {
-        var counted = (byte)((1 << _inputCount) - 1);
-        _unknownInputs |= (byte)(counted & ~switches.Inputs);
-        return (byte)(switches.InputsOn & counted & ~_unknownInputs);
+        var counted = CountedInputs();
+        var switchesAtConnect = (byte)(counted & ~_notSwitchInputs);
+        _changedInputs |= (byte)(counted & (switches.Inputs ^ switchesAtConnect));
+        return (byte)(switches.InputsOn & switchesAtConnect & ~_changedInputs);
+    }
+
+    // Under the poller's lock: a bit for each input of the connection's count.
+    private byte CountedInputs()
+    {
+        return (byte)((1 << _inputCount) - 1);
     }
 
     // Under the poller's lock: each switch's initial_state, one Switch.GetConfig each, after the status that gave

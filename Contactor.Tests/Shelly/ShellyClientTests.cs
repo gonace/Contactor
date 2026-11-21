@@ -90,6 +90,7 @@ public sealed class ShellyClientTests
         await simulator.SetInputAsync(2, false);
         await run.PollAsync();
         Assert.Equal(0b01, run.Client.State.UnknownInputs);
+        Assert.Equal(0, run.Client.State.NotSwitchInputs);
         Assert.Equal(0b00, run.Client.State.Inputs);
         Assert.Equal(2, run.Client.State.InputCount);
         Assert.Contains(run.Traces, t => t.Text == "Status: all off · input 1 unknown · input 2 off");
@@ -107,11 +108,23 @@ public sealed class ShellyClientTests
         Assert.Equal(0b01, run.Client.State.Inputs);
         Assert.Equal(2, run.Client.State.InputCount);
 
-        // A button at a new connection isn't counted: none from input:0.
+        // A button at a new connection is counted all the same (Issue #623), but not read: unknown, as not set as a
+        // switch, for the whole connection. Input 2 is still read.
         simulator.SetInputType(1, ShellySimulator.ButtonInput);
+        await simulator.SetInputAsync(2, true);
         run.Client.SetPassword("again");
-        await Wait.UntilAsync(() => run.Client.State is { IsConnected: true, InputCount: 0 });
-        Assert.Equal(0, run.Client.State.Inputs);
+        await Wait.UntilAsync(() => run.Client.State is { IsConnected: true, NotSwitchInputs: 0b01 });
+        Assert.Equal((2, 0b01, 0b10), (run.Client.State.InputCount, run.Client.State.UnknownInputs, run.Client.State.Inputs));
+        Assert.True(ShellyBoard.ToBoardState(run.Client.State).IsInputNotSwitch(1));
+
+        // Made a switch while connected, its terminal closed: its setting changed, so still unknown, now for that
+        // reason, until the next connection.
+        simulator.SetInputType(1, ShellySimulator.SwitchInput);
+        await simulator.SetInputAsync(1, true);
+        await run.PollAsync();
+        Assert.Equal((2, 0b01, 0, 0b10), (run.Client.State.InputCount, run.Client.State.UnknownInputs, run.Client.State.NotSwitchInputs, run.Client.State.Inputs));
+        Assert.False(ShellyBoard.ToBoardState(run.Client.State).IsInputNotSwitch(1));
+        Assert.False(ShellyBoard.ToBoardState(run.Client.State).IsInputKnown(1));
     }
 
     [Fact]

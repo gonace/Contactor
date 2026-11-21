@@ -59,7 +59,7 @@
                         <div>
                             <p class="label">@Texts["Inputs.Now"]</p>
                             <p class="now">
-                                @(SettingChanged ? Texts["Inputs.SettingChanged"] : State.HasAnswered ? Status.Text : StatusText.Waiting)
+                                @(SettingChanged ? Texts[WhyUnknownKey] : State.HasAnswered ? Status.Text : StatusText.Waiting)
                                 @if (State.HasAnswered && !SettingChanged && Status.SinceUnknown)
                                 {
                                     <WhyUnknown Label="@Texts["Inputs.WhyUnknownLabel"]" For="Id" />
@@ -177,8 +177,11 @@
     // The board can tell its state: it answered, and the input's setting wasn't changed on the device since it connected.
     private bool IsKnown => _input is not null && State.IsInputKnown(_input.Channel);
 
-    // Its setting was changed on the device: unknown until the board connects again.
+    // Not set as a switch on the device, or its setting was changed there: unknown until the board connects again.
     private bool SettingChanged => State.HasAnswered && !IsKnown;
+
+    // Why it is unknown: not set as a switch on the device, or its setting changed there since the board connected.
+    private string WhyUnknownKey => _input is not null && State.IsInputNotSwitch(_input.Channel) ? "Inputs.NotSwitch" : "Inputs.SettingChanged";
 
     // What can still be added: what the input doesn't control yet.
     private List<InputActionTarget> Available => [.. _targets.Where(t => !_actions.Any(a => a.Target.IsSame(t)))];

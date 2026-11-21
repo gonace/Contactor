@@ -389,6 +389,34 @@ public sealed class InputActionsTests
         }
     }
 
+    // An input the board has but doesn't read (a Shelly's input not set as a switch, Issue #623) is unknown from the
+    // first status on: neither the start nor a reconnect logs it or hands it on.
+    [Fact]
+    public async Task Should_NeitherLogNorAct_OnAnInputUnknownFromTheStart_AtStartOrReconnect()
+    {
+        await using var rig = await RigAsync(inputCount: 2);
+        rig.Board.SetUnknownInputs(ChannelMask.Of(1));
+        var recorder = rig.Database.Services.GetServices<IHostedService>().OfType<BoardEventRecorder>().Single();
+        await recorder.StartAsync(Cancel);
+        try
+        {
+            for (var reconnect = 0; reconnect < 2; reconnect++)
+            {
+                rig.Board.SetConnected(false);
+                rig.Board.SetConnected(true);
+            }
+
+            // Input 2's change is the first one logged and handed on.
+            rig.Board.SetInput(2, on: true);
+            Assert.Equal(new InputChanged(2, Closed: true), await BoardTestRig.NextAsync(rig.Feed.Reader));
+            Assert.Equal(1, rig.InputEvents());
+        }
+        finally
+        {
+            await recorder.StopAsync(CancellationToken.None);
+        }
+    }
+
     // A refused ON for an input that then goes unknown (a Shelly's input made a button on the device): its moment can't
     // be told any more, so the retry sends nothing, though the unknown input's bit reads "open" as the change did.
     [Fact]

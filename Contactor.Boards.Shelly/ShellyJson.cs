@@ -29,13 +29,18 @@ public sealed record ShellyFrame(JsonElement? Result, ShellyRpcError? Error);
 /// <c>input:3</c> (<see cref="ShellyApi.MaxInputCount"/>).
 /// </param>
 /// <param name="InputsOn">Bit per input, as <paramref name="Inputs"/>: 1 when its <c>state</c> is true.</param>
-public sealed record ShellySwitches(int Count, uint Outputs, long? ConfigRevision = null, long? ScheduleRevision = null, byte Inputs = 0, byte InputsOn = 0)
+/// <param name="InputsPresent">
+/// Bit per input, bit 0 = <c>input:0</c>: 1 for each <c>input:N</c> the status has, whatever its type or state. Only
+/// <c>input:0</c> to <c>input:3</c>, so an add-on's inputs (<c>input:100</c> on) are left out.
+/// </param>
+public sealed record ShellySwitches(int Count, uint Outputs, long? ConfigRevision = null, long? ScheduleRevision = null, byte Inputs = 0, byte InputsOn = 0, byte InputsPresent = 0)
 {
     /// <summary>
-    /// How many inputs the device has for the app: those with a state, from <c>input:0</c> without a gap. An input
-    /// after a gap isn't counted, so an input keeps its number (<c>input:N</c> is input N+1).
+    /// How many inputs the device has for the app: every <c>input:N</c> it has, whatever its type, from <c>input:0</c>
+    /// without a gap (Issue #623). An input after a gap isn't counted, so an input keeps its number (<c>input:N</c> is
+    /// input N+1).
     /// </summary>
-    public int InputCount => System.Numerics.BitOperations.TrailingZeroCount(~(uint)Inputs);
+    public int InputCount => System.Numerics.BitOperations.TrailingZeroCount(~(uint)InputsPresent);
 }
 
 /// <summary>A request frame as the simulator reads it.</summary>
@@ -433,15 +438,16 @@ public static class ShellyJson
             throw new ShellyProtocolException("The Shelly's switches aren't numbered from 0 without a gap.");
         }
 
-        var (inputs, inputsOn) = ReadInputs(result);
-        return new ShellySwitches(count, outputs, SysRevision(result, ShellyApi.ConfigRevision), SysRevision(result, ShellyApi.ScheduleRevision), inputs, inputsOn);
+        var (inputs, inputsOn, present) = ReadInputs(result);
+        return new ShellySwitches(count, outputs, SysRevision(result, ShellyApi.ConfigRevision), SysRevision(result, ShellyApi.ScheduleRevision), inputs, inputsOn, present);
     }
 
-    // The inputs in a status: input:0 to input:3 with a state that is true or false ("Input", "Status": "state ... (only
-    // for type switch, button) ... null if the input instance is stateless, i.e. for type button", and null for an input
-    // that isn't enabled). Never throws: an input the app can't read (a key or id it can't read, a state of another
-    // kind, the same input twice) is left out, so the inputs can never fail the poll.
-    private static (byte Inputs, byte On) ReadInputs(JsonElement result)
+    // The inputs in a status: every input:0 to input:3 it has, and those with a state that is true or false ("Input",
+    // "Status": "state ... (only for type switch, button) ... null if the input instance is stateless, i.e. for type
+    // button", and null for an input that isn't enabled). Never throws: an input whose state the app can't read (an id
+    // it can't read, a state of another kind, the same input twice) is there but not read, so the inputs can never fail
+    // the poll.
+    private static (byte Inputs, byte On, byte Present) ReadInputs(JsonElement result)
     {
         var seen = 0;
         var twice = 0;
@@ -475,8 +481,8 @@ public static class ShellyJson
             }
         }
 
-        // An input given twice is ambiguous: left out.
-        return ((byte)(inputs & ~twice), (byte)(on & ~twice));
+        // An input given twice is ambiguous: there, but not read.
+        return ((byte)(inputs & ~twice), (byte)(on & ~twice), (byte)seen);
     }
 
     /// <summary>

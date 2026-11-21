@@ -1622,6 +1622,9 @@
   <data name="Inputs.NoEvents" xml:space="preserve">
     <value>Den här ingången har inte ändrats än.</value>
   </data>
+  <data name="Inputs.NotSwitch" xml:space="preserve">
+    <value>Ingången är inte inställd som brytare på enheten</value>
+  </data>
   <data name="Inputs.Nothing" xml:space="preserve">
     <value>Inget</value>
   </data>

@@ -830,7 +830,8 @@
         var closed = state.Inputs.Contains(input.Channel);
         var status = InputsText.Status(input, closed, state.IsConnected, Clock.Now, Clock.ToLocal);
 
-        // Its setting was changed on the device: its state is unknown until the board connects again.
+        // Not set as a switch on the device, or its setting was changed there: its state is unknown until the board
+        // connects again.
         var settingChanged = state.HasAnswered && !state.IsInputKnown(input.Channel);
         <div class="card input @(input.IsActive ? "" : "inactive") @(state.IsInputKnown(input.Channel) ? "" : "unknown")" @key="@($"i{input.Id}")">
             @* The label and name link to the input's screen; the status line stays outside the link, so its ⓘ can be a button. *@
@@ -840,7 +841,7 @@
                     <span class="name">@input.Name</span>
                 </a>
                 <span class="status">
-                    @(settingChanged ? Texts["Inputs.SettingChanged"] : state.HasAnswered ? status.Text : StatusText.Waiting)
+                    @(settingChanged ? Texts[state.IsInputNotSwitch(input.Channel) ? "Inputs.NotSwitch" : "Inputs.SettingChanged"] : state.HasAnswered ? status.Text : StatusText.Waiting)
                     @if (state.HasAnswered && !settingChanged && status.SinceUnknown)
                     {
                         <WhyUnknown Label="@Texts["Relays.WhyUnknown", input.Name]" For="input.Id" />
