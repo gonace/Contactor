@@ -63,6 +63,35 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.Equal(6, copy.Visitor.Length);
     }
 
+    // Issue #606: each copy's simulator opens boards, and its app connects, only in a block of ports no other copy has,
+    // nor any copy's app or simulator.
+    [Fact]
+    public async Task Should_GiveEachCopy_ABlockOfBoardPorts_OfItsOwn()
+    {
+        await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => Start(_copies).Started));
+
+        List<Contactor.Boards.PortRange> blocks = [];
+        foreach (var (app, simulator) in _starter.RunsOf("app").Zip(_starter.RunsOf("simulator"), (a, s) => (a.Start, s.Start)))
+        {
+            Assert.True(Contactor.Boards.PortRange.TryParse(app.Environment["Boards__OnlyPorts"], out var block));
+            Assert.Equal("127.0.0.1", app.Environment["Boards__OnlyHost"]);
+            Assert.Equal(block.ToString(), simulator.Environment["Simulator__Ports"]);
+            Assert.Equal(block.First.ToString(System.Globalization.CultureInfo.InvariantCulture), app.Environment["Vm201__Port"]);
+            Assert.Equal(block.First.ToString(System.Globalization.CultureInfo.InvariantCulture), simulator.Environment["Simulator__Boards__0__Port"]);
+            Assert.Equal(21, block.Count);
+            Assert.InRange(block.First, BoardPortBlocks.First, BoardPortBlocks.Last);
+            Assert.InRange(block.Last, BoardPortBlocks.First, BoardPortBlocks.Last);
+            blocks.Add(block);
+        }
+
+        Assert.Equal(3, blocks.Count);
+        Assert.All(blocks, a => Assert.Single(blocks, b => b.Overlaps(a)));
+        Assert.DoesNotContain(_starter.Runs, r => blocks.Any(b => b.Contains(r.Start.Port)));
+
+        // The copies' own ports are random from LoopbackPorts.First on: never in a block.
+        Assert.True(BoardPortBlocks.Last < LoopbackPorts.First);
+    }
+
     [Fact]
     public async Task Should_RunTheCopy_AndItsTemplate_InTheVisitorsTimeZone_FromItsStartToItsEnd()
     {

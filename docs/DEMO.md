@@ -21,6 +21,10 @@ the connector in, see The firewall (optional), in Install.
 
 There is no sign-in in front: the demo is public.
 
+Each visitor's copy has its own block of board ports, from 10000 to 19999, which no other copy shares. Its simulator
+adds boards only there, and its app connects only to 127.0.0.1 there. So a visitor can't reach another visitor's
+boards, also not by typing their address.
+
 ## What you need
 
 - A virtual machine on Proxmox (amd64): Debian 13 or Ubuntu 24.04, 2 CPU cores, 4 GB of memory and 20 GB of disk. The
@@ -116,7 +120,7 @@ The demo's limits are settings, under `environment:` of the `demo` service in `c
 | `Demo__IdleTimeout` | `00:15:00` | Time without a click or a key before the page asks whether the visitor is still there. |
 | `Demo__IdleWarning` | `00:02:00` | How long the page counts down before the copy ends. |
 | `Demo__MaxLifetime` | `02:00:00` | How long a copy lasts at most. |
-| `Demo__MaxBoards` | `20` | Boards per visitor in the simulator. |
+| `Demo__MaxBoards` | `20` | Boards per visitor in the simulator. `Demo__MaxVisitors` times (`Demo__MaxBoards` + 1) is at most 10000. |
 | `Demo__TunnelAddress` | `172.30.60.2` (in `compose.yml`) | The forwarder's address on the demo's network: only it may say that the visitor came in over HTTPS. |
 
 With more visitors, give the container more memory too (`mem_limit`, about 250 MB per visitor and 500 MB more).

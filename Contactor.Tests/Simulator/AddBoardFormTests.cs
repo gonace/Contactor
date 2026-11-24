@@ -18,6 +18,31 @@ public sealed class AddBoardFormTests : IAsyncDisposable
         await _boards.DisposeAsync();
     }
 
+    // The demo gives each visitor's simulator its own ports (Issue #606): a board opens only there.
+    [Fact]
+    public async Task Should_OfferAndTakeOnlyAPortInItsBlock_WhenItHasOne()
+    {
+        var port = SimulatedBoardsTests.FreePort();
+        var block = string.Create(CultureInfo.InvariantCulture, $"{port}-{port}");
+        await using var boards = new SimulatedBoards(
+            NullLoggerFactory.Instance, new FixedTimeProvider(Now), Options.Create(new SimulatorOptions { Ports = block }));
+        var form = new AddBoardForm(boards);
+        form.Open();
+        Assert.Equal(port.ToString(CultureInfo.InvariantCulture), form.Port);
+
+        form.Port = "9760";
+        Assert.Null(form.Add());
+        Assert.Equal($"Choose a port from {port} to {port}.", form.Error);
+        Assert.Empty(boards.Boards);
+
+        form.Port = port.ToString(CultureInfo.InvariantCulture);
+        Assert.Equal(port, form.Add());
+
+        // Its one port is taken now: nothing more to offer.
+        form.Open();
+        Assert.Equal("", form.Port);
+    }
+
     [Fact]
     public void Should_Open_WithTheFirstModelAndItsPort()
     {
