@@ -96,6 +96,13 @@
         <p class="status offline" role="status">@Texts["Boards.NoContact", Endpoint]</p>
     }
 
+    @* After a refused login or "asked to wait", the board's connection waits for a person (Issue #522): one attempt
+       now, and the button stays off until the board answers or says why it refuses again (Issue #538). *@
+    @if (_checking || (Endpoint.HasHost && BoardContact.ShouldTryAgain(State)))
+    {
+        <button type="button" class="check-again" disabled="@(_checking || _busy)" @onclick="CheckAgainAsync">@Texts["Boards.Where.CheckAgain"]</button>
+    }
+
     @if (_message is not null)
     {
         <p class="@(_saved ? "saved" : "error")" role="alert">@_message</p>
@@ -129,6 +136,12 @@
     private string? _message;
     private bool _saved;
     private bool _busy;
+
+    // "Check again" was pressed and the board hasn't answered or refused again yet: a second press sends nothing.
+    private bool _checking;
+
+    // Ends a "Check again" wait when the page closes.
+    private readonly CancellationTokenSource _closing = new();
     private int? _loadedFor;
     private ElementReference _usernameField;
     private ElementReference _passwordField;
@@ -212,6 +225,8 @@
     {
         _disposed = true;
         Registry.StateChanged -= OnBoardChanged;
+        _closing.Cancel();
+        _closing.Dispose();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -322,6 +337,33 @@
         finally
         {
             _busy = false;
+        }
+    }
+
+    // "Check again": one attempt while the board's connection waits after a refusal, then a wait for the board's answer
+    // or its problem, as the setup guide's "Check again" waits. Watching from before the attempt, so a quick answer
+    // isn't missed. The card redraws with the result through OnBoardChanged.
+    private async Task CheckAgainAsync()
+    {
+        if (_checking || _busy || _disposed || Live is not { } live || !BoardContact.ShouldTryAgain(live.State))
+        {
+            return;
+        }
+
+        _checking = true;
+        try
+        {
+            using var contact = BoardContact.Watch(live);
+            live.TryAgain();
+            await contact.WaitAsync(moved: false, BoardContact.Timeout, Time, _closing.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // The page closed while it waited.
+        }
+        finally
+        {
+            _checking = false;
         }
     }
 

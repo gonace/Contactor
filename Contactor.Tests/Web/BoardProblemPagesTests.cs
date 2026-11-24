@@ -204,6 +204,108 @@ public sealed class BoardProblemPagesTests
         Assert.Empty(page.Errors);
     }
 
+    // Issue #538: Settings' "Check again" shows only while the board's connection waits for a person, after a refused
+    // login or "asked to wait". Not for a connected board, other problems or no problem at all.
+    [Theory]
+    [InlineData(false, ConnectionProblemKind.LoginRefused, true)]
+    [InlineData(false, ConnectionProblemKind.AskedToWait, true)]
+    [InlineData(false, ConnectionProblemKind.LoginNeeded, false)]
+    [InlineData(false, ConnectionProblemKind.WrongModel, false)]
+    [InlineData(false, ConnectionProblemKind.FirmwareTooOld, false)]
+    [InlineData(false, null, false)]
+    [InlineData(true, ConnectionProblemKind.LoginRefused, false)]
+    public async Task Should_OfferCheckAgain_OnlyWhileTheBoardWaitsForAPerson(bool connected, ConnectionProblemKind? kind, bool shown)
+    {
+        var board = new FakeRelayBoard(connected: connected);
+        if (kind is { } problem)
+        {
+            board.SetProblem(new ConnectionProblem(problem, Vm201Model.Model, MinFirmware: "1.7.0"));
+        }
+
+        await using var app = new TestWebApp("Development", new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John });
+        var id = await app.Services.FirstBoardIdAsync();
+        await app.Services.GetRequiredService<BoardRegistry>().ReplaceAsync(new FakeBoardParts(board).Build(id, Vm201Model.Model), Cancel);
+        using var page = await PageRenderer.StartAsync<BoardForm>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardForm.BoardId)] = id });
+
+        Assert.Equal(shown, await page.HasAsync(Button("Check again")));
+        Assert.False(await IsDisabledAsync(page, "Check again"));
+        Assert.Empty(page.Errors);
+    }
+
+    // One press sends one attempt: the button is off from the press until the board says why it refuses again, so a
+    // second press sends nothing. Then it is on again, for the next try. The clock stands still: the wait ends on the
+    // board's answer only.
+    [Fact]
+    public async Task Should_SendOneAttempt_AndWaitForTheBoard_WhenCheckAgainIsPressed()
+    {
+        var time = new ManualTimeProvider();
+        var board = new FakeRelayBoard(connected: false);
+        var refused = new ConnectionProblem(ConnectionProblemKind.LoginRefused, Vm201Model.Model);
+        board.SetProblem(refused);
+        var parts = new FakeBoardParts(board);
+        parts.Connection.OnTryAgain = () => board.SetProblem(null);
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?> { [TestWebApp.SignedInAs] = John },
+            services => services.AddSingleton<TimeProvider>(time));
+        var id = await app.Services.FirstBoardIdAsync();
+        await app.Services.GetRequiredService<BoardRegistry>().ReplaceAsync(parts.Build(id, Vm201Model.Model), Cancel);
+        using var page = await PageRenderer.StartAsync<BoardForm>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardForm.BoardId)] = id });
+
+        var press = page.ClickAsync(Button("Check again"));
+        await BoardTestRig.WaitUntilAsync(() => IsDisabledAsync(page, "Check again").GetAwaiter().GetResult());
+        await page.ClickAsync(Button("Check again"));
+        Assert.Equal(1, parts.Connection.TryAgains);
+        Assert.False(press.IsCompleted);
+
+        board.SetProblem(refused);
+        await press;
+        Assert.Contains("The user name or password is wrong.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.True(await page.HasAsync(Button("Check again")));
+        Assert.False(await IsDisabledAsync(page, "Check again"));
+
+        var again = page.ClickAsync(Button("Check again"));
+        await BoardTestRig.WaitUntilAsync(() => parts.Connection.TryAgains == 2);
+        board.SetConnected(true);
+        await again;
+        Assert.False(await page.HasAsync(Button("Check again")));
+        Assert.Equal(2, parts.Connection.TryAgains);
+        Assert.Empty(page.Errors);
+    }
+
+    // Against the simulator: "Check again" on Settings sends the refused password once more.
+    [Fact]
+    public async Task Should_SendTheRefusedPasswordAgain_WhenCheckAgainIsPressedOnSettings()
+    {
+        await using var simulator = new ShellySimulator(ShellyModels.OneRelay, "apple", NullLogger.Instance);
+        simulator.Start();
+        await using var app = new TestWebApp(
+            "Development",
+            new Dictionary<string, string?>
+            {
+                [TestWebApp.SignedInAs] = John,
+                ["Board:Type"] = "shelly-1",
+                ["Shelly:Host"] = "127.0.0.1",
+                ["Shelly:Port"] = simulator.Port.ToString(CultureInfo.InvariantCulture),
+                ["Shelly:Password"] = "pear",
+            });
+        using (var http = app.CreateClient())
+        {
+            await http.GetAsync("/settings", Cancel);
+        }
+
+        var board = app.Services.GetRequiredService<BoardRegistry>().All[0];
+        await BoardTestRig.WaitUntilAsync(() => board.State.Problem is { Kind: ConnectionProblemKind.LoginRefused });
+        using var page = await PageRenderer.StartAsync<BoardForm>(app.Services, John, "John", new Dictionary<string, object?> { [nameof(BoardForm.BoardId)] = board.BoardId });
+
+        await page.ClickAsync(Button("Check again"));
+
+        Assert.Equal(2, simulator.DeniedCount);
+        Assert.Contains("The password is wrong.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.True(await page.HasAsync(Button("Check again")));
+        Assert.Empty(page.Errors);
+    }
+
     // A problem that comes long after the Save, e.g. once the board is plugged in, moves nothing: the person may be
     // typing by then. One within the setup guide's 10 s does.
     [Fact]
@@ -277,6 +379,11 @@ public sealed class BoardProblemPagesTests
     {
         await page.TypeAsync(PageRenderer.With("id", "host"), "127.0.0.1");
         await page.TypeAsync(PageRenderer.With("id", "port"), port.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static Task<bool> IsDisabledAsync(PageRenderer page, string text)
+    {
+        return page.HasAsync(attributes => Button(text)(attributes) && attributes.GetValueOrDefault("disabled") is true);
     }
 
     private static Func<IReadOnlyDictionary<string, object?>, bool> Button(string text)
