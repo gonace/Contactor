@@ -280,7 +280,7 @@ public sealed partial class DotnetProgramStarter : IProgramStarter, IDisposable
     }
 }
 
-/// <summary>Free ports on 127.0.0.1 for a copy's programs and its simulated board.</summary>
+/// <summary>Free ports on 127.0.0.1 for a copy's app and simulator (its boards' are in <see cref="BoardPortBlocks"/>).</summary>
 public interface IFreePorts
 {
     /// <summary><paramref name="count"/> different ports nothing listens on right now.</summary>

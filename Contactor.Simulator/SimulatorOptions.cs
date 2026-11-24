@@ -22,6 +22,13 @@ public sealed class SimulatorOptions
     /// limit. The demo sets it, so no visitor runs more than their share.
     /// </summary>
     public int? MaxBoards { get; set; }
+
+    /// <summary>
+    /// The only ports a board may listen on, <c>first-last</c>, e.g. <c>10000-10020</c>; "Add a board" refuses any other
+    /// and offers a free one in it. The demo sets it, so no visitor's board takes a port another visitor's app may use
+    /// (Issue #606). Empty: any port.
+    /// </summary>
+    public string Ports { get; set; } = "";
 }
 
 /// <summary>One board that starts with the simulator, e.g. <c>Simulator__Boards__0__Port=9760</c>.</summary>

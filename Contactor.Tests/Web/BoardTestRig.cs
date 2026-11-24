@@ -99,13 +99,24 @@ internal sealed class BoardTestRig : IAsyncDisposable
         Func<Vm201Simulator, Task>? prepare = null,
         ILoggerProvider? logs = null,
         RelayLayout layout = RelayLayout.Same,
-        bool secondBoard = false)
+        bool secondBoard = false,
+        Func<int, IReadOnlyDictionary<string, string?>>? settings = null)
     {
         var simulator = new Vm201Simulator();
         simulator.Start();
         if (prepare is not null)
         {
             await prepare(simulator);
+        }
+
+        Dictionary<string, string?> configuration = new()
+        {
+            ["Vm201:Host"] = "127.0.0.1",
+            ["Vm201:Port"] = simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
+        foreach (var (key, value) in settings?.Invoke(simulator.Port) ?? new Dictionary<string, string?>())
+        {
+            configuration[key] = value;
         }
 
         var time = new FixedTimeProvider(new DateTimeOffset(Start));
@@ -126,11 +137,7 @@ internal sealed class BoardTestRig : IAsyncDisposable
                     services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Trace).AddProvider(logs));
                 }
             },
-            new Dictionary<string, string?>
-            {
-                ["Vm201:Host"] = "127.0.0.1",
-                ["Vm201:Port"] = simulator.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            });
+            configuration);
         var rig = new BoardTestRig(simulator, database, time, layout);
         await database.Services.InitializeDatabaseAsync(TestContext.Current.CancellationToken);
         await RelayLayouts.SeedAsync(database.Services, layout, simulator.Model.Capabilities.RelayCount, simulator.Model.Capabilities.InputCount);

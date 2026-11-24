@@ -171,6 +171,81 @@ public sealed class BoardAddressHandlerTests
         Assert.DoesNotContain(logs.Messages, m => m.Contains(Password, StringComparison.Ordinal));
     }
 
+    // The public demo (Issue #606): a visitor's app saves only 127.0.0.1, written so, and a port in its own block, so it
+    // never reaches another visitor's boards. The block here is the simulator's port alone.
+    [Theory]
+    [InlineData("127.0.0.1", -1)]
+    [InlineData("127.0.0.1", 1)]
+    [InlineData("0.0.0.0", 0)]
+    [InlineData("localhost", 0)]
+    [InlineData("172.30.60.3", 0)]
+    [InlineData("127.0.0.2", 0)]
+    [InlineData("127.1", 0)]
+    [InlineData("::1", 0)]
+    [InlineData("::ffff:127.0.0.1", 0)]
+    public async Task Should_RefuseAnAddressOutsideTheLimit_InWords(string host, int offset)
+    {
+        await using var rig = await LimitedAsync();
+        var port = rig.Simulator.Port;
+        var block = $"{port} to {port}";
+
+        Assert.Equal(
+            $"This app can only reach boards at 127.0.0.1, on a port from {block}.",
+            await Handler(rig).SaveAsync(rig.Live.BoardId, host, port + offset, John, Cancel));
+
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Null((await db.Boards.SingleAsync(Cancel)).Host);
+        Assert.Equal(new BoardEndpoint("127.0.0.1", port), rig.Client.Endpoint);
+    }
+
+    [Fact]
+    public async Task Should_SaveAnAddressInsideTheLimit()
+    {
+        await using var rig = await LimitedAsync();
+
+        Assert.Null(await Handler(rig).SaveAsync(rig.Live.BoardId, " 127.0.0.1 ", rig.Simulator.Port, John, Cancel));
+
+        await using var db = await rig.Database.Factory.CreateDbContextAsync(Cancel);
+        Assert.Equal(("127.0.0.1", (int?)rig.Simulator.Port), ((await db.Boards.SingleAsync(Cancel)).Host, (await db.Boards.SingleAsync(Cancel)).Port));
+        Assert.True(rig.Client.State.IsConnected);
+    }
+
+    // An address saved before the limit, or written to the database some other way, is kept but never used.
+    [Theory]
+    [InlineData("127.0.0.1", 1)]
+    [InlineData("localhost", 0)]
+    public async Task Should_NotConnect_ToASavedAddressOutsideTheLimit(string host, int offset)
+    {
+        await using var rig = await LimitedAsync();
+        await using (var db = await rig.Database.Factory.CreateDbContextAsync(Cancel))
+        {
+            var board = await db.Boards.SingleAsync(Cancel);
+            (board.Host, board.Port) = (host, rig.Simulator.Port + offset);
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await rig.Live.ApplySavedAsync(Cancel);
+
+        Assert.False(rig.Client.Endpoint.HasHost);
+        await BoardTestRig.WaitUntilAsync(() => !rig.Client.State.IsConnected);
+    }
+
+    [Theory]
+    [InlineData("127.0.0.1", "")]
+    [InlineData("", "10000-10020")]
+    [InlineData("localhost", "10000-10020")]
+    [InlineData("127.1", "10000-10020")]
+    [InlineData("127.0.0.1", "10020-10000")]
+    [InlineData("127.0.0.1", "10000")]
+    [InlineData("127.0.0.1", " 10000-10020")]
+    [InlineData("127.0.0.1", "0-10")]
+    public void Should_RefuseToStart_OnALimitItCannotRead(string host, string ports)
+    {
+        var result = new BoardAddressOptionsValidation().Validate(null, new BoardAddressOptions { OnlyHost = host, OnlyPorts = ports });
+
+        Assert.True(result.Failed);
+    }
+
     [Theory]
     [InlineData(BoardEndpointError.NoHost, "", "Enter the relay board's address, e.g. 192.168.1.50.")]
     [InlineData(BoardEndpointError.NotAnAddress, " 192.168.1.50/24 ", "192.168.1.50/24 isn't an address. Enter e.g. 192.168.1.50.")]
@@ -178,9 +253,18 @@ public sealed class BoardAddressHandlerTests
     public void Should_PutTheAddressError_InWords(BoardEndpointError error, string host, string text)
     {
         var texts = TestTexts.Localizer;
-        var handler = new BoardAddressHandler(null!, null!, null!, null!, texts, new BoardLoginText(texts), null!);
+        var handler = new BoardAddressHandler(null!, null!, null!, null!, texts, new BoardLoginText(texts), null!, BoardAddressLimit.None);
 
         Assert.Equal(text, handler.EndpointError(error, host));
+    }
+
+    private static Task<BoardTestRig> LimitedAsync()
+    {
+        return BoardTestRig.StartAsync(settings: port => new Dictionary<string, string?>
+        {
+            ["Boards:OnlyHost"] = "127.0.0.1",
+            ["Boards:OnlyPorts"] = $"{port}-{port}",
+        });
     }
 
     private static BoardAddressHandler Handler(BoardTestRig rig)

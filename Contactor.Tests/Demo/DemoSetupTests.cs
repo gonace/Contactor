@@ -79,6 +79,22 @@ public sealed class DemoSetupTests : IDisposable
         Assert.False(DemoOptions.TryParseTunnelAddress(address, out _));
     }
 
+    // Each visitor gets MaxBoards + 1 board ports of their own, from 10000 ports in all (Issue #606).
+    [Theory]
+    [InlineData(100, 99, true)]
+    [InlineData(99, 100, true)]
+    [InlineData(100, 100, false)]
+    public void Should_StartOnlyWhenEveryVisitorFitsABlockOfBoardPorts(int maxVisitors, int maxBoards, bool fits)
+    {
+        var options = _folder.Options(maxVisitors);
+        options.MaxBoards = maxBoards;
+
+        var result = new DemoOptionsValidation().Validate(null, options);
+
+        Assert.Equal(fits, result.Succeeded);
+        Assert.Equal(!fits, result.Failures?.Contains("Demo:MaxVisitors × (Demo:MaxBoards + 1) is at most 10000: each visitor gets board ports of their own.") == true);
+    }
+
     [Theory]
     [InlineData("172.30.60.2", "172.30.60.2")]
     [InlineData(" 172.30.60.2 ", "172.30.60.2")]

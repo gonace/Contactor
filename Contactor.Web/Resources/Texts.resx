@@ -146,6 +146,10 @@
   <data name="Boards.Endpoint.NoHost" xml:space="preserve">
     <value>Enter the relay board's address, e.g. 192.168.1.50.</value>
   </data>
+  <data name="Boards.Endpoint.NotAllowed" xml:space="preserve">
+    <value>This app can only reach boards at {0}, on a port from {1} to {2}.</value>
+    <comment>{0} is the only address, {1} and {2} the first and last port.</comment>
+  </data>
   <data name="Boards.Endpoint.NotAnAddress" xml:space="preserve">
     <value>{0} isn't an address. Enter e.g. 192.168.1.50.</value>
     <comment>{0} is what was typed.</comment>

@@ -10,6 +10,7 @@ namespace Contactor.Web.Features.Boards;
 public sealed class ActiveBoard : IAsyncDisposable
 {
     private readonly ServiceProvider _services;
+    private readonly BoardAddressLimit _limit;
     private int _disposed;
 
     private ActiveBoard(
@@ -19,8 +20,10 @@ public sealed class ActiveBoard : IAsyncDisposable
         IRelayBoard board,
         IBoardConnection connection,
         IBoardTraffic traffic,
-        IReadOnlyList<IHostedService> extras)
+        IReadOnlyList<IHostedService> extras,
+        BoardAddressLimit limit)
     {
+        _limit = limit;
         Model = model;
         BoardId = boardId;
         _services = services;
@@ -91,7 +94,8 @@ public sealed class ActiveBoard : IAsyncDisposable
                 provider.GetRequiredService<TBoard>(),
                 provider.GetRequiredService<TConnection>(),
                 provider.GetRequiredService<TTraffic>(),
-                extras?.Invoke(provider) ?? []);
+                extras?.Invoke(provider) ?? [],
+                setup.Limit);
             board.UseSaved(setup.Endpoint, setup.Login);
             return board;
         }
@@ -109,8 +113,17 @@ public sealed class ActiveBoard : IAsyncDisposable
     /// </summary>
     public void UseSaved(BoardEndpoint? endpoint, BoardLogin? login)
     {
-        Connection.SetEndpoint(endpoint ?? Connection.DefaultEndpoint);
+        SetEndpoint(endpoint ?? Connection.DefaultEndpoint);
         Connection.SetLogin(LoginFor(login));
+    }
+
+    /// <summary>
+    /// Points the connection at <paramref name="endpoint"/>, or at no address when the app may not use it
+    /// (<see cref="BoardAddressLimit"/>): then nothing connects.
+    /// </summary>
+    public void SetEndpoint(BoardEndpoint endpoint)
+    {
+        Connection.SetEndpoint(_limit.Connectable(endpoint));
     }
 
     /// <summary>The login in use for a saved one, as <see cref="UseSaved"/> picks it.</summary>

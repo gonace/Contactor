@@ -87,15 +87,30 @@ internal sealed class FakeRun : IRunningProgram
         }
     }
 
-    public Task StopAsync()
+    /// <summary>Set: a stop waits for it before the program exits.</summary>
+    public TaskCompletionSource? HoldStop { get; set; }
+
+    /// <summary>A stop fails and the program doesn't exit, as when its process can't be killed.</summary>
+    public bool StopFails { get; set; }
+
+    public async Task StopAsync()
     {
+        if (HoldStop is { } hold)
+        {
+            await hold.Task;
+        }
+
+        if (StopFails)
+        {
+            throw new InvalidOperationException("The process couldn't be stopped.");
+        }
+
         if (!_exited.Task.IsCompleted)
         {
             Stopped = true;
         }
 
         _exited.TrySetResult(-1);
-        return Task.CompletedTask;
     }
 
     public async ValueTask DisposeAsync()

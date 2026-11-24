@@ -373,7 +373,7 @@ public sealed class BoardAddingTests
         Assert.False(made.IsUnfinished);
         Assert.True(registry.IsShown(made.BoardId));
         await using var next = new BoardRegistry(
-            boards.Factory, boards.App.Services, boards.App.Services.GetRequiredService<IConfiguration>(), TimeProvider.System, NullLoggerFactory.Instance);
+            boards.Factory, boards.App.Services, boards.App.Services.GetRequiredService<IConfiguration>(), TimeProvider.System, NullLoggerFactory.Instance, BoardAddressLimit.None);
         await next.LoadAsync(Cancel);
         Assert.NotNull(next.Find(made.BoardId));
         await using var db = await boards.Factory.CreateDbContextAsync(Cancel);

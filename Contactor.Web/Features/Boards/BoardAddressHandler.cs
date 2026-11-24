@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Contactor.Boards;
 using Contactor.Web.Features.BoardRules;
@@ -27,6 +28,7 @@ public sealed class BoardAddressHandler
     private readonly IStringLocalizer<Texts> _texts;
     private readonly BoardLoginText _login;
     private readonly OwnRulesService _ownRules;
+    private readonly BoardAddressLimit _limit;
 
     public BoardAddressHandler(
         IDbContextFactory<ContactorDbContext> dbFactory,
@@ -35,8 +37,11 @@ public sealed class BoardAddressHandler
         RelayChanges changes,
         IStringLocalizer<Texts> texts,
         BoardLoginText login,
-        OwnRulesService ownRules)
+        OwnRulesService ownRules,
+        BoardAddressLimit limit)
     {
+        ArgumentNullException.ThrowIfNull(limit);
+        _limit = limit;
         _ownRules = ownRules;
         _texts = texts;
         _login = login;
@@ -208,6 +213,14 @@ public sealed class BoardAddressHandler
         if (BoardEndpoint.TryCreate(host, port, out var error) is not { } endpoint)
         {
             return EndpointError(error, host);
+        }
+
+        // Only the public demo has a limit: a visitor's app reaches only the boards in their own simulator.
+        if (!_limit.Allows(endpoint))
+        {
+            // The ports as digits alone: a language's number format would write 10000 as "10 000".
+            return _texts["Boards.Endpoint.NotAllowed", _limit.Host!,
+                _limit.Ports!.First.ToString(CultureInfo.InvariantCulture), _limit.Ports.Last.ToString(CultureInfo.InvariantCulture)];
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);

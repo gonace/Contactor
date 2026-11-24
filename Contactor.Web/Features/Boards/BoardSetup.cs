@@ -17,11 +17,17 @@ public sealed record BoardSetup(int BoardId, bool IsFirst, BoardEndpoint? Endpoi
     // The settings that say where a board is and how to log in to it: only the first board takes them from the section.
     private static readonly HashSet<string> AddressKeys = new(StringComparer.OrdinalIgnoreCase) { "Host", "Port", "Username", "Password" };
 
+    /// <summary>
+    /// The addresses the board may connect to (<see cref="BoardAddressLimit"/>): any, but in the public demo. Applied to
+    /// the saved address and the settings' alike, each time the connection is pointed somewhere.
+    /// </summary>
+    public BoardAddressLimit Limit { get; init; } = BoardAddressLimit.None;
+
     /// <summary>The setup of the board on <paramref name="row"/>.</summary>
-    public static BoardSetup From(Board row, bool isFirst)
+    public static BoardSetup From(Board row, bool isFirst, BoardAddressLimit? limit = null)
     {
         ArgumentNullException.ThrowIfNull(row);
-        return new BoardSetup(row.Id, isFirst, SavedEndpoint(row), SavedLogin(row));
+        return new BoardSetup(row.Id, isFirst, SavedEndpoint(row), SavedLogin(row)) { Limit = limit ?? BoardAddressLimit.None };
     }
 
     /// <summary>The address saved on the row, or null while the board's own settings apply.</summary>

@@ -596,7 +596,7 @@ public sealed class BoardRegistryTests
 
         // The next start.
         await using var next = new BoardRegistry(
-            database.Factory, database.Services, database.Services.GetRequiredService<IConfiguration>(), TimeProvider.System, NullLoggerFactory.Instance);
+            database.Factory, database.Services, database.Services.GetRequiredService<IConfiguration>(), TimeProvider.System, NullLoggerFactory.Instance, BoardAddressLimit.None);
         await next.LoadAsync(Cancel);
 
         Assert.Equal(finished ? [workshop, garage.BoardId] : [workshop], next.All.Select(b => b.BoardId));
@@ -621,7 +621,7 @@ public sealed class BoardRegistryTests
         var logs = new ListLoggerProvider();
         using var loggers = LoggerFactory.Create(b => b.AddProvider(logs));
         var configuration = database.Services.GetRequiredService<IConfiguration>();
-        await using (var first = new BoardRegistry(database.Factory, database.Services, configuration, TimeProvider.System, loggers))
+        await using (var first = new BoardRegistry(database.Factory, database.Services, configuration, TimeProvider.System, loggers, BoardAddressLimit.None))
         {
             await first.LoadAsync(Cancel);
 
@@ -635,7 +635,7 @@ public sealed class BoardRegistryTests
             await db.Database.ExecuteSqlRawAsync("DROP TRIGGER keep_board;", Cancel);
         }
 
-        await using var next = new BoardRegistry(database.Factory, database.Services, configuration, TimeProvider.System, loggers);
+        await using var next = new BoardRegistry(database.Factory, database.Services, configuration, TimeProvider.System, loggers, BoardAddressLimit.None);
         await next.LoadAsync(Cancel);
 
         Assert.Equal([workshop], next.All.Select(b => b.BoardId));

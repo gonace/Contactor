@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Sockets;
+using Contactor.Boards;
 using Microsoft.Extensions.Options;
 
 namespace Contactor.Simulator;
@@ -14,6 +15,7 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
     private readonly ILogger<SimulatedBoards> _logger;
     private readonly TimeProvider _time;
     private readonly int? _maxBoards;
+    private readonly PortRange? _ports;
     private readonly Lock _lock = new();
     private readonly List<RunningBoard> _boards = [];
     private int _nextId = 1;
@@ -27,7 +29,13 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
         _logger = loggers.CreateLogger<SimulatedBoards>();
         _time = time;
         _maxBoards = options.Value.MaxBoards;
+        // Validated at start; should it be read without that, a range that can't be read allows no port.
+        var ports = options.Value.Ports ?? "";
+        _ports = ports.Length == 0 ? null : PortRange.TryParse(ports, out var range) ? range : new PortRange(0, -1);
     }
+
+    /// <summary>The only ports a board may listen on (<see cref="SimulatorOptions.Ports"/>), or null for any.</summary>
+    public PortRange? Ports => _ports;
 
     /// <summary>Raised when a board is added or removed, or any board's state or traffic changes; from any thread.</summary>
     public event EventHandler? Changed;
@@ -72,6 +80,11 @@ public sealed partial class SimulatedBoards : IAsyncDisposable
         if (port is < 1 or > 65535)
         {
             return "The port is a number from 1 to 65535.";
+        }
+
+        if (_ports is { } only && !only.Contains(port))
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"Choose a port from {only.First} to {only.Last}.");
         }
 
         if (string.IsNullOrEmpty(username) && string.IsNullOrEmpty(password))

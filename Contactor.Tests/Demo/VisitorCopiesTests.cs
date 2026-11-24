@@ -63,6 +63,64 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.Equal(6, copy.Visitor.Length);
     }
 
+    // Issue #606: each copy's simulator opens boards, and its app connects, only in a block of ports no other copy has,
+    // nor any copy's app or simulator.
+    [Fact]
+    public async Task Should_GiveEachCopy_ABlockOfBoardPorts_OfItsOwn()
+    {
+        await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => Start(_copies).Started));
+
+        List<Contactor.Boards.PortRange> blocks = [];
+        foreach (var (app, simulator) in _starter.RunsOf("app").Zip(_starter.RunsOf("simulator"), (a, s) => (a.Start, s.Start)))
+        {
+            Assert.True(Contactor.Boards.PortRange.TryParse(app.Environment["Boards__OnlyPorts"], out var block));
+            Assert.Equal("127.0.0.1", app.Environment["Boards__OnlyHost"]);
+            Assert.Equal(block.ToString(), simulator.Environment["Simulator__Ports"]);
+            Assert.Equal(block.First.ToString(System.Globalization.CultureInfo.InvariantCulture), app.Environment["Vm201__Port"]);
+            Assert.Equal(block.First.ToString(System.Globalization.CultureInfo.InvariantCulture), simulator.Environment["Simulator__Boards__0__Port"]);
+            Assert.Equal(21, block.Count);
+            Assert.InRange(block.First, BoardPortBlocks.First, BoardPortBlocks.Last);
+            Assert.InRange(block.Last, BoardPortBlocks.First, BoardPortBlocks.Last);
+            blocks.Add(block);
+        }
+
+        Assert.Equal(3, blocks.Count);
+        Assert.All(blocks, a => Assert.Single(blocks, b => b.Overlaps(a)));
+        Assert.DoesNotContain(_starter.Runs, r => blocks.Any(b => b.Contains(r.Start.Port)));
+    }
+
+    // With room for one block: a copy that stops gives its board ports back only once its programs have exited, and
+    // one whose programs didn't stop cleanly keeps them out of use, so no other copy's boards open where one may listen.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Should_GiveABlockBack_OnlyOnceTheCopysProgramsHaveExited(bool stopFails)
+    {
+        var options = _folder.Options(maxVisitors: 3);
+        options.MaxBoards = BoardPortBlocks.Room - 1;
+        await using var copies = new VisitorCopies(
+            Options.Create(options), _starter, new FakePorts(), _database, _time, NullLoggerFactory.Instance);
+        var first = Start(copies);
+        await first.Started;
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        foreach (var run in _starter.Runs)
+        {
+            (run.HoldStop, run.StopFails) = (hold, stopFails);
+        }
+
+        var ending = copies.EndAsync(first.VisitorId);
+        Assert.Equal(VisitKind.Busy, copies.Visit(null).Kind);
+
+        hold.SetResult();
+        await ending;
+        Assert.Equal(0, copies.Taken);
+        Assert.Equal(stopFails ? VisitKind.Busy : VisitKind.Kept, copies.Visit(null).Kind);
+        foreach (var run in _starter.Runs)
+        {
+            run.StopFails = false;
+        }
+    }
+
     [Fact]
     public async Task Should_RunTheCopy_AndItsTemplate_InTheVisitorsTimeZone_FromItsStartToItsEnd()
     {
