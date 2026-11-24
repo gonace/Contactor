@@ -65,6 +65,7 @@ internal sealed class FakeConnection : IBoardConnection, IDisposable
     private volatile bool _running;
     private volatile bool _disposed;
     private volatile int _runs;
+    private int _tryAgains;
     private readonly TaskCompletionSource _failed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool Running => _running;
@@ -95,6 +96,18 @@ internal sealed class FakeConnection : IBoardConnection, IDisposable
     public LoginProblem? CheckLogin(BoardLogin login)
     {
         return null;
+    }
+
+    /// <summary>How often a person's "Check again" reached it.</summary>
+    public int TryAgains => Volatile.Read(ref _tryAgains);
+
+    /// <summary>What "Check again" does to the board, e.g. clear its problem, as a real connection does.</summary>
+    public Action? OnTryAgain { get; set; }
+
+    public void TryAgain()
+    {
+        Interlocked.Increment(ref _tryAgains);
+        OnTryAgain?.Invoke();
     }
 
     /// <summary>Ends the connection's run with <paramref name="exception"/>, as a connection that failed.</summary>
