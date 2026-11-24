@@ -192,7 +192,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
                 return new Visit(VisitKind.Copy, OffersTemplate: entry.Copy.OffersTemplate);
             }
 
-            if (_closed || TakenLocked >= _options.MaxVisitors)
+            if (_closed || TakenLocked >= _options.MaxVisitors || !_blocks.HasFree)
             {
                 return new Visit(VisitKind.Busy);
             }
@@ -234,7 +234,8 @@ public sealed partial class VisitorCopies : IAsyncDisposable
                 return new Use(UseKind.None);
             }
 
-            if (_closed || TakenLocked >= _options.MaxVisitors)
+            // A block of board ports kept out of use by a copy that didn't stop cleanly leaves one place fewer.
+            if (_closed || TakenLocked >= _options.MaxVisitors || !_blocks.HasFree)
             {
                 return new Use(UseKind.Busy);
             }
@@ -626,6 +627,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         // Lets StopLocked finish under its lock first.
         await Task.Yield();
         var copy = entry.Copy;
+        var exited = false;
         try
         {
             try
@@ -638,6 +640,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             }
 
             await Task.WhenAll(copy.App.DisposeAsync().AsTask(), copy.Simulator.DisposeAsync().AsTask());
+            exited = copy.App.HasExited && copy.Simulator.HasExited;
             DeleteFolder(copy.DataFolder);
             LogStopped(_logger, copy.Visitor, reason);
         }
@@ -650,11 +653,16 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             entry.Cancel.Dispose();
             lock (_lock)
             {
+                // Its board ports go back only once its programs have exited, so its boards no longer listen there, and
+                // in the same step as its place, so a copy that takes the place finds a block. When they didn't stop
+                // cleanly, one may still listen: the block stays out of use.
+                if (exited)
+                {
+                    _blocks.Release(entry.Block);
+                }
+
                 _stopping.Remove(entry);
             }
-
-            // Only now: its programs have exited, so its boards no longer listen there.
-            _blocks.Release(entry.Block);
         }
     }
 

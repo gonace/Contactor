@@ -50,12 +50,13 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         IConfiguration configuration,
         TimeProvider time,
         ILoggerFactory loggerFactory,
-        IEnumerable<IBoardWatcher>? watchers = null,
-        BoardAddressLimit? addressLimit = null)
+        BoardAddressLimit addressLimit,
+        IEnumerable<IBoardWatcher>? watchers = null)
     {
         ArgumentNullException.ThrowIfNull(loggerFactory);
         _watchers = [.. watchers ?? []];
-        _addressLimit = addressLimit ?? BoardAddressLimit.None;
+        ArgumentNullException.ThrowIfNull(addressLimit);
+        _addressLimit = addressLimit;
         _dbFactory = dbFactory;
         _app = app;
         _configuration = configuration;

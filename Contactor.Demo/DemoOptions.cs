@@ -160,7 +160,7 @@ public sealed class DemoOptionsValidation : IValidateOptions<DemoOptions>
         {
             errors.Add(string.Create(
                 CultureInfo.InvariantCulture,
-                $"Demo:MaxVisitors times Demo:MaxBoards and 1 is at most {BoardPortBlocks.Room}: each visitor gets board ports of their own."));
+                $"Demo:MaxVisitors × (Demo:MaxBoards + 1) is at most {BoardPortBlocks.Room}: each visitor gets board ports of their own."));
         }
 
         if (options.StartTimeout < TimeSpan.FromSeconds(1) || options.StartTimeout > TimeSpan.FromMinutes(10))

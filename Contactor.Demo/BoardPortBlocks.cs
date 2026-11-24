@@ -8,7 +8,8 @@ namespace Contactor.Demo;
 /// which no other copy shares while either runs (Issue #606). The copy's simulator opens its boards only there, and its
 /// app connects only there, so a visitor never reaches another's boards. The blocks lie from <see cref="First"/> to
 /// <see cref="Last"/>, below the random ports of the copies' programs (<see cref="LoopbackPorts"/>), so they never meet.
-/// A block is taken at random among the free ones, and given back once the copy's processes have exited.
+/// A block is taken at random among the free ones, and given back once the copy's processes have exited; never when
+/// they didn't stop cleanly.
 /// </summary>
 public sealed class BoardPortBlocks
 {
@@ -33,6 +34,18 @@ public sealed class BoardPortBlocks
 
     /// <summary>How many blocks there are: at least <see cref="DemoOptions.MaxVisitors"/> (checked at start).</summary>
     public int Count => _taken.Length;
+
+    /// <summary>Whether a block is free.</summary>
+    public bool HasFree
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _taken.Contains(false);
+            }
+        }
+    }
 
     /// <summary>A free block, now taken; throws when none is free.</summary>
     public PortRange Take()

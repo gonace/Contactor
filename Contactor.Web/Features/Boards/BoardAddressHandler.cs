@@ -38,9 +38,10 @@ public sealed class BoardAddressHandler
         IStringLocalizer<Texts> texts,
         BoardLoginText login,
         OwnRulesService ownRules,
-        BoardAddressLimit? limit = null)
+        BoardAddressLimit limit)
     {
-        _limit = limit ?? BoardAddressLimit.None;
+        ArgumentNullException.ThrowIfNull(limit);
+        _limit = limit;
         _ownRules = ownRules;
         _texts = texts;
         _login = login;

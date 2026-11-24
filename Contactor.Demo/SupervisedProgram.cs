@@ -43,6 +43,9 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
     // The current runs' own stop, cancelled by a restart as well as by StopAsync.
     private CancellationTokenSource? _run;
     private int _starts;
+
+    // The latest run started, to tell once stopped whether it really exited.
+    private IRunningProgram? _latest;
     private int _listened;
     private int _stopped;
     private int _disposed;
@@ -60,6 +63,12 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
 
     /// <summary>How many times it was started, the first included.</summary>
     public int Starts => Volatile.Read(ref _starts);
+
+    /// <summary>
+    /// Whether no run of the program is left: none started, or the latest one exited. False after a stop whose process
+    /// couldn't be stopped, which may still listen on its ports.
+    /// </summary>
+    public bool HasExited => Volatile.Read(ref _latest) is not { } latest || latest.Exited.IsCompleted;
 
     /// <summary>Whether it ever listened: a program given up after that had got going, and stopped working later.</summary>
     public bool HasListened => Volatile.Read(ref _listened) == 1;
@@ -305,6 +314,7 @@ public sealed partial class SupervisedProgram : IAsyncDisposable
     {
         var listening = Volatile.Read(ref _listening);
         var run = _starter.Start(_start);
+        Volatile.Write(ref _latest, run);
         await using (run)
         {
             using var probing = CancellationTokenSource.CreateLinkedTokenSource(stop);

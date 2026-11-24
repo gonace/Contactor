@@ -87,9 +87,38 @@ public sealed class VisitorCopiesTests : IAsyncDisposable
         Assert.Equal(3, blocks.Count);
         Assert.All(blocks, a => Assert.Single(blocks, b => b.Overlaps(a)));
         Assert.DoesNotContain(_starter.Runs, r => blocks.Any(b => b.Contains(r.Start.Port)));
+    }
 
-        // The copies' own ports are random from LoopbackPorts.First on: never in a block.
-        Assert.True(BoardPortBlocks.Last < LoopbackPorts.First);
+    // With room for one block: a copy that stops gives its board ports back only once its programs have exited, and
+    // one whose programs didn't stop cleanly keeps them out of use, so no other copy's boards open where one may listen.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Should_GiveABlockBack_OnlyOnceTheCopysProgramsHaveExited(bool stopFails)
+    {
+        var options = _folder.Options(maxVisitors: 3);
+        options.MaxBoards = BoardPortBlocks.Room - 1;
+        await using var copies = new VisitorCopies(
+            Options.Create(options), _starter, new FakePorts(), _database, _time, NullLoggerFactory.Instance);
+        var first = Start(copies);
+        await first.Started;
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        foreach (var run in _starter.Runs)
+        {
+            (run.HoldStop, run.StopFails) = (hold, stopFails);
+        }
+
+        var ending = copies.EndAsync(first.VisitorId);
+        Assert.Equal(VisitKind.Busy, copies.Visit(null).Kind);
+
+        hold.SetResult();
+        await ending;
+        Assert.Equal(0, copies.Taken);
+        Assert.Equal(stopFails ? VisitKind.Busy : VisitKind.Kept, copies.Visit(null).Kind);
+        foreach (var run in _starter.Runs)
+        {
+            run.StopFails = false;
+        }
     }
 
     [Fact]
