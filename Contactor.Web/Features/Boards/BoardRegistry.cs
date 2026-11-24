@@ -26,6 +26,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<BoardRegistry> _logger;
     private readonly IReadOnlyList<IBoardWatcher> _watchers;
+    private readonly BoardAddressLimit _addressLimit;
     private readonly Lock _lock = new();
 
     // One change to the boards at a time: loading, a new model, adding, removing and restoring a board.
@@ -49,10 +50,12 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         IConfiguration configuration,
         TimeProvider time,
         ILoggerFactory loggerFactory,
-        IEnumerable<IBoardWatcher>? watchers = null)
+        IEnumerable<IBoardWatcher>? watchers = null,
+        BoardAddressLimit? addressLimit = null)
     {
         ArgumentNullException.ThrowIfNull(loggerFactory);
         _watchers = [.. watchers ?? []];
+        _addressLimit = addressLimit ?? BoardAddressLimit.None;
         _dbFactory = dbFactory;
         _app = app;
         _configuration = configuration;
@@ -273,7 +276,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
                 return live;
             }
 
-            var built = Build(registration, BoardSetup.From(row, isFirst));
+            var built = Build(registration, BoardSetup.From(row, isFirst, _addressLimit));
             try
             {
                 // The rules of their own the old model reported are no rules of this one's (OwnRulesService reads them
@@ -392,7 +395,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
             try
             {
                 await _app.SeedBoardAsync(row.Id, model.Capabilities, cancellationToken);
-                var built = build(BoardSetup.From(row, isFirst));
+                var built = build(BoardSetup.From(row, isFirst, _addressLimit));
                 try
                 {
                     live = await AddAsync(row);
@@ -676,7 +679,7 @@ public sealed partial class BoardRegistry : IAsyncDisposable
         var live = await AddAsync(row);
         if (registration is not null)
         {
-            await live.ReplaceAsync(Build(registration, BoardSetup.From(row, isFirst)));
+            await live.ReplaceAsync(Build(registration, BoardSetup.From(row, isFirst, _addressLimit)));
         }
     }
 

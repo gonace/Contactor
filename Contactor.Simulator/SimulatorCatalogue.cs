@@ -263,8 +263,18 @@ public static class SimulatorCatalogue
     /// </summary>
     public static int? FreePort(string? type, IReadOnlyCollection<int> taken)
     {
+        return FreePort(type, taken, null);
+    }
+
+    /// <summary>
+    /// As <see cref="FreePort(string?, IReadOnlyCollection{int})"/>, but with <paramref name="only"/> set, the first port
+    /// in it that no board here uses, whatever the model; null when every one is taken.
+    /// </summary>
+    public static int? FreePort(string? type, IReadOnlyCollection<int> taken, PortRange? only)
+    {
         ArgumentNullException.ThrowIfNull(taken);
-        for (var port = (Find(type) ?? All[0]).Port; port <= 65535; port++)
+        var (first, last) = only is null ? ((Find(type) ?? All[0]).Port, 65535) : (only.First, only.Last);
+        for (var port = first; port <= last; port++)
         {
             if (!taken.Contains(port))
             {

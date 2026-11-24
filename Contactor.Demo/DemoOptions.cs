@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Net;
 using Microsoft.Extensions.Options;
 
@@ -152,6 +153,14 @@ public sealed class DemoOptionsValidation : IValidateOptions<DemoOptions>
         if (options.MaxBoards is < 1 or > 100)
         {
             errors.Add("Demo:MaxBoards is a number from 1 to 100.");
+        }
+
+        if (options.MaxVisitors is >= 1 and <= 100 && options.MaxBoards is >= 1 and <= 100
+            && options.MaxVisitors > BoardPortBlocks.Room / (options.MaxBoards + 1))
+        {
+            errors.Add(string.Create(
+                CultureInfo.InvariantCulture,
+                $"Demo:MaxVisitors times Demo:MaxBoards and 1 is at most {BoardPortBlocks.Room}: each visitor gets board ports of their own."));
         }
 
         if (options.StartTimeout < TimeSpan.FromSeconds(1) || options.StartTimeout > TimeSpan.FromMinutes(10))

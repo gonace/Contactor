@@ -1,4 +1,5 @@
 using System.Globalization;
+using Contactor.Boards;
 using Microsoft.Extensions.Options;
 
 namespace Contactor.Demo;
@@ -88,6 +89,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
     private readonly DemoOptions _options;
     private readonly IProgramStarter _starter;
     private readonly IFreePorts _ports;
+    private readonly BoardPortBlocks _blocks;
     private readonly ICopyDatabase _database;
     private readonly TimeProvider _time;
     private readonly ILoggerFactory _loggers;
@@ -113,6 +115,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
         _options = options.Value;
         _starter = starter;
         _ports = ports;
+        _blocks = new BoardPortBlocks(_options.MaxBoards + 1);
         _database = database;
         _time = time;
         _loggers = loggers;
@@ -499,9 +502,14 @@ public sealed partial class VisitorCopies : IAsyncDisposable
 
         // The folder has an id of its own: nothing a browser sends ever becomes part of a path.
         var dataFolder = Path.Combine(_options.DataRoot, VisitorCookie.NewId());
-        var ports = _ports.Take(3);
-        var (appPort, simulatorPort, boardPort) = (ports[0], ports[1], ports[2]);
-        var board = boardPort.ToString(CultureInfo.InvariantCulture);
+        var ports = _ports.Take(2);
+        var (appPort, simulatorPort) = (ports[0], ports[1]);
+
+        // The copy's own board ports, which no other copy's app or simulator may use (Issue #606): its simulator opens
+        // boards only there, and its app saves and connects to no other address. The first is its VM201's.
+        var block = _blocks.Take();
+        var board = block.First.ToString(CultureInfo.InvariantCulture);
+        var blockText = block.ToString();
         var app = new ProgramStart("app", visitor, _options.AppPath, appPort, new Dictionary<string, string>
         {
             ["ASPNETCORE_URLS"] = Url(appPort),
@@ -509,6 +517,8 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             ["ConnectionStrings__Default"] = _database.ConnectionString(dataFolder),
             ["Vm201__Host"] = Host,
             ["Vm201__Port"] = board,
+            ["Boards__OnlyHost"] = Host,
+            ["Boards__OnlyPorts"] = blockText,
             ["TimeZone"] = timeZone.Id,
             // No copy asks GitHub for releases: there is nothing to update in the demo.
             ["Updates__ReleasesUrl"] = "",
@@ -522,6 +532,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             ["Simulator__Boards__0__Type"] = "vm201",
             ["Simulator__Boards__0__Port"] = board,
             ["Simulator__MaxBoards"] = _options.MaxBoards.ToString(CultureInfo.InvariantCulture),
+            ["Simulator__Ports"] = blockText,
             ["DOTNET_gcServer"] = "0",
             ["Logging__LogLevel__Default"] = "Warning",
         }, ProgramProbe.Simulator);
@@ -532,7 +543,7 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             Supervise(app),
             Supervise(simulator),
             _time.GetUtcNow());
-        return new Entry(copy);
+        return new Entry(copy, block);
     }
 
     private SupervisedProgram Supervise(ProgramStart start)
@@ -641,6 +652,9 @@ public sealed partial class VisitorCopies : IAsyncDisposable
             {
                 _stopping.Remove(entry);
             }
+
+            // Only now: its programs have exited, so its boards no longer listen there.
+            _blocks.Release(entry.Block);
         }
     }
 
@@ -689,12 +703,16 @@ public sealed partial class VisitorCopies : IAsyncDisposable
 
     private sealed class Entry
     {
-        public Entry(VisitorCopy copy)
+        public Entry(VisitorCopy copy, PortRange block)
         {
             Copy = copy;
+            Block = block;
         }
 
         public VisitorCopy Copy { get; }
+
+        /// <summary>The copy's own board ports (<see cref="BoardPortBlocks"/>).</summary>
+        public PortRange Block { get; }
 
         public CancellationTokenSource Cancel { get; } = new();
 

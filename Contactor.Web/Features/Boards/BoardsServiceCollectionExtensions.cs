@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Contactor.Web.Features.Boards;
 
@@ -14,6 +15,11 @@ public static class BoardsServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(configuration);
         services.TryAddSingleton(TimeProvider.System);
+        services.AddOptions<BoardAddressOptions>()
+            .Bind(configuration.GetSection(BoardAddressOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<BoardAddressOptions>, BoardAddressOptionsValidation>();
+        services.AddSingleton<BoardAddressLimit>();
         services.AddSingleton<BoardRegistry>();
         services.AddSingleton<BoardChoice>();
         // The boards' messages. AddLanguages also adds the localization; adding it twice is harmless.

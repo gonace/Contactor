@@ -1,3 +1,4 @@
+using Contactor.Boards;
 using Contactor.ServiceDefaults;
 using Contactor.Simulator.Components;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -17,6 +18,7 @@ public sealed class Program
         builder.Services.AddOptions<SimulatorOptions>()
             .Bind(builder.Configuration.GetSection(SimulatorOptions.SectionName))
             .Validate(o => o.MaxBoards is null or >= 1, "Simulator:MaxBoards is 1 or more, or not set for no limit.")
+            .Validate(o => o.Ports.Length == 0 || PortRange.TryParse(o.Ports, out _), "Simulator:Ports is a range of ports, e.g. 10000-10020, or empty for any port.")
             .ValidateOnStart();
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<SimulatedBoards>();

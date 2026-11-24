@@ -159,11 +159,12 @@ public sealed class AddBoardForm
         OfferPort();
     }
 
-    // The model's suggested port, or the first free one after it; empty when none is free.
+    // The model's suggested port, or the first free one after it (with Simulator:Ports, the first free one in it); empty
+    // when none is free.
     private void OfferPort()
     {
         var taken = _boards.Boards.Select(b => b.Board.Port).ToHashSet();
-        _offeredPort = SimulatorCatalogue.FreePort(Model.Model.Id, taken)?.ToString(CultureInfo.InvariantCulture) ?? "";
+        _offeredPort = SimulatorCatalogue.FreePort(Model.Model.Id, taken, _boards.Ports)?.ToString(CultureInfo.InvariantCulture) ?? "";
         Port = _offeredPort;
     }
 

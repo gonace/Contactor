@@ -300,9 +300,10 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     public void SetEndpoint(BoardEndpoint endpoint)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
-        var connection = (Active ?? throw new InvalidOperationException(NotChosen)).Connection;
-        var moved = connection.Endpoint != endpoint;
-        connection.SetEndpoint(endpoint);
+        var active = Active ?? throw new InvalidOperationException(NotChosen);
+        var before = active.Connection.Endpoint;
+        active.SetEndpoint(endpoint);
+        var moved = active.Connection.Endpoint != before;
         if (moved)
         {
             Expected.Clear();

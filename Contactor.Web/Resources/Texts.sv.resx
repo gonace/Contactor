@@ -138,6 +138,9 @@
   <data name="Boards.Endpoint.NoHost" xml:space="preserve">
     <value>Skriv reläkortets adress, t.ex. 192.168.1.50.</value>
   </data>
+  <data name="Boards.Endpoint.NotAllowed" xml:space="preserve">
+    <value>Den här appen når bara kort på {0}, med en port från {1} till {2}.</value>
+  </data>
   <data name="Boards.Endpoint.NotAnAddress" xml:space="preserve">
     <value>{0} är ingen adress. Skriv t.ex. 192.168.1.50.</value>
   </data>
