@@ -92,7 +92,7 @@ public sealed class SimulatorCatalogueTests
 
     [Theory]
     [InlineData("vm201", "TCP packets, pushes changes", "9760", "Own rules: timers per relay (the app reads them and can turn them off). Pulse 1 s – 99 h.")]
-    [InlineData("vm204", "HTTP, polled every 2 s", "80 → 8204", "No own rules. Pulse 1 s – 2,147,483 s.")]
+    [InlineData("vm204", "HTTP, polled every 2 s", "80 → 8204", "Own rules: a pulse started on the board's own page (the app reads them; there may be others it can't see). Pulse 1 s – 2,147,483 s.")]
     [InlineData("vm208", "HTTP, polled every 2 s", "80 → 8208", "Own rules: a week schedule per relay (the app reads them and can turn them off; there may be others it can't see). No pulse.")]
     [InlineData("waveshare-8", "Modbus RTU over TCP, polled every 2 s", "4196", "No own rules. Pulse 0.1 s – 3,276.7 s.")]
     [InlineData("waveshare-8b", "Modbus RTU over TCP, polled every 2 s", "4196", "Own rules: relay modes that follow the inputs (the app reads them and can turn them off). Pulse 0.1 s – 3,276.7 s.")]
