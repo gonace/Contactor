@@ -6,13 +6,20 @@ namespace Contactor.Boards.Velleman;
 /// <param name="Analog">The analog input as the board's 10-bit converter reads it, or null when the answer had none.</param>
 /// <param name="Pulses">
 /// Bit per relay whose pulse runs (<c>"pulse"</c>), bit 0 = relay 1; null when the answer had no such flags the app could
-/// read. Every status reads it, but only the pulse command acts on it (<see cref="Vm204Client.PulseAsync"/>).
+/// read. The pulse command reads it (<see cref="Vm204Client.PulseAsync"/>), and a pulse the app didn't start is one of
+/// the board's own rules (<paramref name="OwnRules"/>).
 /// </param>
-public sealed record Vm204Status(byte Relays, byte Inputs, int? Analog, byte? Pulses = null)
+/// <param name="OwnRules">
+/// The board's own rules: a <see cref="OwnRuleKind.Timer"/> rule, which the app can't turn off, on each relay with a pulse
+/// running that the app didn't start (<see cref="Vm204Client"/> sets it); null while the <c>pulse</c> flags can't be read,
+/// and in an answer as the JSON reads it.
+/// </param>
+public sealed record Vm204Status(byte Relays, byte Inputs, int? Analog, byte? Pulses = null, OwnRules? OwnRules = null)
 {
     /// <summary>
     /// Compares the relays and inputs only: the analog value moves a little on every reading, so it alone is no state
-    /// change, which would wake the safety services. It comes as <see cref="Vm204Client.AnalogChanged"/> instead.
+    /// change, which would wake the safety services. It comes as <see cref="Vm204Client.AnalogChanged"/> instead, and a
+    /// change of the own rules alone as <see cref="Vm204Client.OwnRulesChanged"/>.
     /// </summary>
     public static IEqualityComparer<Vm204Status> SwitchesComparer { get; } = new Switches();
 
@@ -51,6 +58,9 @@ public sealed record Vm204State(bool IsConnected, Vm204Status? Status, DateTimeO
     public byte Relays => Status?.Relays ?? 0;
 
     public byte Inputs => Status?.Inputs ?? 0;
+
+    /// <summary>The board's own rules in the last answer (<see cref="Vm204Status.OwnRules"/>); null while unknown.</summary>
+    public OwnRules? OwnRules => Status?.OwnRules;
 
     public bool IsOn(int relay)
     {

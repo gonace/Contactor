@@ -232,7 +232,7 @@ public sealed class BoardCatalogueTests
         Dictionary<string, OwnRulesAbility> expected = new()
         {
             ["vm201"] = reads,
-            ["vm204"] = none,
+            ["vm204"] = new OwnRulesAbility(Reads: true, TurnsOff: false, MayHaveUnseen: true),
             ["vm208"] = readsMayHaveUnseen,
             ["waveshare-8"] = none,
             ["waveshare-8b"] = reads,

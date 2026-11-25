@@ -5,7 +5,9 @@ namespace Contactor.Boards.Velleman;
 /// <summary>
 /// The VM204 as an <see cref="IRelayBoard"/>: 4 relays, 4 digital inputs and an analog input, which it never reports
 /// by itself, so <see cref="Vm204Client"/> polls it. This only translates the client's state and commands. The analog
-/// input comes with every status; a change in it alone comes as <see cref="AnalogChanged"/>.
+/// input comes with every status; a change in it alone comes as <see cref="AnalogChanged"/>. Its own rules are the pulses
+/// started on the board's own page, which it reads but can't turn off (<see cref="Vm204Api.OwnRules"/>); a change of them
+/// alone comes as <see cref="OwnRulesChanged"/>.
 /// </summary>
 public sealed class Vm204Board : IRelayBoard
 {
@@ -31,7 +33,7 @@ public sealed class Vm204Board : IRelayBoard
         ReportsChanges: false,
         Analog: Vm204Analog,
         Pulse: Vm204Pulse,
-        OwnRules: OwnRulesAbility.None);
+        OwnRules: Vm204Api.OwnRules);
 
     private readonly Vm204Client _client;
     private readonly ILogger<Vm204Board> _logger;
@@ -47,11 +49,14 @@ public sealed class Vm204Board : IRelayBoard
         _logger = logger;
         _client.StateChanged += OnStateChanged;
         _client.AnalogChanged += OnAnalogChanged;
+        _client.OwnRulesChanged += OnOwnRulesChanged;
     }
 
     public event EventHandler<BoardState>? StateChanged;
 
     public event EventHandler<BoardState>? AnalogChanged;
+
+    public event EventHandler<BoardState>? OwnRulesChanged;
 
     public BoardCapabilities Capabilities => Vm204Capabilities;
 
@@ -94,13 +99,13 @@ public sealed class Vm204Board : IRelayBoard
 
     /// <summary>
     /// The VM204's state as a <see cref="BoardState"/>. Its analog input is unknown (null) before the first answer; an
-    /// answer without it, or with a value outside 0–1023, has no reading for it.
+    /// answer without it, or with a value outside 0–1023, has no reading for it. Its own rules are null while unknown.
     /// </summary>
     public static BoardState ToBoardState(Vm204State state)
     {
         ArgumentNullException.ThrowIfNull(state);
         var analog = state.Status is { } status ? new AnalogReadings([Vm204Analog.Check(status.Analog)]) : null;
-        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc, state.Problem, analog);
+        return new BoardState(state.IsConnected, new ChannelMask(state.Relays), new ChannelMask(state.Inputs), state.LastContactUtc, state.Problem, analog, state.OwnRules);
     }
 
     /// <summary>The board's relay mask: relays 1–4 only.</summary>
@@ -119,6 +124,13 @@ public sealed class Vm204Board : IRelayBoard
         var boardState = ToBoardState(state);
         _lastAnalog = boardState.Analog;
         Raise(StateChanged, boardState);
+    }
+
+    // Only the own rules changed: not a change the safety services, which listen to StateChanged, must see. Nothing in
+    // TurnOffOwnRulesAsync: the app can't stop a pulse, so the interface's default refuses it before anything is sent.
+    private void OnOwnRulesChanged(object? sender, Vm204State state)
+    {
+        Raise(OwnRulesChanged, ToBoardState(state));
     }
 
     // A raw value that changed between two the converter can't give (1500 to 1600), or a field that went away after
