@@ -326,6 +326,27 @@ public sealed partial class OwnRulesPagesTests
         Assert.Empty(page.Errors);
     }
 
+    // On a board that can't turn its rules off (e.g. a pulse started on the VM204's own page), nothing is left on the relay
+    // once the run ends: the running group has no "Keep" and doesn't say when it could be pressed.
+    [Fact]
+    public async Task Should_OfferNoKeepAfterTheRun_OnABoardThatCantTurnItsRulesOff()
+    {
+        const string Later = "Once the pulse or timer has ended, a schedule on the relay can be turned off or kept.";
+        var board = Board(new OwnRulesAbility(Reads: true, TurnsOff: false, MayHaveUnseen: true));
+        await using var app = App(board);
+        await RulesAsync(app, board, new OwnRules([Timer3], [[Timer3]], [Timer3]));
+
+        var box = Box(await PageAsync(app, "/"));
+        var card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
+
+        foreach (var shown in new[] { box, card })
+        {
+            Assert.Contains("Running on the board right now", shown, StringComparison.Ordinal);
+            Assert.DoesNotContain(">Keep</button>", shown, StringComparison.Ordinal);
+            Assert.DoesNotContain(Later, shown, StringComparison.Ordinal);
+        }
+    }
+
     // A rule the board runs now and ends by itself (relay 3, e.g. a timer started on the VM208's own page): warned about,
     // in a group of its own, "Running on the board right now", with no "Turn off", a "Keep" that can't be pressed and
     // when it can; the handler refuses its "Keep" too. Once the run has ended, the open card shows it as usual.

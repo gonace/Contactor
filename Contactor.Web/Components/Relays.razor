@@ -553,7 +553,7 @@
                 <strong>@OwnRulesText.Heading(rules, boardName)</strong>
                 <span>@OwnRulesText.CanSwitch(rules)</span>
                 @* A rule that runs on the board right now, in a group of its own (issue #552). *@
-                <OwnRulesRunning Channels="@([.. rules.Where(r => OwnRules.RunsOnBoard(board.BoardId, r)).Select(r => r.Relay).Distinct()])" Names="RelayNames(board.BoardId)" />
+                <OwnRulesRunning BoardId="board.BoardId" Channels="@([.. rules.Where(r => OwnRules.RunsOnBoard(board.BoardId, r)).Select(r => r.Relay).Distinct()])" Names="RelayNames(board.BoardId)" />
                 @* Only the rules the app can turn off: not a timer the board runs now and ends by itself. Each relay's card has
                    its own button (issue #616); this one turns them all off (TurnOffAllText). *@
                 @if (_shownTurnsOff.GetValueOrDefault(board.BoardId) is { Count: > 0 } turnsOff && TurnOffAllText(board.BoardId, turnsOff) is { } turnOffAll)

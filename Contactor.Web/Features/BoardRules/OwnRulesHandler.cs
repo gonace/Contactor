@@ -132,6 +132,17 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
+    /// Whether the "Running on the board right now" rows offer a "Keep" for after the run, and say when it can be pressed:
+    /// only on a board that turns its rules off (<see cref="OwnRulesAbility.TurnsOff"/>), where the relay may also have a
+    /// schedule on the board to turn off or keep then (the VM208). A board that can't (the VM204, whose only rules are its
+    /// pulses) has nothing left on the relay once the run ends, so the rows show neither.
+    /// </summary>
+    public bool OffersKeepAfterRun(int boardId)
+    {
+        return _registry.Find(boardId)?.Capabilities.OwnRulesOrCantTell.TurnsOff == true;
+    }
+
+    /// <summary>
     /// Whether <paramref name="rule"/> runs on the board right now and ends by itself: the board's state names it among
     /// the rules the app can't turn off (<see cref="OwnRules.CantTurnOff"/>), e.g. a pulse or a timer started on the
     /// VM208's own page. The screens show it in a group of its own, "Running on the board right now", with no "Turn off"
