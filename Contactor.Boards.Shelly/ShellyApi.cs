@@ -55,6 +55,22 @@ public static class ShellyApi
     /// </summary>
     public const string AutoOn = "auto_on";
 
+    /// <summary>
+    /// The member of a switch's configuration with the mode of its input, "Mode of the associated input": <c>momentary</c>,
+    /// <c>follow</c>, <c>flip</c>, <c>detached</c>, <c>cycle</c> or <c>activate</c> ("Switch", "Configuration"). The app
+    /// reads it, and sets it to <see cref="InputDetached"/> only.
+    /// </summary>
+    public const string InputMode = "in_mode";
+
+    /// <summary>
+    /// The member of a switch's configuration that locks its input, true or false ("Switch", "Configuration"): a locked
+    /// input switches nothing.
+    /// </summary>
+    public const string InputLocked = "in_locked";
+
+    /// <summary>The <see cref="InputMode"/> of an input that switches nothing: the one the app sets.</summary>
+    public const string InputDetached = "detached";
+
     /// <summary>"toggles the output state": <c>{"id":n}</c> ("Switch", "Switch.Toggle"). The app only reads it in a schedule.</summary>
     public const string SwitchToggle = "Switch.Toggle";
 
@@ -83,11 +99,30 @@ public static class ShellyApi
     public const int MaxScheduleCalls = 5;
 
     /// <summary>
-    /// What the app knows of a device's own rules: it reads its schedules that switch a relay and each switch's auto-on,
-    /// and turns them off; it can't see scripts, webhooks, MQTT, the cloud, auto-off or the inputs, so a person should
-    /// still check the device's own page.
+    /// What the app knows of a device's own rules: it reads its schedules that switch a relay, each switch's auto-on and
+    /// each switch's input mode, and turns them off; it can't see scripts, webhooks, MQTT, the cloud or auto-off, so a
+    /// person should still check the device's own page.
     /// </summary>
     public static OwnRulesAbility OwnRules { get; } = new(Reads: true, TurnsOff: true, MayHaveUnseen: true);
+
+    /// <summary>
+    /// The rule a switch's <see cref="InputMode"/> makes, as <see cref="ShellyInputRule"/>: <c>flip</c> and <c>follow</c>
+    /// switch the relay at each change of the input (<see cref="OwnRuleKind.InputEdge"/>); <c>momentary</c>,
+    /// <c>cycle</c> and <c>activate</c> switch it, or turn it on, at a press (<see cref="OwnRuleKind.InputToggle"/>);
+    /// <c>detached</c>, or any mode while <paramref name="locked"/>, switches nothing. Null for a mode the docs don't
+    /// name. The device still obeys the app in every mode, so none of them is <see cref="OwnRuleKind.InputLinkage"/>.
+    /// </summary>
+    public static ShellyInputRule? ToInputRule(string? mode, bool locked)
+    {
+        var rule = mode switch
+        {
+            "flip" or "follow" => new ShellyInputRule(OwnRuleKind.InputEdge),
+            "momentary" or "cycle" or "activate" => new ShellyInputRule(OwnRuleKind.InputToggle),
+            InputDetached => ShellyInputRule.None,
+            _ => (ShellyInputRule?)null,
+        };
+        return locked && rule is not null ? ShellyInputRule.None : rule;
+    }
 
     /// <summary>
     /// What a switch's <see cref="InitialState"/> does after a power cut, all four the docs list (per relay).

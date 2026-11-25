@@ -11,8 +11,9 @@ namespace Contactor.Boards.Shelly;
 /// </param>
 /// <param name="OwnRules">
 /// The device's own rules as last read: a <c>Timer</c> rule on each relay an enabled schedule switches, one unit per
-/// schedule, and an <c>AutoOn</c> rule on each relay whose switch has <c>auto_on</c>. Null before they were read, and
-/// when the last read of the schedules or of a switch's settings failed.
+/// schedule, an <c>InputEdge</c> or <c>InputToggle</c> rule on each relay whose switch's <c>in_mode</c> lets its input
+/// switch it, and an <c>AutoOn</c> rule on each relay whose switch has <c>auto_on</c>. Null before they were read, and
+/// when the last read of the schedules or of a switch's settings failed or gave an <c>in_mode</c> the docs don't name.
 /// </param>
 /// <param name="Inputs">Bit per input, bit 0 = input 1 (<c>input:0</c>); 1 = its <c>state</c> is true.</param>
 /// <param name="InputCount">

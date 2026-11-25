@@ -164,6 +164,55 @@ public static class ShellyJson
     }
 
     /// <summary>
+    /// Reads the rule a switch's input makes from <c>Switch.GetConfig</c>'s result, after <see cref="ReadPowerOn"/> checked
+    /// it ("Switch", "Configuration"): its <c>in_mode</c> and <c>in_locked</c>, as <see cref="ShellyApi.ToInputRule"/>
+    /// maps them. A switch without <c>in_mode</c> has no input to switch it (a device without one, e.g. a plug): no rule,
+    /// and a missing <c>in_locked</c> is false. Null for a mode the docs don't name, or a value of another type.
+    /// </summary>
+    public static ShellyInputRule? ReadInputRule(JsonElement result)
+    {
+        if (result.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var locked = false;
+        if (result.TryGetProperty(ShellyApi.InputLocked, out var lockedValue))
+        {
+            if (lockedValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return null;
+            }
+
+            locked = lockedValue.GetBoolean();
+        }
+
+        if (!result.TryGetProperty(ShellyApi.InputMode, out var mode))
+        {
+            return ShellyInputRule.None;
+        }
+
+        return mode.ValueKind == JsonValueKind.String ? ShellyApi.ToInputRule(mode.GetString(), locked) : null;
+    }
+
+    /// <summary>
+    /// <c>Switch.SetConfig</c> that detaches one relay's input, and nothing else of its configuration:
+    /// <c>{"id":relay-1,"config":{"in_mode":"detached"}}</c> ("Switch", "Switch.SetConfig").
+    /// </summary>
+    public static byte[] WriteSwitchInputDetached(int id, int relay)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relay, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, ShellyApi.MaxRelayCount);
+        return WriteRequest(id, ShellyApi.SwitchSetConfig, writer =>
+        {
+            writer.WriteNumber("id", relay - 1);
+            writer.WriteStartObject("config");
+            writer.WriteString(ShellyApi.InputMode, ShellyApi.InputDetached);
+            writer.WriteEndObject();
+        });
+    }
+
+    /// <summary>
     /// <c>Switch.SetConfig</c> that turns one relay's auto-on off, and nothing else of its configuration:
     /// <c>{"id":relay-1,"config":{"auto_on":false}}</c> ("Switch", "Switch.SetConfig").
     /// </summary>

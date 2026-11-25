@@ -5,8 +5,8 @@ namespace Contactor.Boards.Shelly;
 /// <summary>
 /// A Shelly Gen2+ device as an <see cref="IRelayBoard"/>: its entry's 1 to 4 relays, which it never reports by itself
 /// over HTTP, so <see cref="ShellyClient"/> polls it, each relay's state after a power cut (its switch's
-/// <c>initial_state</c>), which the app sets only when a person saves it, and the device's own schedules and auto-on,
-/// which the app turns off only on a person's press, and the inputs the device has, as it gave them at the connection
+/// <c>initial_state</c>), which the app sets only when a person saves it, and the device's own schedules, auto-on and
+/// inputs that switch a relay, which the app turns off only on a person's press, and the inputs the device has, as it gave them at the connection
 /// (<see cref="BoardCapabilities.InputCountFromBoard"/>). This only translates the client's state and commands.
 /// </summary>
 public sealed class ShellyBoard : IRelayBoard
@@ -69,8 +69,9 @@ public sealed class ShellyBoard : IRelayBoard
     }
 
     /// <summary>
-    /// Turns off the device's schedules behind the <see cref="OwnRuleKind.Timer"/> rules and the auto-on of the
-    /// <see cref="OwnRuleKind.AutoOn"/> rules (<see cref="ShellyClient.TurnOffOwnRulesAsync"/>), and reads them back.
+    /// Turns off the device's schedules behind the <see cref="OwnRuleKind.Timer"/> rules, the auto-on of the
+    /// <see cref="OwnRuleKind.AutoOn"/> rules and the input mode of the <see cref="OwnRuleKind.InputEdge"/> and
+    /// <see cref="OwnRuleKind.InputToggle"/> rules (<see cref="ShellyClient.TurnOffOwnRulesAsync"/>), and reads them back.
     /// </summary>
     public Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {

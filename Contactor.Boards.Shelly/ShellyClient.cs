@@ -41,10 +41,11 @@ namespace Contactor.Boards.Shelly;
 /// </para>
 /// <para>
 /// The device's own rules (<see cref="ShellyStatus.OwnRules"/>) come from the same <c>Switch.GetConfig</c> (each switch's
-/// <c>auto_on</c>) and from <c>Schedule.List</c>, read at connect, and in a poll only when <c>sys.schedule_rev</c>
+/// <c>auto_on</c>, and its <c>in_mode</c> and <c>in_locked</c>) and from <c>Schedule.List</c>, read at connect, and in a poll only when <c>sys.schedule_rev</c>
 /// differs from the one it was read with, or every <see cref="SettingsInterval"/> while that can't tell; never in the
 /// read that confirms a <c>Switch.Set</c>. A read that fails makes the rules unknown, never the device lost.
-/// <see cref="TurnOffOwnRulesAsync"/> turns them off with <c>Schedule.Update</c> and <c>Switch.SetConfig</c>, only on a
+/// <see cref="TurnOffOwnRulesAsync"/> turns them off with <c>Schedule.Update</c> and <c>Switch.SetConfig</c> (<c>auto_on</c>
+/// false, or <c>in_mode</c> detached), only on a
 /// person's press, and reads them back at once.
 /// </para>
 /// </summary>
@@ -101,11 +102,12 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     private bool _configFailed;
     private DateTimeOffset _configReadUtc;
 
-    // Only used under the poller's lock: each switch's auto_on as last read with its settings (null for one it couldn't
-    // read; the array null before the first read), and the schedules as last read, with the schedule_rev they were read
+    // Only used under the poller's lock: each switch's auto_on and the rule its input makes, as last read with its
+    // settings (null for one it couldn't read; the arrays null before the first read), and the schedules as last read, with the schedule_rev they were read
     // with, whether they are read for the current connection, when, and whether the read failed. ConnectAsync starts
     // them afresh.
     private bool?[]? _autoOn;
+    private ShellyInputRule?[]? _inputRules;
     private ShellySchedules? _schedules;
     private long? _scheduleRevision;
     private bool _schedulesRead;
@@ -324,7 +326,9 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     /// enabled schedule that switches its relay as last read (so the other relays such a schedule switches lose theirs
     /// too, as <see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/> says); a schedule is never deleted and its calls
     /// never changed. An <see cref="OwnRuleKind.AutoOn"/> rule is one <c>Switch.SetConfig</c> with only
-    /// <c>auto_on:false</c> for that switch. A rule given twice is taken once. Returns the rules asked that the device
+    /// <c>auto_on:false</c> for that switch. An <see cref="OwnRuleKind.InputEdge"/> or <see cref="OwnRuleKind.InputToggle"/>
+    /// rule is one <c>Switch.SetConfig</c> with only <c>in_mode:"detached"</c> for that switch, once per switch also when
+    /// both are given. A rule given twice is taken once. Returns the rules asked that the device
     /// took, in relay order: a timer once every schedule behind it took its update (also when, as last read, none
     /// switches it any more). Throws <see cref="ArgumentOutOfRangeException"/> for a relay the entry hasn't or another
     /// kind of rule, and <see cref="BoardNotConnectedException"/> without a connection, both before anything is sent;
@@ -341,9 +345,9 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
                 throw new ArgumentException("A rule can't be null.", nameof(rules));
             }
 
-            if (rule.Kind is not (OwnRuleKind.Timer or OwnRuleKind.AutoOn))
+            if (rule.Kind is not (OwnRuleKind.Timer or OwnRuleKind.AutoOn or OwnRuleKind.InputEdge or OwnRuleKind.InputToggle))
             {
-                throw new ArgumentOutOfRangeException(nameof(rules), rule.Kind, "A Shelly's own rules are its schedules and its auto-on.");
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Kind, "A Shelly's own rules are its schedules, its auto-on and its inputs.");
             }
 
             if (rule.Relay > _model.Capabilities.RelayCount)
@@ -432,6 +436,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         _configRead = false;
         _configFailed = false;
         _autoOn = null;
+        _inputRules = null;
         _schedules = null;
         _scheduleRevision = null;
         _schedulesRead = false;
@@ -664,7 +669,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     // don't list, is unknown, and the others are still read. No answer, a password refused or a 429 stops the read:
     // that switch and the ones after it are unknown. Either way the read is tried again after SettingsInterval, or at
     // the next cfg_rev. Only a cancelled poll (a command takes its place, or the app stops) ends it without a result.
-    // Each switch's auto_on comes from the same answer: unknown for a switch whose settings couldn't be read. Returns
+    // Each switch's auto_on and input rule come from the same answer: unknown for a switch whose settings couldn't be
+    // read, and the input rule also for an in_mode the docs don't name. Returns
     // whether the read stopped for no answer, a password refused or a 429.
     private async Task<bool> ReadPowerOnAsync(BoardEndpoint target, long? configRevision, CancellationToken cancellationToken)
     {
@@ -673,10 +679,12 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         var stopped = false;
         var states = new PowerOnState?[_model.Capabilities.RelayCount];
         var autoOn = new bool?[states.Length];
+        var inputRules = new ShellyInputRule?[states.Length];
         for (var relay = 1; relay <= states.Length; relay++)
         {
             var before = _powerOn?.For(relay);
             var autoOnBefore = _autoOn?[relay - 1];
+            var inputBefore = _inputRules?[relay - 1];
             try
             {
                 var id = NextId();
@@ -684,6 +692,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
                     .ConfigureAwait(false);
                 states[relay - 1] = ShellyJson.ReadPowerOn(result, relay);
                 autoOn[relay - 1] = ShellyJson.ReadAutoOn(result);
+                inputRules[relay - 1] = ShellyJson.ReadInputRule(result);
             }
             catch (Exception ex) when (ex is ShellyRpcException or ShellyProtocolException)
             {
@@ -708,14 +717,15 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             // A toast only when it differs from the last read.
             Trace(
                 BoardTraceDirection.Received,
-                ShellyTraceText.SettingsRead(relay, states[relay - 1], autoOn[relay - 1]),
-                isRoutine: _powerOn is not null && states[relay - 1] == before && autoOn[relay - 1] == autoOnBefore);
+                ShellyTraceText.SettingsRead(relay, states[relay - 1], autoOn[relay - 1], inputRules[relay - 1]),
+                isRoutine: _powerOn is not null && states[relay - 1] == before && autoOn[relay - 1] == autoOnBefore && inputRules[relay - 1] == inputBefore);
         }
 
         _powerOn = new PowerOnStates(states);
         _autoOn = autoOn;
+        _inputRules = inputRules;
         _configRevision = configRevision;
-        _configFailed = failed || Array.Exists(autoOn, a => a is null);
+        _configFailed = failed || Array.Exists(autoOn, a => a is null) || Array.Exists(inputRules, r => r is null);
         _configReadUtc = _timeProvider.GetUtcNow();
         _configRead = true;
         return stopped;
@@ -767,12 +777,17 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         }
     }
 
-    // Under the poller's lock: the own rules as last read, or null while the schedules or a switch's auto_on is unknown.
-    // A Timer rule on each relay an enabled schedule switches, one unit per such schedule (its relays' timers), and an
-    // AutoOn rule on each relay whose auto_on is on, its own unit; in relay order, the timer first.
+    // Under the poller's lock: the own rules as last read, or null while the schedules, a switch's auto_on or the rule
+    // its input makes is unknown. A Timer rule on each relay an enabled schedule switches, one unit per such schedule
+    // (its relays' timers), an InputEdge or InputToggle rule on each relay whose input switches it, and an AutoOn rule
+    // on each relay whose auto_on is on, each of those two its own unit; in relay order, the timer first.
     private OwnRules? CurrentOwnRules()
     {
-        if (_schedules is not { } schedules || _autoOn is not { } autoOn || Array.Exists(autoOn, a => a is null))
+        if (_schedules is not { } schedules
+            || _autoOn is not { } autoOn
+            || Array.Exists(autoOn, a => a is null)
+            || _inputRules is not { } inputRules
+            || Array.Exists(inputRules, r => r is null))
         {
             return null;
         }
@@ -783,6 +798,11 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             if ((schedules.Relays & (1 << (relay - 1))) != 0)
             {
                 rules.Add(new OwnRule(relay, OwnRuleKind.Timer));
+            }
+
+            if (inputRules[relay - 1]?.Kind is { } input)
+            {
+                rules.Add(new OwnRule(relay, input));
             }
 
             if (autoOn[relay - 1] == true)
@@ -802,7 +822,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             units.Add([.. new ChannelMask(job.Relays).Channels.Select(r => new OwnRule(r, OwnRuleKind.Timer))]);
         }
 
-        units.AddRange(rules.Where(r => r.Kind == OwnRuleKind.AutoOn).Select(r => (IReadOnlyCollection<OwnRule>)[r]));
+        units.AddRange(rules.Where(r => r.Kind != OwnRuleKind.Timer).Select(r => (IReadOnlyCollection<OwnRule>)[r]));
         return new OwnRules(rules, units);
     }
 
@@ -844,7 +864,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     }
 
     // Under the poller's lock: one Schedule.Update per schedule behind the timers asked, one Switch.SetConfig per auto-on
-    // asked, then the status, the settings and the schedules read back. Puts the rules the device took in taken.
+    // asked and one per switch whose input rule is asked, then the status, the settings and the schedules read back. Puts the rules the device took in taken.
     private async Task<CommandReading<ShellyStatus>> TurnOffRulesAndReadAsync(BoardEndpoint target, IReadOnlyList<OwnRule> asked, StrongBox<IReadOnlyList<OwnRule>> taken, CancellationToken cancellationToken)
     {
         // Another device may be at a new address, unchecked: nothing goes once the address moved or the device was lost.
@@ -852,6 +872,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
         var timers = asked.Where(r => r.Kind == OwnRuleKind.Timer).ToList();
         var autoOn = asked.Where(r => r.Kind == OwnRuleKind.AutoOn).ToList();
+        var inputs = asked.Where(r => r.Kind is OwnRuleKind.InputEdge or OwnRuleKind.InputToggle).ToList();
 
         // Whatever comes of it, the next read reads what was asked about again, also when a rev didn't move.
         if (timers.Count > 0)
@@ -859,7 +880,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             _schedulesRead = false;
         }
 
-        if (autoOn.Count > 0)
+        if (autoOn.Count > 0 || inputs.Count > 0)
         {
             _configRead = false;
         }
@@ -906,6 +927,25 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             catch (Exception ex) when (ex is ShellyRpcException or ShellyProtocolException)
             {
                 Refused(string.Create(CultureInfo.InvariantCulture, $"relay {rule.Relay}'s auto-on"), ex, ref refusal, ref unreadable);
+            }
+        }
+
+        // A switch has one input mode: one Switch.SetConfig takes every input rule asked for it.
+        foreach (var relay in inputs.Select(r => r.Relay).Distinct())
+        {
+            EnsureSameDevice(target);
+            sent = true;
+            try
+            {
+                var id = NextId();
+                await CallAsync(ShellyJson.WriteSwitchInputDetached(id, relay), id, ShellyTraceText.DetachInput(relay), routine: false, target, cancellationToken)
+                    .ConfigureAwait(false);
+                Trace(BoardTraceDirection.Received, ShellyTraceText.InputDetached(relay));
+                done.AddRange(inputs.Where(r => r.Relay == relay));
+            }
+            catch (Exception ex) when (ex is ShellyRpcException or ShellyProtocolException)
+            {
+                Refused(string.Create(CultureInfo.InvariantCulture, $"relay {relay}'s input"), ex, ref refusal, ref unreadable);
             }
         }
 
