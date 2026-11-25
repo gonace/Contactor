@@ -17,7 +17,7 @@ public sealed class Vm204BoardTests
     public void Should_HaveFourRelaysFourInputsAndAnAnalogInput_AndNotReportChanges()
     {
         var pulse = new PulseAbility(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2_147_483), TimeSpan.FromSeconds(1));
-        Assert.Equal(new BoardCapabilities(4, 4, ReportsChanges: false, Analog: new AnalogAbility(1, 1023, 6.6m), Pulse: pulse, OwnRules: OwnRulesAbility.None), Vm204Board.Vm204Capabilities);
+        Assert.Equal(new BoardCapabilities(4, 4, ReportsChanges: false, Analog: new AnalogAbility(1, 1023, 6.6m), Pulse: pulse, OwnRules: new OwnRulesAbility(Reads: true, TurnsOff: false, MayHaveUnseen: true)), Vm204Board.Vm204Capabilities);
         Assert.Equal(1, Vm204Board.Vm204Capabilities.AnalogInputCount);
         Assert.Equal(("vm204", "Velleman VM204", 80, 31), (Vm204Model.Model.Id, Vm204Model.Model.Name, Vm204Model.Model.DefaultPort, Vm204Model.Model.LoginMaxLength));
     }
@@ -144,6 +144,54 @@ public sealed class Vm204BoardTests
         await stop.CancelAsync();
         await run;
         Assert.Equal(new AnalogReadings([700]), Assert.Single(analogs).Analog);
+    }
+
+    // A pulse started on the board's own page alone comes as a rules change, never a state change, and the app sends
+    // nothing to stop it: the board can't turn its rules off (Issue #619).
+    [Fact]
+    public async Task Should_PassOnAPulseStartedOnTheBoard_AsARulesChange_AndSendNothingToTurnItOff()
+    {
+        await using var simulator = new Vm204Simulator();
+        simulator.Start();
+        await simulator.SwitchRelayAsync(3, true);
+        var options = Options.Create(new Vm204Options { Host = "127.0.0.1", Port = simulator.Port, PollSeconds = 2 });
+        using var client = new Vm204Client(options, new ManualTimeProvider(), NullLogger<Vm204Client>.Instance);
+        var board = new Vm204Board(client, NullLogger<Vm204Board>.Instance);
+        var states = new List<BoardState>();
+        var rules = new List<BoardState>();
+        board.StateChanged += (_, state) =>
+        {
+            lock (states)
+            {
+                states.Add(state);
+            }
+        };
+        board.OwnRulesChanged += (_, state) =>
+        {
+            lock (rules)
+            {
+                rules.Add(state);
+            }
+        };
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Cancel);
+        var run = client.RunAsync(stop.Token);
+        await Wait.UntilAsync(() => Count(states) == 1);
+        Assert.Equal(OwnRules.Empty, board.State.OwnRules);
+
+        await Velleman.Vm204ClientTests.PulseOnTheBoardAsync(simulator.Port, relay: 3, seconds: 60);
+        await board.RefreshAsync(Cancel);
+        await Wait.UntilAsync(() => Count(rules) == 1);
+
+        var timer = new OwnRule(3, OwnRuleKind.Timer);
+        Assert.Equal(new OwnRules([timer], [[timer]], [timer]), rules[0].OwnRules);
+        Assert.Equal(rules[0].OwnRules, board.State.OwnRules);
+        Assert.Equal(1, Count(states));
+        var sent = simulator.ReceivedTargets.Count;
+        await Assert.ThrowsAsync<NotSupportedException>(() => ((IRelayBoard)board).TurnOffOwnRulesAsync([timer], Cancel));
+        Assert.Equal(sent, simulator.ReceivedTargets.Count);
+
+        await stop.CancelAsync();
+        await run;
     }
 
     private static int Count(List<BoardState> list)

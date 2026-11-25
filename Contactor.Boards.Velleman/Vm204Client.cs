@@ -11,12 +11,24 @@ namespace Contactor.Boards.Velleman;
 /// <see cref="BoardPoller{TReading}"/> and switches relays. One request at a time (the poller sees to it), as the board
 /// serves only three connections. Commands are never queued: without a connection they fail at once with
 /// <see cref="BoardNotConnectedException"/>, a poll under way gives way to them, and the board's answer to one, its
-/// status right after, is reported at once.
+/// status right after, is reported at once. A pulse running on the board that the app didn't start is one of the board's
+/// own rules (<see cref="Vm204Status.OwnRules"/>), which the app can't turn off and never stops.
 /// </summary>
 public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsyncDisposable
 {
     /// <summary>How long a request may take before it counts as unanswered.</summary>
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// How long after the end of its own pulse the app still takes a running <c>pulse</c> flag on that relay for its own:
+    /// <see cref="RequestTimeout"/>, since the answer that shows the flag may have left the board that long before the app
+    /// reads it, plus 1 ms per second of the pulse, for a board clock up to 0.1 % slower than the app's (a crystal is
+    /// within 0.01 %).
+    /// </summary>
+    public static TimeSpan OwnPulseMargin(int seconds)
+    {
+        return RequestTimeout + TimeSpan.FromMilliseconds(seconds);
+    }
 
     private const int MaxResponseHeadersKilobytes = 8;
 
@@ -30,9 +42,15 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
     private string? _key;
     private Vm204Status? _lastTraced;
 
-    // The analog value last reported, with a state change or an analog change. Only the poller's callbacks touch it,
-    // and it calls them one at a time, under its lock.
+    // The analog value and the own rules last reported, with a state change or an analog or rules change. Only the
+    // poller's callbacks touch them, and it calls them one at a time, under its lock.
     private int? _reportedAnalog;
+    private OwnRules? _reportedRules;
+
+    // The app's own pulses, one entry per relay at most (index 0 = relay 1): where each was sent, when its answer came
+    // (TimeProvider.GetTimestamp, which no change of the wall clock moves) and how long it counts as the app's: its length
+    // plus OwnPulseMargin. Only the poller's reads and commands touch it, one at a time, under its gate.
+    private readonly OwnPulse?[] _ownPulses = new OwnPulse?[Vm204Api.RelayCount];
 
     public Vm204Client(IOptions<Vm204Options> options, TimeProvider timeProvider, ILogger<Vm204Client> logger)
     {
@@ -83,6 +101,14 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
     /// are as before, so <see cref="StateChanged"/> isn't raised. On the poller's loop: handlers must be quick.
     /// </summary>
     public event EventHandler<Vm204State>? AnalogChanged;
+
+    /// <summary>
+    /// Raised when a poll or command finds only the board's own rules changed (<see cref="Vm204Status.OwnRules"/>): a
+    /// pulse the app didn't start began or ended on a relay whose state stayed the same, or the <c>pulse</c> flags became
+    /// unreadable or readable again. With a change of the relays, the inputs or the connection it comes as
+    /// <see cref="StateChanged"/> instead. On the poller's loop: handlers must be quick.
+    /// </summary>
+    public event EventHandler<Vm204State>? OwnRulesChanged;
 
     /// <summary>
     /// Every request and answer and every connection step, in plain words. The key, the user name and the password
@@ -173,13 +199,16 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
     /// it throws <see cref="BoardNotConnectedException"/>, sending no pulse when none could go. A length outside
     /// <see cref="Vm204Api.PulseShortestSeconds"/>–<see cref="Vm204Api.PulseLongestSeconds"/> throws
     /// <see cref="ArgumentOutOfRangeException"/> before anything is sent. A pulse started on the board's own page in the
-    /// moment between the read and the pulse can't be told from the app's.
+    /// moment between the read and the pulse can't be told from the app's. The client remembers the relays it pulsed and
+    /// when each pulse ends, so a running pulse of the app's own isn't reported as the board's rule
+    /// (<see cref="Vm204Status.OwnRules"/>) until <see cref="OwnPulseMargin"/> after its end.
     /// </summary>
     public async Task<byte> PulseAsync(byte mask, int seconds, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(seconds, Vm204Api.PulseShortestSeconds);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(seconds, Vm204Api.PulseLongestSeconds);
         var time = string.Create(CultureInfo.InvariantCulture, $"&time={seconds}");
+        var length = TimeSpan.FromSeconds(seconds) + OwnPulseMargin(seconds);
         byte started = 0;
         await RunOnBoardAsync(
             mask,
@@ -194,16 +223,18 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
                         : $"{Vm204TraceText.Channels("relay", mask, Vm204Api.RelayCount)} {(System.Numerics.BitOperations.PopCount(mask) == 1 ? "is" : "are")} on already or pulsing; no pulse was sent.");
                 }
 
+                var target = Endpoint;
                 var after = ReadStatusAnswer(
                     await SendAsync($"{Vm204Api.RelayPulsePath}?key={key}&relay={Vm204TraceText.RelayParameter(free)}{time}", routine: false, token).ConfigureAwait(false),
                     key);
                 started = after.Pulses is { } now ? (byte)(free & now) : (byte)0;
+                RememberOwnPulses(started, target, _timeProvider.GetTimestamp(), length);
                 if (started == 0)
                 {
                     throw new BoardRefusedException("The VM204's answer shows no pulse running.");
                 }
 
-                return after;
+                return WithOwnRules(after, target);
             },
             cancellationToken).ConfigureAwait(false);
         return started;
@@ -249,28 +280,38 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
     {
         // The key is dropped when the board refuses it (someone made a new one on its web page): log in again.
         var key = Volatile.Read(ref _key) ?? await LogInAsync(cancellationToken).ConfigureAwait(false);
+        var target = Endpoint;
         var answer = await SendAsync($"{Vm204Api.StatusPath}?key={key}", routine: true, cancellationToken).ConfigureAwait(false);
-        return ReadStatusAnswer(answer, key);
+        return WithOwnRules(ReadStatusAnswer(answer, key), target);
     }
 
     void IPolledBoard<Vm204Status>.OnStateChanged(PolledState<Vm204Status> state)
     {
         _reportedAnalog = state.Reading?.Analog;
+        _reportedRules = state.Reading?.OwnRules;
         Raise(StateChanged, state);
     }
 
     void IPolledBoard<Vm204Status>.OnReadingChanged(PolledState<Vm204Status> state)
     {
-        // The comparer leaves out the analog value and the pulse flags. Only a change of the analog value is an analog
-        // change: the flags alone change nothing the screens show.
+        // The comparer leaves out the analog value, the pulse flags and the own rules. A change of the rules comes as a
+        // rules change and one of the analog value as an analog change; the flags alone (the app's own pulse) change
+        // nothing the screens show.
         var analog = state.Reading?.Analog;
-        if (analog == _reportedAnalog)
+        var rules = state.Reading?.OwnRules;
+        var analogChanged = analog != _reportedAnalog;
+        var rulesChanged = rules != _reportedRules;
+        _reportedAnalog = analog;
+        _reportedRules = rules;
+        if (rulesChanged)
         {
-            return;
+            Raise(OwnRulesChanged, state);
         }
 
-        _reportedAnalog = analog;
-        Raise(AnalogChanged, state);
+        if (analogChanged)
+        {
+            Raise(AnalogChanged, state);
+        }
     }
 
     void IPolledBoard<Vm204Status>.OnStep(BoardPollStep kind, string? detail)
@@ -333,10 +374,74 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
         // is dropped: the poll the poller asks for at once logs in again.
         return RunOnBoardAsync(
             mask,
-            async (key, token) => ReadStatusAnswer(
-                await SendAsync($"{path}?key={key}&relay={Vm204TraceText.RelayParameter(mask)}", routine: false, token).ConfigureAwait(false),
-                key),
+            async (key, token) =>
+            {
+                var target = Endpoint;
+                return WithOwnRules(
+                    ReadStatusAnswer(
+                        await SendAsync($"{path}?key={key}&relay={Vm204TraceText.RelayParameter(mask)}", routine: false, token).ConfigureAwait(false),
+                        key),
+                    target);
+            },
             cancellationToken);
+    }
+
+    // Under the poller's gate: the app's pulses of the relays in mask, sent to target and answered at answeredAt (a
+    // TimeProvider timestamp), count as the app's for lasts.
+    private void RememberOwnPulses(byte mask, BoardEndpoint target, long answeredAt, TimeSpan lasts)
+    {
+        for (var relay = 0; relay < Vm204Api.RelayCount; relay++)
+        {
+            if ((mask & (1 << relay)) != 0)
+            {
+                _ownPulses[relay] = new OwnPulse(target, answeredAt, lasts);
+            }
+        }
+    }
+
+    // Under the poller's gate: the status the board at target answered, with the board's own rules. A Timer rule on each
+    // relay whose pulse flag is set, unless the app's own pulse sent to target runs there (until OwnPulseMargin after its
+    // end), each relay its own unit and none of them one the app can turn off: the firmware has no way to stop a pulse.
+    // Null rules while the flags can't be read. A flag that is clear at target ends the app's own pulse there on that
+    // relay, so a later pulse there is the board's. An entry for another address is left to that address.
+    private Vm204Status WithOwnRules(Vm204Status status, BoardEndpoint target)
+    {
+        if (status.Pulses is not { } pulses)
+        {
+            return status with { OwnRules = null };
+        }
+
+        List<OwnRule> rules = [];
+        for (var relay = 0; relay < Vm204Api.RelayCount; relay++)
+        {
+            var running = (pulses & (1 << relay)) != 0;
+            if (_ownPulses[relay] is { } own)
+            {
+                var over = _timeProvider.GetElapsedTime(own.AnsweredAt) >= own.Lasts;
+                var here = own.Endpoint == target;
+                if (over || (here && !running))
+                {
+                    _ownPulses[relay] = null;
+                }
+
+                if (here && !over && running)
+                {
+                    continue;
+                }
+            }
+
+            if (running)
+            {
+                rules.Add(new OwnRule(relay + 1, OwnRuleKind.Timer));
+            }
+        }
+
+        return status with
+        {
+            OwnRules = rules.Count == 0
+                ? Contactor.Boards.OwnRules.Empty
+                : new OwnRules(rules, rules.Select(r => (IReadOnlyCollection<OwnRule>)[r]), rules),
+        };
     }
 
     // A command for relays 1–4 through the poller: at once or BoardNotConnectedException, never queued; nothing for none.
@@ -581,4 +686,6 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
     }
 
     private sealed record Answer(HttpStatusCode StatusCode, byte[] Body, string Text);
+
+    private sealed record OwnPulse(BoardEndpoint Endpoint, long AnsweredAt, TimeSpan Lasts);
 }

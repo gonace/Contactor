@@ -164,6 +164,7 @@ public static class SimulatorCatalogue
         {
             Protocol = "HTTP",
             PollSeconds = new Vm204Options().PollSeconds,
+            OwnRulesName = "a pulse started on the board's own page",
         },
         new(
             Vm208Model.Model,

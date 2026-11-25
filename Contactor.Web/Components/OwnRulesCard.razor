@@ -75,7 +75,7 @@
             </ul>
         }
         @* A rule that runs on the board right now, in a group of its own: no "Turn off", "Keep" once it has ended. *@
-        <OwnRulesRunning Channels="@([.. _rows.Where(Running).Select(r => r.Channel).Distinct()])" Names="_names" />
+        <OwnRulesRunning BoardId="BoardId" Channels="@([.. _rows.Where(Running).Select(r => r.Channel).Distinct()])" Names="_names" />
         @if (couldntRead)
         {
             @* In place of "may also have": the app doesn't know even the rules it can read. *@

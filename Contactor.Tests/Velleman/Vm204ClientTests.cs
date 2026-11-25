@@ -29,7 +29,7 @@ public sealed class Vm204ClientTests
 
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        Assert.Equal(new Vm204Status(0b0010, 0b1000, 512, Pulses: 0), run.Client.State.Status);
+        Assert.Equal(new Vm204Status(0b0010, 0b1000, 512, Pulses: 0, OwnRules: OwnRules.Empty), run.Client.State.Status);
         Assert.True(run.Client.State.IsOn(2));
         Assert.NotNull(run.Client.State.LastContactUtc);
         Assert.Equal($"{Vm204Api.AuthPath}?user=&password=", simulator.ReceivedTargets[0]);
@@ -163,8 +163,8 @@ public sealed class Vm204ClientTests
         Assert.Contains(run.Traces, t => t.Text == "Ask for status" && t.IsRoutine);
     }
 
-    // A pulse that ends on a relay already off changes only the status's pulse flag: neither a state change nor an
-    // analog change (Issue #620).
+    // A pulse of the app's own that ends on a relay already off changes only the status's pulse flag: neither a state
+    // change nor an analog change (Issue #620), and no rules change either (Issue #619).
     [Fact]
     public async Task Should_ReportNoAnalogChange_WhenOnlyThePulseFlagsChange()
     {
@@ -187,6 +187,138 @@ public sealed class Vm204ClientTests
         Assert.Equal((byte?)0, run.Client.State.Status?.Pulses);
         Assert.Equal(reported, run.Changes.Count);
         Assert.Empty(run.AnalogChanges);
+        Assert.Empty(run.RulesChanges);
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+    }
+
+    // A pulse started on the board's own page (Issue #619) is a Timer rule the app can't turn off, each relay its own
+    // unit, as the VM208's. On a relay already on it changes only the rules: a rules change, never a state change.
+    [Fact]
+    public async Task Should_ReportAPulseTheAppDidntStart_AsARuleItCantTurnOff()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new Vm204Simulator { TimeProvider = boardTime };
+        simulator.Start();
+        await simulator.SwitchRelayAsync(3, true);
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+        var reported = run.Changes.Count;
+
+        await PulseOnTheBoardAsync(simulator.Port, relay: 3, seconds: 60);
+        await run.PollAsync();
+
+        var timer = new OwnRule(3, OwnRuleKind.Timer);
+        var rules = run.Client.State.OwnRules;
+        Assert.Equal(new OwnRules([timer], [[timer]], [timer]), rules);
+        Assert.False(rules!.CanTurnOff(timer));
+        Assert.Equal(reported, run.Changes.Count);
+        Assert.Equal(rules, Assert.Single(run.RulesChanges).OwnRules);
+
+        boardTime.Advance(TimeSpan.FromSeconds(60));
+        await Wait.UntilAsync(() => simulator.Pulsing.IsEmpty);
+        await run.PollAsync();
+
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+        Assert.Equal((0, OwnRules.Empty), (run.Changes[^1].Relays, run.Changes[^1].OwnRules));
+    }
+
+    // The app's own pulse is not the board's rule until it should have ended (OwnPulseMargin after its end): a flag
+    // still set after that is the board's, e.g. one started on the board's page as the app's ended.
+    [Fact]
+    public async Task Should_NotReportItsOwnPulse_UntilItShouldHaveEnded()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new Vm204Simulator { TimeProvider = boardTime };
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Equal((byte)0b0010, await run.Client.PulseAsync(0b0010, 2, Cancel));
+        var ends = run.Time.GetUtcNow() + TimeSpan.FromSeconds(2) + Vm204Client.OwnPulseMargin(2);
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+
+        // The board's clock stands still, so its flag stays set.
+        while (run.Time.GetUtcNow() + run.PollInterval < ends)
+        {
+            await run.PollAsync();
+            Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+        }
+
+        await run.PollAsync();
+
+        var timer = new OwnRule(2, OwnRuleKind.Timer);
+        Assert.Equal(new OwnRules([timer], [[timer]], [timer]), run.Client.State.OwnRules);
+        Assert.Empty(run.AnalogChanges);
+        Assert.Single(run.RulesChanges);
+    }
+
+    // A clear flag ends the app's own pulse at once: a pulse started on the board's page on that relay afterwards is the
+    // board's, also within OwnPulseMargin of the app's.
+    [Fact]
+    public async Task Should_ReportABoardPulse_AfterTheFlagOfItsOwnPulseCleared()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new Vm204Simulator { TimeProvider = boardTime };
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal((byte)0b0010, await run.Client.PulseAsync(0b0010, 2, Cancel));
+        await run.PollAsync();
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+
+        boardTime.Advance(TimeSpan.FromSeconds(2));
+        await Wait.UntilAsync(() => simulator.Pulsing.IsEmpty);
+        await run.PollAsync();
+        await PulseOnTheBoardAsync(simulator.Port, relay: 2, seconds: 60);
+        await run.PollAsync();
+
+        var timer = new OwnRule(2, OwnRuleKind.Timer);
+        Assert.Equal(new OwnRules([timer], [[timer]], [timer]), run.Client.State.OwnRules);
+    }
+
+    // The app's own pulse counts only at the address it went to: at another board a pulse on that relay is the board's.
+    [Fact]
+    public async Task Should_ReportABoardPulse_AtAnotherAddress_WhileItsOwnPulseRunsAtTheFirst()
+    {
+        await using var first = new Vm204Simulator { TimeProvider = new ManualTimeProvider() };
+        await using var second = new Vm204Simulator { TimeProvider = new ManualTimeProvider() };
+        first.Start();
+        second.Start();
+        await using var run = ClientRun.Start(first.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal((byte)0b0010, await run.Client.PulseAsync(0b0010, 60, Cancel));
+        await PulseOnTheBoardAsync(second.Port, relay: 2, seconds: 60);
+
+        run.Client.SetEndpoint(new BoardEndpoint("127.0.0.1", second.Port));
+
+        var timer = new OwnRule(2, OwnRuleKind.Timer);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Client.State.OwnRules == new OwnRules([timer], [[timer]], [timer]));
+    }
+
+    // Flags the app can't read make the rules unknown, never the poll fail: the board stays connected and polled.
+    [Fact]
+    public async Task Should_HaveUnknownRules_AndKeepPolling_WhenThePulseFlagsCantBeRead()
+    {
+        var body = Encoding.ASCII.GetBytes("{\"relays\": [false,false,false,false],\"pulse\": [1,0,0,0],\"inputs\": [false,false,false,false],\"analog\": 0}");
+        await using var board = CannedBoard.Start(body, contentLength: true);
+        await using var run = ClientRun.Start(board.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        await run.PollAsync();
+
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Null(run.Client.State.Status!.Pulses);
+        Assert.Null(run.Client.State.OwnRules);
+        Assert.Null(Vm204Board.ToBoardState(run.Client.State).OwnRules);
+    }
+
+    // The board's own page starts a pulse in the same way: the flag says nothing about who started it.
+    internal static async Task PulseOnTheBoardAsync(int port, int relay, int seconds)
+    {
+        using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+        var key = Vm204Json.ReadKey(await http.GetByteArrayAsync(new Uri($"{Vm204Api.AuthPath}?user=&password=", UriKind.Relative), Cancel));
+        await http.GetByteArrayAsync(new Uri($"{Vm204Api.RelayPulsePath}?key={key}&relay={relay}&time={seconds}", UriKind.Relative), Cancel);
     }
 
     [Fact]
@@ -553,6 +685,7 @@ public sealed class Vm204ClientTests
         private readonly List<BoardTraceEntry> _traces = [];
         private readonly List<Vm204State> _changes = [];
         private readonly List<Vm204State> _analogChanges = [];
+        private readonly List<Vm204State> _rulesChanges = [];
 
         private ClientRun(Vm204Client client, ManualTimeProvider time, TimeSpan pollInterval, CancellationTokenSource cts)
         {
@@ -579,6 +712,13 @@ public sealed class Vm204ClientTests
                 lock (_analogChanges)
                 {
                     _analogChanges.Add(state);
+                }
+            };
+            client.OwnRulesChanged += (_, state) =>
+            {
+                lock (_rulesChanges)
+                {
+                    _rulesChanges.Add(state);
                 }
             };
             _task = client.RunAsync(cts.Token);
@@ -619,6 +759,17 @@ public sealed class Vm204ClientTests
                 lock (_analogChanges)
                 {
                     return [.. _analogChanges];
+                }
+            }
+        }
+
+        public List<Vm204State> RulesChanges
+        {
+            get
+            {
+                lock (_rulesChanges)
+                {
+                    return [.. _rulesChanges];
                 }
             }
         }

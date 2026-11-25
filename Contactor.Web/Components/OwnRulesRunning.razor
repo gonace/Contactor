@@ -1,9 +1,13 @@
 @* The board's own rules that run on it right now and end by themselves (issue #552), e.g. a pulse or a timer started on
    the VM208's own web page, which the app can't turn off: a group of their own, "Running on the board right now", each
-   relay in a dashed box with why, a "Keep" that can't be pressed, and when it can. No "Turn off". Shared by the board's
-   card, the warning on Relays and the step while a board is added. Nothing without such a relay. *@
+   relay in a dashed box with why, and, on a board that turns its rules off, a "Keep" that can't be pressed and when it
+   can (OwnRulesHandler.OffersKeepAfterRun). No "Turn off". Shared by the board's card, the warning on Relays and the step
+   while a board is added. Nothing without such a relay. *@
+@using Contactor.Web.Features.BoardRules
+@inject OwnRulesHandler Handler
 @if (Channels.Count > 0)
 {
+    var keepAfterRun = Handler.OffersKeepAfterRun(BoardId);
     <section class="running" aria-label="@Texts["OwnRules.Running.Title"]">
         <p class="title">@Texts["OwnRules.Running.Title"]</p>
         @foreach (var channel in Channels)
@@ -25,16 +29,24 @@
                         <span class="why">@Texts["OwnRules.CantTurnOff"]</span>
                     </div>
                 </div>
-                <div class="later">
-                    <button type="button" disabled>@Texts["OwnRules.Keep"]</button>
-                    <span>@Texts["OwnRules.Running.Later"]</span>
-                </div>
+                @if (keepAfterRun)
+                {
+                    <div class="later">
+                        <button type="button" disabled>@Texts["OwnRules.Keep"]</button>
+                        <span>@Texts["OwnRules.Running.Later"]</span>
+                    </div>
+                }
             </div>
         }
     </section>
 }
 
 @code {
+    /// <summary>The board the relays are on.</summary>
+    [Parameter]
+    [EditorRequired]
+    public int BoardId { get; set; }
+
     /// <summary>The relays with such a rule, by their channel on the board, in the order shown.</summary>
     [Parameter]
     [EditorRequired]
