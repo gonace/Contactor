@@ -329,7 +329,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     /// <c>auto_on:false</c> for that switch. An <see cref="OwnRuleKind.InputEdge"/> or <see cref="OwnRuleKind.InputToggle"/>
     /// rule is one <c>Switch.SetConfig</c> with only <c>in_mode:"detached"</c> for every switch whose input makes it as
     /// last read (a switch in <c>cycle</c> makes relay 1's and relay 2's), each switch once; one that no switch makes any
-    /// more is taken without a request. A rule given twice is taken once. Returns the rules asked that the device
+    /// more is taken without a request, and while the input modes aren't known none is sent or taken. A rule given twice
+    /// is taken once. Returns the rules asked that the device
     /// took, in relay order: a timer once every schedule behind it took its update (also when, as last read, none
     /// switches it any more). Throws <see cref="ArgumentOutOfRangeException"/> for a relay the entry hasn't or another
     /// kind of rule, and <see cref="BoardNotConnectedException"/> without a connection, both before anything is sent;
@@ -963,12 +964,13 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         }
 
         // The switches behind each input rule asked, as last read (the rules the person saw): every switch whose input
-        // makes it, e.g. switch 1 in cycle behind relay 2's InputToggle. While the input rules aren't known, the rule's
-        // own switch. A rule no switch makes any more is taken without a request, as a timer is. Each switch once.
+        // makes it, e.g. switch 1 in cycle behind relay 2's InputToggle. Each switch once. While the input rules aren't
+        // known, nothing is sent for them and none is taken (fail closed, as a timer while the schedules aren't known):
+        // a page drawn earlier may name a rule another switch makes now.
         var inputUnits = InputUnits(_inputRules);
-        var behind = inputs.ToDictionary(
-            r => r,
-            r => inputUnits is null ? [r.Relay] : inputUnits.Where(u => u.Rules.Contains(r)).Select(u => u.Switch).ToList());
+        Dictionary<OwnRule, List<int>> behind = inputUnits is null
+            ? []
+            : inputs.ToDictionary(r => r, r => inputUnits.Where(u => u.Rules.Contains(r)).Select(u => u.Switch).ToList());
         HashSet<int> detached = [];
         foreach (var relay in behind.Values.SelectMany(s => s).Distinct().Order())
         {
@@ -988,14 +990,25 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             }
         }
 
-        done.AddRange(inputs.Where(r => behind[r].All(detached.Contains)));
+        foreach (var (rule, switches) in behind)
+        {
+            // The input rules are known here. No switch makes the rule any more: it is taken without a request, as a
+            // timer no schedule switches. Otherwise it is taken once every switch behind it took its change.
+            if (switches.Count == 0 || switches.All(detached.Contains))
+            {
+                done.Add(rule);
+            }
+        }
 
         if (done.Count == 0)
         {
             if (!sent)
             {
-                // Nothing went out: the schedules weren't known. Not an answer, and not a failure of the device.
-                throw new BoardNotConnectedException("The Shelly's schedules aren't known yet; nothing was sent.");
+                // Nothing went out: the schedules or the input modes weren't known. Not an answer, and not a failure of
+                // the device.
+                throw new BoardNotConnectedException(inputs.Count > 0 && inputUnits is null
+                    ? "The Shelly's input modes aren't known yet; nothing was sent."
+                    : "The Shelly's schedules aren't known yet; nothing was sent.");
             }
 
             unreadable?.Throw();

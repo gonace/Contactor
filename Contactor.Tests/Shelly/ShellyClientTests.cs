@@ -1379,6 +1379,32 @@ public sealed class ShellyClientTests
         Assert.Equal([edge2], run.Client.State.OwnRules!);
     }
 
+    // Relay 2's toggle comes from switch 1 in cycle, but the next settings read can't read switch 1: the input modes
+    // aren't known, so "Turn off" sends nothing for it (switch 2's flip stays), takes nothing, and says so.
+    [Fact]
+    public async Task Should_SendNothingForAnInputRule_WhileTheInputModesArentKnown()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.SetInputMode(1, "cycle");
+        simulator.SetInputMode(2, "flip");
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.NotNull(run.Client.State.OwnRules);
+
+        simulator.FailConfigRelays = 0b01;
+        simulator.ChangeAnotherSetting();
+        await run.PollAsync();
+        Assert.Null(run.Client.State.OwnRules);
+        var before = simulator.Received.Count;
+
+        var refused = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.InputToggle)], Cancel));
+
+        Assert.Contains("input modes aren't known", refused.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ShellyApi.SwitchSetConfig, simulator.Received.Skip(before));
+        Assert.Equal(("cycle", "flip"), (simulator.InputMode(1), simulator.InputMode(2)));
+        Assert.True(run.Client.State.IsConnected);
+    }
+
     // The docs give cycle only to devices with 2 relays: on another, its rules are unknown, and it stays connected.
     [Fact]
     public async Task Should_LeaveTheRulesUnknown_ForCycleOnADeviceWithoutTwoRelays()

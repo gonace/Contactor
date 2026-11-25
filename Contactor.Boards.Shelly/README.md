@@ -244,7 +244,8 @@ reads are routine in the Debug trace. Only a change in which relays the enabled 
 - An `InputEdge` or `InputToggle` rule: one `Switch.SetConfig` with only `in_mode:"detached"` in `config` for each
   switch whose input makes it, as last read, each switch once. For relay 2's toggle from switch 0 in `cycle`, that is
   switch 0. When both switches say `cycle`, both are detached. A rule no switch makes any more is taken without a
-  request. `in_locked` and the other settings stay as they are.
+  request. While the input modes aren't known (a settings read failed), nothing is sent for an input rule and none is
+  taken: a page drawn earlier may name a rule another switch makes now. `in_locked` and the other settings stay as they are.
 - At once or `BoardNotConnectedException`, never queued. `ArgumentOutOfRangeException` for a relay the entry hasn't
   or another kind of rule, before anything is sent. A rule given twice is taken once.
 - It returns the rules asked that the device took, in relay order. A timer is taken when every job behind it took its
