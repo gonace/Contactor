@@ -47,8 +47,9 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
     private int? _reportedAnalog;
     private OwnRules? _reportedRules;
 
-    // The app's own pulses, one entry per relay at most (index 0 = relay 1): where each was sent and when it ends, plus
-    // OwnPulseMargin. Only the poller's reads and commands touch it, one at a time, under its gate.
+    // The app's own pulses, one entry per relay at most (index 0 = relay 1): where each was sent, when its answer came
+    // (TimeProvider.GetTimestamp, which no change of the wall clock moves) and how long it counts as the app's: its length
+    // plus OwnPulseMargin. Only the poller's reads and commands touch it, one at a time, under its gate.
     private readonly OwnPulse?[] _ownPulses = new OwnPulse?[Vm204Api.RelayCount];
 
     public Vm204Client(IOptions<Vm204Options> options, TimeProvider timeProvider, ILogger<Vm204Client> logger)
@@ -227,13 +228,13 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
                     await SendAsync($"{Vm204Api.RelayPulsePath}?key={key}&relay={Vm204TraceText.RelayParameter(free)}{time}", routine: false, token).ConfigureAwait(false),
                     key);
                 started = after.Pulses is { } now ? (byte)(free & now) : (byte)0;
-                RememberOwnPulses(started, target, _timeProvider.GetUtcNow() + length);
+                RememberOwnPulses(started, target, _timeProvider.GetTimestamp(), length);
                 if (started == 0)
                 {
                     throw new BoardRefusedException("The VM204's answer shows no pulse running.");
                 }
 
-                return WithOwnRules(after);
+                return WithOwnRules(after, target);
             },
             cancellationToken).ConfigureAwait(false);
         return started;
@@ -279,8 +280,9 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
     {
         // The key is dropped when the board refuses it (someone made a new one on its web page): log in again.
         var key = Volatile.Read(ref _key) ?? await LogInAsync(cancellationToken).ConfigureAwait(false);
+        var target = Endpoint;
         var answer = await SendAsync($"{Vm204Api.StatusPath}?key={key}", routine: true, cancellationToken).ConfigureAwait(false);
-        return WithOwnRules(ReadStatusAnswer(answer, key));
+        return WithOwnRules(ReadStatusAnswer(answer, key), target);
     }
 
     void IPolledBoard<Vm204Status>.OnStateChanged(PolledState<Vm204Status> state)
@@ -372,53 +374,66 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
         // is dropped: the poll the poller asks for at once logs in again.
         return RunOnBoardAsync(
             mask,
-            async (key, token) => WithOwnRules(ReadStatusAnswer(
-                await SendAsync($"{path}?key={key}&relay={Vm204TraceText.RelayParameter(mask)}", routine: false, token).ConfigureAwait(false),
-                key)),
+            async (key, token) =>
+            {
+                var target = Endpoint;
+                return WithOwnRules(
+                    ReadStatusAnswer(
+                        await SendAsync($"{path}?key={key}&relay={Vm204TraceText.RelayParameter(mask)}", routine: false, token).ConfigureAwait(false),
+                        key),
+                    target);
+            },
             cancellationToken);
     }
 
-    // Under the poller's gate: the app's pulses of the relays in mask, sent to target, end at endsUtc.
-    private void RememberOwnPulses(byte mask, BoardEndpoint target, DateTimeOffset endsUtc)
+    // Under the poller's gate: the app's pulses of the relays in mask, sent to target and answered at answeredAt (a
+    // TimeProvider timestamp), count as the app's for lasts.
+    private void RememberOwnPulses(byte mask, BoardEndpoint target, long answeredAt, TimeSpan lasts)
     {
         for (var relay = 0; relay < Vm204Api.RelayCount; relay++)
         {
             if ((mask & (1 << relay)) != 0)
             {
-                _ownPulses[relay] = new OwnPulse(target, endsUtc);
+                _ownPulses[relay] = new OwnPulse(target, answeredAt, lasts);
             }
         }
     }
 
-    // Under the poller's gate: the status with the board's own rules. A Timer rule on each relay whose pulse flag is set,
-    // unless the app's own pulse at this address runs there (until OwnPulseMargin after its end), each relay its own unit
-    // and none of them one the app can turn off: the firmware has no way to stop a pulse. Null rules while the flags
-    // can't be read. A flag that is clear ends the app's own pulse on that relay, so a later pulse there is the board's.
-    private Vm204Status WithOwnRules(Vm204Status status)
+    // Under the poller's gate: the status the board at target answered, with the board's own rules. A Timer rule on each
+    // relay whose pulse flag is set, unless the app's own pulse sent to target runs there (until OwnPulseMargin after its
+    // end), each relay its own unit and none of them one the app can turn off: the firmware has no way to stop a pulse.
+    // Null rules while the flags can't be read. A flag that is clear at target ends the app's own pulse there on that
+    // relay, so a later pulse there is the board's. An entry for another address is left to that address.
+    private Vm204Status WithOwnRules(Vm204Status status, BoardEndpoint target)
     {
         if (status.Pulses is not { } pulses)
         {
             return status with { OwnRules = null };
         }
 
-        var now = _timeProvider.GetUtcNow();
-        var endpoint = Endpoint;
         List<OwnRule> rules = [];
         for (var relay = 0; relay < Vm204Api.RelayCount; relay++)
         {
-            if ((pulses & (1 << relay)) == 0)
+            var running = (pulses & (1 << relay)) != 0;
+            if (_ownPulses[relay] is { } own)
             {
-                _ownPulses[relay] = null;
-                continue;
+                var over = _timeProvider.GetElapsedTime(own.AnsweredAt) >= own.Lasts;
+                var here = own.Endpoint == target;
+                if (over || (here && !running))
+                {
+                    _ownPulses[relay] = null;
+                }
+
+                if (here && !over && running)
+                {
+                    continue;
+                }
             }
 
-            if (_ownPulses[relay] is { } own && own.Endpoint == endpoint && now < own.EndsUtc)
+            if (running)
             {
-                continue;
+                rules.Add(new OwnRule(relay + 1, OwnRuleKind.Timer));
             }
-
-            _ownPulses[relay] = null;
-            rules.Add(new OwnRule(relay + 1, OwnRuleKind.Timer));
         }
 
         return status with
@@ -672,5 +687,5 @@ public sealed class Vm204Client : IPolledBoard<Vm204Status>, IDisposable, IAsync
 
     private sealed record Answer(HttpStatusCode StatusCode, byte[] Body, string Text);
 
-    private sealed record OwnPulse(BoardEndpoint Endpoint, DateTimeOffset EndsUtc);
+    private sealed record OwnPulse(BoardEndpoint Endpoint, long AnsweredAt, TimeSpan Lasts);
 }

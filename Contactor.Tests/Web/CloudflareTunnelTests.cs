@@ -426,6 +426,14 @@ internal sealed class ManualTimeProvider : TimeProvider
         }
     }
 
+    // Timestamps follow the same clock, so time measured with GetTimestamp moves only when the test moves it.
+    public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+    public override long GetTimestamp()
+    {
+        return GetUtcNow().UtcTicks;
+    }
+
     /// <summary>How many timers wait to fire.</summary>
     public int PendingTimers
     {

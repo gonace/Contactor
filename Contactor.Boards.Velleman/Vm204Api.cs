@@ -54,9 +54,9 @@ public static class Vm204Api
     /// <summary>
     /// What the app knows of the board's own rules (Issue #619): a pulse started on the board's own page
     /// (<c>resources/www/index.shtml</c> and <c>js/vm204.js</c> <c>sendPulse</c>, then <c>/relayN/pulse</c>,
-    /// <c>Main/main.c</c> lines 1151–1169, the page offering 1–4,000,000 s) runs in the board's memory and turns its
-    /// relay off when it ends. The app sees it in the status's <c>pulse</c> flags, but can't turn it off: the firmware has no
-    /// route that stops a pulse. The status can miss a short one between two polls, so a person should still check the
+    /// <c>Main/main.c</c> lines 1151–1169: the index page's ACTIVATE button, for the pulse time set on the settings page,
+    /// 1–4,000,000 s, default 60 s) runs in the board's memory and turns its relay off when it ends. The app sees it in
+    /// the status's <c>pulse</c> flags, but can't turn it off: the firmware has no route that stops a pulse. The status can miss a short one between two polls, so a person should still check the
     /// board's own page. The board has no schedules of its own.
     /// </summary>
     public static OwnRulesAbility OwnRules { get; } = new(Reads: true, TurnsOff: false, MayHaveUnseen: true);

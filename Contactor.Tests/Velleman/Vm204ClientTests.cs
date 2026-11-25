@@ -253,6 +253,49 @@ public sealed class Vm204ClientTests
         Assert.Single(run.RulesChanges);
     }
 
+    // A clear flag ends the app's own pulse at once: a pulse started on the board's page on that relay afterwards is the
+    // board's, also within OwnPulseMargin of the app's.
+    [Fact]
+    public async Task Should_ReportABoardPulse_AfterTheFlagOfItsOwnPulseCleared()
+    {
+        var boardTime = new ManualTimeProvider();
+        await using var simulator = new Vm204Simulator { TimeProvider = boardTime };
+        simulator.Start();
+        await using var run = ClientRun.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal((byte)0b0010, await run.Client.PulseAsync(0b0010, 2, Cancel));
+        await run.PollAsync();
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+
+        boardTime.Advance(TimeSpan.FromSeconds(2));
+        await Wait.UntilAsync(() => simulator.Pulsing.IsEmpty);
+        await run.PollAsync();
+        await PulseOnTheBoardAsync(simulator.Port, relay: 2, seconds: 60);
+        await run.PollAsync();
+
+        var timer = new OwnRule(2, OwnRuleKind.Timer);
+        Assert.Equal(new OwnRules([timer], [[timer]], [timer]), run.Client.State.OwnRules);
+    }
+
+    // The app's own pulse counts only at the address it went to: at another board a pulse on that relay is the board's.
+    [Fact]
+    public async Task Should_ReportABoardPulse_AtAnotherAddress_WhileItsOwnPulseRunsAtTheFirst()
+    {
+        await using var first = new Vm204Simulator { TimeProvider = new ManualTimeProvider() };
+        await using var second = new Vm204Simulator { TimeProvider = new ManualTimeProvider() };
+        first.Start();
+        second.Start();
+        await using var run = ClientRun.Start(first.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Equal((byte)0b0010, await run.Client.PulseAsync(0b0010, 60, Cancel));
+        await PulseOnTheBoardAsync(second.Port, relay: 2, seconds: 60);
+
+        run.Client.SetEndpoint(new BoardEndpoint("127.0.0.1", second.Port));
+
+        var timer = new OwnRule(2, OwnRuleKind.Timer);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Client.State.OwnRules == new OwnRules([timer], [[timer]], [timer]));
+    }
+
     // Flags the app can't read make the rules unknown, never the poll fail: the board stays connected and polled.
     [Fact]
     public async Task Should_HaveUnknownRules_AndKeepPolling_WhenThePulseFlagsCantBeRead()
