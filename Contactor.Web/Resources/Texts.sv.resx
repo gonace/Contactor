@@ -1886,6 +1886,12 @@
   <data name="OwnRules.Step.Intro_Other" xml:space="preserve">
     <value>De kan slå på och stänga av reläer utan Contactor.</value>
   </data>
+  <data name="OwnRules.Step.KeepInputs_One" xml:space="preserve">
+    <value>Behåll den om en strömbrytare på väggen ska fortsätta fungera.</value>
+  </data>
+  <data name="OwnRules.Step.KeepInputs_Other" xml:space="preserve">
+    <value>Behåll dem om en strömbrytare på väggen ska fortsätta fungera.</value>
+  </data>
   <data name="OwnRules.Step.Later" xml:space="preserve">
     <value>Inte nu</value>
   </data>

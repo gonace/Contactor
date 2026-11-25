@@ -36,7 +36,8 @@
 }
 @* A rule that runs on the board right now, in a group of its own (issue #552): neither turned off nor kept here. *@
 <OwnRulesRunning BoardId="Board.BoardId" Channels="_running" />
-<p class="hint">@Words.Recommend(_rules.Count)</p>
+@* An input that switches a relay may be a switch on the wall (issue #622): keeping it is advice too. *@
+<p class="hint">@Words.Recommend(_rules.Count)@(Words.KeepInputs(_rules) is { } keepInputs ? " " + keepInputs : "")</p>
 @if (Words.AlsoTurnsOff(_also, null) is { } also)
 {
     @* Said before the press: rules a person kept earlier that "Turn them off" takes with these. *@

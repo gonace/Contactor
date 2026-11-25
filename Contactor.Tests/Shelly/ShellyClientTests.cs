@@ -1302,6 +1302,150 @@ public sealed class ShellyClientTests
         Assert.Empty(run.PowerOnChanges);
     }
 
+    // Relay 1's input flips it and relay 3's is a momentary button: each its own rule, between the timer and the
+    // auto-on, and each its own unit. Relay 2's is detached and relay 4's locked: no rule. Nothing is sent to change them.
+    [Fact]
+    public async Task Should_ReadEachSwitchsInputMode_AtConnect_AsItsOwnRule()
+    {
+        await using var simulator = Start(ShellyModels.FourRelays);
+        simulator.SetInputMode(1, "flip");
+        simulator.SetInputMode(3, "momentary");
+        simulator.SetInputMode(4, "follow", locked: true);
+        simulator.SetAutoOn(1, true);
+        simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        await using var run = ClientRun.Start(simulator, ShellyModels.FourRelays);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        OwnRule timer1 = new(1, OwnRuleKind.Timer), edge1 = new(1, OwnRuleKind.InputEdge), autoOn1 = new(1, OwnRuleKind.AutoOn), toggle3 = new(3, OwnRuleKind.InputToggle);
+        var rules = run.Client.State.OwnRules!;
+        Assert.Equal(new OwnRules([timer1, edge1, autoOn1, toggle3], [[timer1], [edge1], [autoOn1], [toggle3]]), rules);
+        Assert.Empty(rules.GoesWith(edge1));
+        Assert.Equal(ChannelMask.None, rules.Unavailable);
+        Assert.DoesNotContain(ShellyApi.SwitchSetConfig, simulator.Received);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 1 after a power cut: off · turns on again by itself · its input switches it at each change");
+        Assert.Contains(run.Traces, t => t.Text == "Relay 3 after a power cut: off · a press on its input switches it");
+    }
+
+    // An in_mode the docs don't name: the rules are unknown, never a failed poll, and the relays still switch. Once the
+    // mode is one the docs name, the next poll reads it, and only the rules changed.
+    [Fact]
+    public async Task Should_LeaveTheRulesUnknown_ForAnInputModeTheDocsDontName_AndPollOn()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.SetInputMode(2, "toggle");
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Null(run.Client.State.OwnRules);
+        Assert.Equal(new PowerOnStates([PowerOnState.Off, PowerOnState.Off]), run.Client.State.PowerOn);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 2 after a power cut: off · input mode unknown");
+        Assert.Equal((byte)1, await run.Client.TurnOnAsync(0b1, Cancel));
+
+        var changes = run.Changes.Count;
+        simulator.SetInputMode(2, "momentary");
+        await run.PollAsync();
+
+        Assert.True(run.Client.State.IsConnected);
+        Assert.Equal(new OwnRules([new OwnRule(2, OwnRuleKind.InputToggle)], [[new OwnRule(2, OwnRuleKind.InputToggle)]]), run.Client.State.OwnRules);
+        Assert.Equal(new OwnRules([new OwnRule(2, OwnRuleKind.InputToggle)], [[new OwnRule(2, OwnRuleKind.InputToggle)]]), run.OwnRulesChanges[^1].OwnRules);
+        Assert.Equal(changes, run.Changes.Count);
+    }
+
+    // Switch 1 in cycle on a 2-relay device: a press steps both relays, so relays 1 and 2 each get an InputToggle, one
+    // unit, and turning off one names the other. Switch 2's own flip is its own unit. "Turn off" on relay 2's toggle
+    // detaches switch 1 alone, with one Switch.SetConfig, and reads the settings back: switch 2's flip stays.
+    [Fact]
+    public async Task Should_ReportCycle_OnBothRelaysAsOneUnit_AndDetachOnlyTheSwitchThatSaysIt()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.SetInputMode(1, "cycle");
+        simulator.SetInputMode(2, "flip");
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        OwnRule toggle1 = new(1, OwnRuleKind.InputToggle), toggle2 = new(2, OwnRuleKind.InputToggle), edge2 = new(2, OwnRuleKind.InputEdge);
+
+        var rules = run.Client.State.OwnRules!;
+        Assert.Equal(new OwnRules([toggle1, toggle2, edge2], [[toggle1, toggle2], [edge2]]), rules);
+        Assert.Equal([toggle1], rules.GoesWith(toggle2));
+        Assert.Contains(run.Traces, t => t.Text == "Relay 1 after a power cut: off · a press on its input steps relays 1 and 2 through on and off");
+        var before = simulator.Received.Count;
+
+        Assert.Equal([toggle2], await run.Client.TurnOffOwnRulesAsync([toggle2], Cancel));
+
+        Assert.Equal([ShellyApi.SwitchSetConfig, ShellyApi.GetStatus, ShellyApi.SwitchGetConfig, ShellyApi.SwitchGetConfig], simulator.Received.Skip(before));
+        Assert.Equal(("detached", "flip"), (simulator.InputMode(1), simulator.InputMode(2)));
+        Assert.Contains(run.Traces, t => t.Text == "Stop relay 1's input switching it" && t.Direction == BoardTraceDirection.Sent);
+        Assert.Equal([edge2], run.Client.State.OwnRules!);
+    }
+
+    // Relay 2's toggle comes from switch 1 in cycle, but the next settings read can't read switch 1: the input modes
+    // aren't known, so "Turn off" sends nothing for it (switch 2's flip stays), takes nothing, and says so.
+    [Fact]
+    public async Task Should_SendNothingForAnInputRule_WhileTheInputModesArentKnown()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.SetInputMode(1, "cycle");
+        simulator.SetInputMode(2, "flip");
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.NotNull(run.Client.State.OwnRules);
+
+        simulator.FailConfigRelays = 0b01;
+        simulator.ChangeAnotherSetting();
+        await run.PollAsync();
+        Assert.Null(run.Client.State.OwnRules);
+        var before = simulator.Received.Count;
+
+        var refused = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.InputToggle)], Cancel));
+
+        Assert.Contains("input modes aren't known", refused.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ShellyApi.SwitchSetConfig, simulator.Received.Skip(before));
+        Assert.Equal(("cycle", "flip"), (simulator.InputMode(1), simulator.InputMode(2)));
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    // The docs give cycle only to devices with 2 relays: on another, its rules are unknown, and it stays connected.
+    [Fact]
+    public async Task Should_LeaveTheRulesUnknown_ForCycleOnADeviceWithoutTwoRelays()
+    {
+        await using var simulator = Start(ShellyModels.ThreeRelays);
+        simulator.SetInputMode(1, "cycle");
+        await using var run = ClientRun.Start(simulator, ShellyModels.ThreeRelays);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Null(run.Client.State.OwnRules);
+        Assert.True(run.Client.State.IsConnected);
+    }
+
+    // "Turn off" on relay 2's input: one Switch.SetConfig with only in_mode "detached" for that switch, also with both
+    // kinds asked, then the settings read back in the same command. Relay 1's input and the other settings stay.
+    [Fact]
+    public async Task Should_DetachOneSwitchsInput_WithOneSetConfig_AndReadItBack()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.SetInputMode(1, "follow");
+        simulator.SetInputMode(2, "flip");
+        simulator.SetInitialState(2, "restore_last");
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        var before = simulator.Received.Count;
+        OwnRule edge2 = new(2, OwnRuleKind.InputEdge), toggle2 = new(2, OwnRuleKind.InputToggle);
+
+        Assert.Equal([toggle2, edge2], await run.Client.TurnOffOwnRulesAsync([edge2, toggle2], Cancel));
+
+        Assert.Equal([ShellyApi.SwitchSetConfig, ShellyApi.GetStatus, ShellyApi.SwitchGetConfig, ShellyApi.SwitchGetConfig], simulator.Received.Skip(before));
+        Assert.Equal(("follow", "detached"), (simulator.InputMode(1), simulator.InputMode(2)));
+        Assert.False(simulator.InputLocked(2));
+        Assert.Equal("restore_last", simulator.InitialState(2));
+        Assert.False(simulator.AutoOn(2));
+        Assert.Equal([new OwnRule(1, OwnRuleKind.InputEdge)], run.Client.State.OwnRules!);
+        Assert.Contains(run.Traces, t => t.Text == "Stop relay 2's input switching it" && t.Direction == BoardTraceDirection.Sent);
+        Assert.Contains(run.Traces, t => t.Text == "Relay 2's input no longer switches it");
+        Assert.Empty(run.PowerOnChanges);
+    }
+
     [Fact]
     public async Task Should_TakeATimerNoScheduleSwitchesAnyMore_WithoutSendingIt()
     {
@@ -1321,6 +1465,7 @@ public sealed class ShellyClientTests
     {
         using var unconnected = CreateClient(1, ShellyModels.TwoRelays);
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => unconnected.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
+        await Assert.ThrowsAsync<BoardNotConnectedException>(() => unconnected.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.InputEdge)], Cancel));
         Assert.Empty(await unconnected.TurnOffOwnRulesAsync([], Cancel));
 
         await using var simulator = Start(ShellyModels.TwoRelays);
@@ -1329,6 +1474,7 @@ public sealed class ShellyClientTests
         var before = simulator.Received.Count;
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer)], Cancel));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.InputToggle), new OwnRule(3, OwnRuleKind.InputToggle)], Cancel));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.AutoOn), new OwnRule(1, OwnRuleKind.InputLinkage)], Cancel));
         await Assert.ThrowsAsync<ArgumentException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), null!], Cancel));
         await Assert.ThrowsAsync<ArgumentNullException>(() => run.Client.TurnOffOwnRulesAsync(null!, Cancel));

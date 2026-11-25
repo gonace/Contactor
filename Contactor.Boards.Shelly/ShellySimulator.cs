@@ -15,7 +15,8 @@ namespace Contactor.Boards.Shelly;
 /// it ("RPC Channels", "RPC Protocol"), answering <c>Shelly.GetDeviceInfo</c>, <c>Shelly.GetStatus</c>,
 /// <c>Switch.Set</c>, and <c>Switch.GetConfig</c> and <c>Switch.SetConfig</c> for each switch's <c>initial_state</c>,
 /// with 1 to 4 switches, and one request per connection. Every change of a switch's settings grows <c>sys.cfg_rev</c>,
-/// as "Sys" says; a setting set to what it was doesn't. It holds each switch's <c>auto_on</c> and schedule jobs, with
+/// as "Sys" says; a setting set to what it was doesn't. It holds each switch's <c>auto_on</c>, <c>in_mode</c> and
+/// <c>in_locked</c> (its inputs never switch its relays, so <c>in_mode</c> is "detached" at start), and schedule jobs, with
 /// <c>Schedule.List</c> and <c>Schedule.Update</c>, and <c>sys.schedule_rev</c>, which grows with every update. With a password it asks for the digest of
 /// "Authentication": in the way of firmware 2.0.0 and later (a nonce for many requests with a growing <c>nc</c>, stale
 /// after an hour or 30,000 requests, and 429 after too many wrong passwords) or, for an older <see cref="Firmware"/>,
@@ -67,6 +68,8 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     private Task? _acceptLoop;
     private readonly string[] _initialStates;
     private readonly bool[] _autoOn;
+    private readonly string[] _inputModes;
+    private readonly bool[] _inputLocked;
     private readonly List<SimulatedJob> _jobs = [];
     private long _scheduleRevision;
     private long _nextJobId = 1;
@@ -106,6 +109,11 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         _deviceId = string.Create(CultureInfo.InvariantCulture, $"shellysim{model.Capabilities.RelayCount}-0a1b2c3d4e5f");
         _initialStates = [.. Enumerable.Repeat("off", model.Capabilities.RelayCount)];
         _autoOn = new bool[model.Capabilities.RelayCount];
+
+        // The simulator never links its inputs to its relays (as for match_input after a power cut), so an input switches
+        // nothing: "detached", not the docs' example's "follow", which would claim a rule the simulator doesn't run.
+        _inputModes = [.. Enumerable.Repeat(ShellyApi.InputDetached, model.Capabilities.RelayCount)];
+        _inputLocked = new bool[model.Capabilities.RelayCount];
 
         // As the devices the docs list with this many switches: the Plus 1 has input:0, the Plus 2PM input:0 and 1, the
         // Pro 3 input:0 to 2 and the Pro 4PM input:0 to 3 ("Devices"), each a switch at start.
@@ -371,6 +379,43 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     {
         _model.Capabilities.Relay(relay);
         if (ChangeAutoOn(relay, autoOn))
+        {
+            RaiseChanged();
+        }
+    }
+
+    /// <summary>
+    /// A relay's <c>in_mode</c>, as <c>Switch.GetConfig</c> gives it: "detached" at start. Only the setting: the
+    /// simulator's inputs never switch its relays.
+    /// </summary>
+    public string InputMode(int relay)
+    {
+        _model.Capabilities.Relay(relay);
+        lock (_lock)
+        {
+            return _inputModes[relay - 1];
+        }
+    }
+
+    /// <summary>A relay's <c>in_locked</c>, as <c>Switch.GetConfig</c> gives it: false at start.</summary>
+    public bool InputLocked(int relay)
+    {
+        _model.Capabilities.Relay(relay);
+        lock (_lock)
+        {
+            return _inputLocked[relay - 1];
+        }
+    }
+
+    /// <summary>
+    /// Sets a relay's <c>in_mode</c> and <c>in_locked</c> "at the device", e.g. on its own web page: any mode, also one
+    /// the docs don't name. Grows <c>cfg_rev</c> when either changed.
+    /// </summary>
+    public void SetInputMode(int relay, string mode, bool locked = false)
+    {
+        ArgumentNullException.ThrowIfNull(mode);
+        _model.Capabilities.Relay(relay);
+        if (ChangeInputMode(relay, mode, locked))
         {
             RaiseChanged();
         }
@@ -896,6 +941,7 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         var (relay, on) = SwitchParameters(rpc);
         var initialState = InitialStateParameter(rpc);
         var autoOn = AutoOnParameter(rpc);
+        var inputMode = InputModeParameter(rpc);
         var job = JobParameter(rpc);
         var text = rpc is null
             ? $"{ShellyRpcError.Printable(http.Method)} {ShellyRpcError.Printable(http.Target)}"
@@ -903,9 +949,11 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
                 ? ShellyTraceText.SetPowerOn(setting, state)
                 : rpc.Method == ShellyApi.SwitchSetConfig && relay is { } autoOnRelay && autoOn == false
                     ? ShellyTraceText.TurnOffAutoOn(autoOnRelay)
-                    : rpc.Method == ShellyApi.ScheduleUpdate && job is { } jobId && EnableParameter(rpc) == false
-                        ? ShellyTraceText.TurnOffSchedule(jobId)
-                        : ShellyTraceText.Request(rpc.Method, relay ?? 0, on ?? false);
+                    : rpc.Method == ShellyApi.SwitchSetConfig && relay is { } inputRelay && inputMode == ShellyApi.InputDetached
+                        ? ShellyTraceText.DetachInput(inputRelay)
+                        : rpc.Method == ShellyApi.ScheduleUpdate && job is { } jobId && EnableParameter(rpc) == false
+                            ? ShellyTraceText.TurnOffSchedule(jobId)
+                            : ShellyTraceText.Request(rpc.Method, relay ?? 0, on ?? false);
         Trace(BoardTraceDirection.Sent, text, ShellyTraceText.RequestBytes(http.Body, signed), isRoutine: rpc?.Method == ShellyApi.GetStatus);
         _received.Enqueue(rpc is null ? "?" : rpc.Method + (signed ? " (signed)" : ""));
         while (_received.Count > ReceivedKept && _received.TryDequeue(out _))
@@ -936,7 +984,7 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
             ShellyApi.GetStatus => RespondStatus(rpc),
             ShellyApi.SwitchSet => SetSwitch(rpc, relay, on),
             ShellyApi.SwitchGetConfig => GetConfig(rpc, relay),
-            ShellyApi.SwitchSetConfig => SetConfig(rpc, relay, initialState, autoOn),
+            ShellyApi.SwitchSetConfig => SetConfig(rpc, relay, initialState, autoOn, inputMode),
             ShellyApi.ScheduleList => ListSchedules(rpc),
             ShellyApi.ScheduleUpdate => UpdateSchedule(rpc, job),
 
@@ -1222,7 +1270,8 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     }
 
     // As "Switch.GetConfig": "id" required; -103 without it, -105 "Bad id=N" for a switch it hasn't (the docs' example
-    // for Input.GetConfig). The members in the order of the docs' example; only initial_state is the device's own.
+    // for Input.GetConfig). The members in the order of the docs' example; initial_state, in_mode, in_locked and auto_on
+    // are the device's own.
     private byte[]? GetConfig(ShellyRequest rpc, int? relay)
     {
         if (CheckSwitch(rpc, relay) is { } refusal)
@@ -1244,14 +1293,22 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
 
         var initialState = InitialState(relay!.Value);
         var autoOn = AutoOn(relay.Value);
+        string inputMode;
+        bool inputLocked;
+        lock (_lock)
+        {
+            inputMode = _inputModes[relay.Value - 1];
+            inputLocked = _inputLocked[relay.Value - 1];
+        }
+
         return Result(
             rpc,
             writer =>
             {
                 writer.WriteNumber("id", relay.Value - 1);
                 writer.WriteNull("name");
-                writer.WriteString("in_mode", "follow");
-                writer.WriteBoolean("in_locked", false);
+                writer.WriteString(ShellyApi.InputMode, inputMode);
+                writer.WriteBoolean(ShellyApi.InputLocked, inputLocked);
                 writer.WriteString(ShellyApi.InitialState, initialState);
                 writer.WriteBoolean(ShellyApi.AutoOn, autoOn);
                 writer.WriteNumber("auto_on_delay", 60);
@@ -1260,13 +1317,14 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
                 writer.WriteBoolean("power_restore_delay_enable", false);
                 writer.WriteNumber("power_restore_delay", 60);
             },
-            ShellyTraceText.SettingsRead(relay.Value, ShellyApi.ToPowerOnState(initialState), autoOn));
+            ShellyTraceText.SettingsRead(relay.Value, ShellyApi.ToPowerOnState(initialState), autoOn, ShellyApi.ToInputRule(inputMode, inputLocked)));
     }
 
-    // As "Switch.SetConfig": "id" and "config" required; only initial_state and auto_on are taken, and only a value the
+    // As "Switch.SetConfig": "id" and "config" required; only initial_state, auto_on, in_mode and in_locked are taken,
+    // and only a value the
     // docs list (the docs don't say what another one gets: -103 is "Common Errors"' error for parameters that don't
     // match). Its result is the docs' {"restart_required":false}.
-    private byte[] SetConfig(ShellyRequest rpc, int? relay, string? initialState, bool? autoOn)
+    private byte[] SetConfig(ShellyRequest rpc, int? relay, string? initialState, bool? autoOn, string? inputMode)
     {
         if (CheckSwitch(rpc, relay) is { } refusal)
         {
@@ -1288,7 +1346,28 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
             return Error(rpc, new ShellyRpcError(-103, "Invalid argument 'auto_on'"));
         }
 
+        if (config.TryGetProperty(ShellyApi.InputMode, out _) && ShellyApi.ToInputRule(inputMode, locked: false) is null)
+        {
+            return Error(rpc, new ShellyRpcError(-103, "Invalid argument 'in_mode'"));
+        }
+
+        bool? inputLocked = null;
+        if (config.TryGetProperty(ShellyApi.InputLocked, out var lockedValue))
+        {
+            if (lockedValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return Error(rpc, new ShellyRpcError(-103, "Invalid argument 'in_locked'"));
+            }
+
+            inputLocked = lockedValue.GetBoolean();
+        }
+
         if (autoOn is { } newAutoOn && ChangeAutoOn(relay!.Value, newAutoOn))
+        {
+            RaiseChanged();
+        }
+
+        if (ChangeInputMode(relay!.Value, inputMode, inputLocked))
         {
             RaiseChanged();
         }
@@ -1425,6 +1504,32 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         }
     }
 
+    // Sets a relay's in_mode and in_locked, each left as it is when null; cfg_rev grows only when one changed. Whether
+    // one changed.
+    private bool ChangeInputMode(int relay, string? mode, bool? locked)
+    {
+        lock (_lock)
+        {
+            // Without power the board takes no change of any kind (Issue #557).
+            if (IsPoweredOff)
+            {
+                return false;
+            }
+
+            var newMode = mode ?? _inputModes[relay - 1];
+            var newLocked = locked ?? _inputLocked[relay - 1];
+            if (_inputModes[relay - 1] == newMode && _inputLocked[relay - 1] == newLocked)
+            {
+                return false;
+            }
+
+            _inputModes[relay - 1] = newMode;
+            _inputLocked[relay - 1] = newLocked;
+            _configRevision++;
+            return true;
+        }
+    }
+
     // -103 without an id, -105 for a switch it hasn't, and the refusal for a relay in FailConfigRelays; null to go on.
     private byte[]? CheckSwitch(ShellyRequest rpc, int? relay)
     {
@@ -1486,6 +1591,19 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
             && config.TryGetProperty(ShellyApi.AutoOn, out var value)
             && value.ValueKind is JsonValueKind.True or JsonValueKind.False
                 ? value.GetBoolean()
+                : null;
+    }
+
+    // Switch.SetConfig's config.in_mode; null when missing or not a string.
+    private static string? InputModeParameter(ShellyRequest? rpc)
+    {
+        return rpc?.Method == ShellyApi.SwitchSetConfig
+            && rpc.Params is { } parameters
+            && parameters.TryGetProperty("config", out var config)
+            && config.ValueKind == JsonValueKind.Object
+            && config.TryGetProperty(ShellyApi.InputMode, out var value)
+            && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
                 : null;
     }
 

@@ -121,9 +121,10 @@ public static class ShellyTraceText
 
     /// <summary>
     /// A relay's settings as read: "Relay 2 after a power cut: off", and " · turns on again by itself" with its auto-on
-    /// on, or " · auto-on unknown" when it couldn't be read.
+    /// on, or " · auto-on unknown" when it couldn't be read; then " · its input switches it at each change",
+    /// " · a press on its input switches it", or " · input mode unknown", from <paramref name="input"/>.
     /// </summary>
-    public static string SettingsRead(int relay, PowerOnState? state, bool? autoOn)
+    public static string SettingsRead(int relay, PowerOnState? state, bool? autoOn, ShellyInputRule? input)
     {
         var suffix = autoOn switch
         {
@@ -131,7 +132,27 @@ public static class ShellyTraceText
             false => "",
             null => " · auto-on unknown",
         };
-        return PowerOnRead(relay, state) + suffix;
+        var inputSuffix = input?.Kind switch
+        {
+            _ when input is null => " · input mode unknown",
+            _ when input.Value.Cycle => " · a press on its input steps relays 1 and 2 through on and off",
+            OwnRuleKind.InputEdge => " · its input switches it at each change",
+            OwnRuleKind.InputToggle => " · a press on its input switches it",
+            _ => "",
+        };
+        return PowerOnRead(relay, state) + suffix + inputSuffix;
+    }
+
+    /// <summary>A request to detach one relay's input: "Stop relay 2's input switching it".</summary>
+    public static string DetachInput(int relay)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"Stop relay {relay}'s input switching it");
+    }
+
+    /// <summary>The device took it: "Relay 2's input no longer switches it".</summary>
+    public static string InputDetached(int relay)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s input no longer switches it");
     }
 
     /// <summary>"Schedules: none switches a relay", "Schedules: 2 switch relay 1 and 3", from the enabled ones.</summary>

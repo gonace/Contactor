@@ -2095,6 +2095,14 @@
     <value>They can turn relays on and off without Contactor.</value>
     <comment>Under the own rules step's heading.</comment>
   </data>
+  <data name="OwnRules.Step.KeepInputs_One" xml:space="preserve">
+    <value>Keep it if a switch on the wall should still work.</value>
+    <comment>After "We recommend turning it off." while adding a board, when the rule is an input that switches a relay on the board (issue #622).</comment>
+  </data>
+  <data name="OwnRules.Step.KeepInputs_Other" xml:space="preserve">
+    <value>Keep them if a switch on the wall should still work.</value>
+    <comment>After "We recommend turning them off." while adding a board, when one of the rules is an input that switches a relay on the board (issue #622).</comment>
+  </data>
   <data name="OwnRules.Step.Later" xml:space="preserve">
     <value>Not now</value>
   </data>

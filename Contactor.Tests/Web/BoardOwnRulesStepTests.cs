@@ -45,6 +45,7 @@ public sealed class BoardOwnRulesStepTests
         Assert.Contains("Relay 3", text, StringComparison.Ordinal);
         Assert.Contains("Relay 5", text, StringComparison.Ordinal);
         Assert.Contains("We recommend turning them off.", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("switch on the wall", text, StringComparison.Ordinal);
         Assert.DoesNotContain("doesn't switch", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Also", text, StringComparison.Ordinal);
         Assert.True(await page.HasAsync(Button("Keep them")));
@@ -172,6 +173,22 @@ public sealed class BoardOwnRulesStepTests
         Assert.All(rows, r => Assert.Equal((true, John), (r.KeptUtc is not null, r.KeptBy)));
         Assert.Equal(2, (await EventsAsync(app, live.BoardId, EventActions.BoardOwnRuleKept)).Count);
         Assert.Empty(app.Services.GetRequiredService<OwnRulesHandler>().Warnings(live.BoardId));
+    }
+
+    // An input that switches a relay on the board (issue #622), here with a timer: the advice says it may be kept for a
+    // switch on the wall.
+    [Fact]
+    public async Task Should_SayAnInputMayBeKept_ForASwitchOnTheWall()
+    {
+        var board = new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff);
+        await using var app = App();
+        using var page = await PageRenderer.StartAsync<BoardNew>(app.Services, John, "John");
+        await ToWhereAsync(app, page, board, Timer3, new OwnRule(5, OwnRuleKind.InputToggle));
+
+        await page.ClickAsync(Button("Next"));
+
+        Assert.Contains("We recommend turning them off. Keep them if a switch on the wall should still work.", await page.TextAsync(), StringComparison.Ordinal);
+        Assert.Empty(Errors(page));
     }
 
     // No step for a board with no rules of its own, for a model that has none (even if it reported some), or for a

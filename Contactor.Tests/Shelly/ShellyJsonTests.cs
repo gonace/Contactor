@@ -718,6 +718,67 @@ public sealed class ShellyJsonTests
         Assert.Equal(autoOn, ShellyJson.ReadAutoOn(document.RootElement));
     }
 
+    [Theory]
+    [InlineData("""{"id":0,"in_mode":"flip","in_locked":false}""", OwnRuleKind.InputEdge)]
+    [InlineData("""{"id":0,"in_mode":"follow","in_locked":false}""", OwnRuleKind.InputEdge)]
+    [InlineData("""{"id":0,"in_mode":"momentary","in_locked":false}""", OwnRuleKind.InputToggle)]
+    [InlineData("""{"id":0,"in_mode":"activate"}""", OwnRuleKind.InputToggle)]
+    [InlineData("""{"id":0,"in_mode":"detached","in_locked":false}""", null)]
+    [InlineData("""{"id":0,"in_mode":"flip","in_locked":true}""", null)]
+    [InlineData("""{"id":0,"in_mode":"momentary","in_locked":true}""", null)]
+    [InlineData("""{"id":0}""", null)]
+    public void Should_MapEachInputMode_ToItsRule(string json, OwnRuleKind? kind)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+
+        Assert.Equal(new ShellyInputRule(kind), ShellyJson.ReadInputRule(document.RootElement));
+    }
+
+    // "cycle" steps both relays of a 2-relay device ("Cycle in_mode explanation"); locked, it switches nothing.
+    [Fact]
+    public void Should_ReadCycle_AsAToggleThatStepsBothRelays()
+    {
+        using var cycle = System.Text.Json.JsonDocument.Parse("""{"id":0,"in_mode":"cycle","in_locked":false}""");
+        using var locked = System.Text.Json.JsonDocument.Parse("""{"id":0,"in_mode":"cycle","in_locked":true}""");
+
+        Assert.Equal(new ShellyInputRule(OwnRuleKind.InputToggle, Cycle: true), ShellyJson.ReadInputRule(cycle.RootElement));
+        Assert.Equal(ShellyInputRule.None, ShellyJson.ReadInputRule(locked.RootElement));
+    }
+
+    [Fact]
+    public void Should_ReadTheDocsGetConfig_AsAnInputThatSwitchesAtEachChange()
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(GetConfigExample);
+
+        Assert.Equal(new ShellyInputRule(OwnRuleKind.InputEdge), ShellyJson.ReadInputRule(document.RootElement));
+    }
+
+    [Theory]
+    [InlineData("""{"id":0,"in_mode":"toggle","in_locked":false}""")]
+    [InlineData("""{"id":0,"in_mode":"Flip","in_locked":false}""")]
+    [InlineData("""{"id":0,"in_mode":"","in_locked":false}""")]
+    [InlineData("""{"id":0,"in_mode":1,"in_locked":false}""")]
+    [InlineData("""{"id":0,"in_mode":null}""")]
+    [InlineData("""{"id":0,"in_mode":"detached","in_locked":"false"}""")]
+    [InlineData("""{"id":0,"in_mode":"flip","in_locked":null}""")]
+    [InlineData("""[]""")]
+    public void Should_ReadAnInputModeTheDocsDontName_AsUnknown(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+
+        Assert.Null(ShellyJson.ReadInputRule(document.RootElement));
+    }
+
+    [Fact]
+    public void Should_WriteAnInputSetConfig_WithOnlyInMode()
+    {
+        Assert.Equal(
+            """{"id":3,"src":"contactor","method":"Switch.SetConfig","params":{"id":2,"config":{"in_mode":"detached"}}}""",
+            Encoding.UTF8.GetString(ShellyJson.WriteSwitchInputDetached(3, relay: 3)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ShellyJson.WriteSwitchInputDetached(1, relay: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ShellyJson.WriteSwitchInputDetached(1, relay: 5));
+    }
+
     [Fact]
     public void Should_WriteTheDocsScheduleUpdate_AndAnAutoOnSetConfig_WithNothingElse()
     {

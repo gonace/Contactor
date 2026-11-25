@@ -89,6 +89,19 @@ public sealed class OwnRulesText
         return _texts["OwnRules.Step.Recommend" + Plurals.Form(count)];
     }
 
+    /// <summary>
+    /// The step's advice for an input that switches a relay on the board (<see cref="OwnRuleKind.InputToggle"/>,
+    /// <see cref="OwnRuleKind.InputEdge"/>, issue #622): "Keep them if a switch on the wall should still work.", or "Keep
+    /// it …" for one rule; null when none of <paramref name="rules"/> is such a rule.
+    /// </summary>
+    public string? KeepInputs(IReadOnlyCollection<OwnRule> rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        return rules.Any(r => r.Kind is OwnRuleKind.InputToggle or OwnRuleKind.InputEdge)
+            ? _texts["OwnRules.Step.KeepInputs" + Plurals.Form(rules.Count)].Value
+            : null;
+    }
+
     /// <summary>The step's second button: "Keep them", or "Keep it" for one rule.</summary>
     public string KeepAll(int count)
     {

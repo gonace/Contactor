@@ -94,7 +94,7 @@ public sealed class ShellySimulatedBoardTests
 
         var config = Body(await PostAsync(device.Port, "{\"id\":1,\"method\":\"Switch.GetConfig\",\"params\":{\"id\":1}}"));
         Assert.Equal(
-            "{\"id\":1,\"src\":\"shellysim2-0a1b2c3d4e5f\",\"result\":{\"id\":1,\"name\":null,\"in_mode\":\"follow\",\"in_locked\":false,\"initial_state\":\"off\",\"auto_on\":false,\"auto_on_delay\":60,\"auto_off\":false,\"auto_off_delay\":60,\"power_restore_delay_enable\":false,\"power_restore_delay\":60}}",
+            "{\"id\":1,\"src\":\"shellysim2-0a1b2c3d4e5f\",\"result\":{\"id\":1,\"name\":null,\"in_mode\":\"detached\",\"in_locked\":false,\"initial_state\":\"off\",\"auto_on\":false,\"auto_on_delay\":60,\"auto_off\":false,\"auto_off_delay\":60,\"power_restore_delay_enable\":false,\"power_restore_delay\":60}}",
             config);
 
         // The docs' SetConfig answer; cfg_rev grows only when the value changed.
@@ -112,6 +112,17 @@ public sealed class ShellySimulatedBoardTests
         Assert.Equal(13, device.ConfigRevision);
         var status = Body(await PostAsync(device.Port, "{\"id\":4,\"method\":\"Shelly.GetStatus\"}"));
         Assert.Equal(13, ShellyJson.ReadSwitches(ShellyJson.ReadFrame(Encoding.UTF8.GetBytes(status), 4).Result!.Value).ConfigRevision);
+
+        // The input mode, set at the device and with SetConfig: in_mode alone leaves in_locked, and cfg_rev grows once
+        // for each change. A mode the docs don't name is refused.
+        device.SetInputMode(1, "flip", locked: true);
+        Assert.Contains("\"in_mode\":\"flip\",\"in_locked\":true", Body(await PostAsync(device.Port, "{\"id\":5,\"method\":\"Switch.GetConfig\",\"params\":{\"id\":0}}")), StringComparison.Ordinal);
+        Assert.Equal(14, device.ConfigRevision);
+        Assert.EndsWith("\"result\":{\"restart_required\":false}}", await PostAsync(device.Port, "{\"id\":6,\"method\":\"Switch.SetConfig\",\"params\":{\"id\":0,\"config\":{\"in_mode\":\"detached\"}}}"), StringComparison.Ordinal);
+        Assert.Equal(("detached", true), (device.InputMode(1), device.InputLocked(1)));
+        Assert.Equal(15, device.ConfigRevision);
+        Assert.EndsWith("\"error\":{\"code\":-103,\"message\":\"Invalid argument 'in_mode'\"}}", await PostAsync(device.Port, "{\"id\":7,\"method\":\"Switch.SetConfig\",\"params\":{\"id\":0,\"config\":{\"in_mode\":\"toggle\"}}}"), StringComparison.Ordinal);
+        Assert.Equal(("detached", 15L), (device.InputMode(1), device.ConfigRevision));
     }
 
     [Fact]
