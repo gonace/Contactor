@@ -20,7 +20,7 @@ The pages, and what the app takes from each:
 | General → *Common Errors* | The error object (`code`, `message`), and -109 FAILED PRECONDITION, e.g. "Overtemp condition present" |
 | General → *Firmware Update Policy* | The Plus devices (Plus 1, Plus 1PM, Plus 2PM, Plus Plug S …) stay on firmware 1.7.x |
 | Components and Services → *Shelly* | `Shelly.GetDeviceInfo` (`id`, `model`, `gen`, `ver`, `profile`) and `Shelly.GetStatus` (a member per component, e.g. `switch:0`), with their examples |
-| Components and Services → *Switch* | `Switch.Set` (`id` and `on`, and its result `was_on`) and the switch status (`output`). `Switch.GetConfig` (`id`) and `Switch.SetConfig` (`id` and `config`, and its result `restart_required`), with their examples. In the configuration, `initial_state`: "Output state to set on power_on. Range of values: off, on, restore_last, match_input", `auto_on`: "True if the "Automatic ON" function is enabled, false otherwise", `in_mode`: "Mode of the associated input", with the values `momentary`, `follow`, `flip`, `detached`, `cycle` and `activate` (issue #622), and `in_locked`, true or false. `Switch.Toggle` (`id`), `Switch.SetAll` (`on`) and `Switch.SetMany` (`ids` and `on`), only to read them in a schedule |
+| Components and Services → *Switch* | `Switch.Set` (`id` and `on`, and its result `was_on`) and the switch status (`output`). `Switch.GetConfig` (`id`) and `Switch.SetConfig` (`id` and `config`, and its result `restart_required`), with their examples. In the configuration, `initial_state`: "Output state to set on power_on. Range of values: off, on, restore_last, match_input", `auto_on`: "True if the "Automatic ON" function is enabled, false otherwise", `in_mode`: "Mode of the associated input. Range of values: momentary, follow, flip, detached, cycle (if applicable), activate (if applicable)" (issue #622, read 2026-11-25), its "Cycle in_mode explanation", and `in_locked`: "If True, all changes to physical inputs are ignored, regardless of mode". `Switch.Toggle` (`id`), `Switch.SetAll` (`on`) and `Switch.SetMany` (`ids` and `on`), only to read them in a schedule |
 | Components and Services → *Schedule* | The job (`id`, `enable`, "true by default", `timespec`, `calls` with `method` and `params`), "a limit of 20 schedule instances per device" and "a limit of 5 calls per schedule job". `Schedule.List` (`jobs` and `rev`) and `Schedule.Update` (`id` and `enable`, and its result `rev`), with their examples |
 | Components and Services → *Input* (read 2026-11-20) | The input's status: `state` "boolean or null (only for type switch, button)", "null if the input instance is stateless, i.e. for type button", `percent` for type `analog` and `counts` for type `count`. `enable`: "When disabled, the input instance ... reports status properties as null". Inputs are "identified with input:<id>". The `Input.GetStatus` example `{"id":0,"state":false}` |
 | Devices → *Shelly Plus 1*, *Pro 1*, *Plus 2PM*, *Pro 3*, *Pro 4PM* (read 2026-11-20) | Their inputs: `input:0` on the Plus 1, `input:0` and `input:1` on the Pro 1 and Plus 2PM, `input:0` to `input:2` on the Pro 3, and `input:0` to `input:3` on the Pro 4PM |
@@ -215,7 +215,11 @@ The app reads three kinds of rules on the device that switch its relays without 
 - **Inputs** (issue #622): `in_mode` and `in_locked` from the same `Switch.GetConfig`. Each is its own unit
   (`ShellyApi.ToInputRule`):
   - `flip` and `follow`: each change of the input switches the relay, an `InputEdge` rule.
-  - `momentary`, `cycle` and `activate`: a press on the input switches the relay or turns it on, an `InputToggle` rule.
+  - `momentary` and `activate`: a press on the input switches the relay or turns it on, an `InputToggle` rule.
+  - `cycle`: "at a push of a button with active cycle in_mode, the sequence is: SW:0-ON && SW:1-OFF, SW:0-OFF &&
+    SW:1-ON, SW:0-ON && SW:1-ON, SW:0-OFF && SW:1-OFF" ("Cycle in_mode explanation"). So a switch in `cycle` makes an
+    `InputToggle` rule on relay 1 and on relay 2, one unit: turning off one names the other. The docs give `cycle` only
+    to the Plus 2PM, Pro 2PM and Pro 2, so on a device with other than 2 relays it makes the rules unknown.
   - `detached`, or any mode with `in_locked` true: no rule.
   - No `in_mode` at all: no rule. A switch without an input (e.g. on a plug) has nothing that switches it.
   - Any other value, or an `in_mode` or `in_locked` of another type: the rules are unknown, as for an `auto_on` that
@@ -237,8 +241,10 @@ reads are routine in the Debug trace. Only a change in which relays the enabled 
   read (the jobs the person saw). The app never deletes a job and never changes its calls or `timespec`.
   This turns off the whole job, so its other calls (e.g. `Script.Start` or `HTTP.GET`) stop too.
 - An `AutoOn` rule: one `Switch.SetConfig` for that switch, with only `auto_on:false` in `config`.
-- An `InputEdge` or `InputToggle` rule: one `Switch.SetConfig` for that switch, with only `in_mode:"detached"` in
-  `config`, once per switch. `in_locked` and the other settings stay as they are.
+- An `InputEdge` or `InputToggle` rule: one `Switch.SetConfig` with only `in_mode:"detached"` in `config` for each
+  switch whose input makes it, as last read, each switch once. For relay 2's toggle from switch 0 in `cycle`, that is
+  switch 0. When both switches say `cycle`, both are detached. A rule no switch makes any more is taken without a
+  request. `in_locked` and the other settings stay as they are.
 - At once or `BoardNotConnectedException`, never queued. `ArgumentOutOfRangeException` for a relay the entry hasn't
   or another kind of rule, before anything is sent. A rule given twice is taken once.
 - It returns the rules asked that the device took, in relay order. A timer is taken when every job behind it took its
@@ -421,6 +427,8 @@ The `Shelly` section applies to all four entries:
 - That `in_mode:"detached"` stops the switch on the wall switching the relay, at once and without a restart
   (`restart_required` false), and that `cfg_rev` grows when `in_mode` changes.
 - That `in_locked` true stops the input switching the relay in every mode.
+- On a Plus 2PM, Pro 2PM or Pro 2 with `cycle`: which switch's configuration holds `cycle`, whether the other switch
+  also says `cycle`, and that detaching that one switch stops the button stepping both relays.
 - That a device without an input (e.g. a plug) has no `in_mode` in `Switch.GetConfig`.
 - How many HTTP clients the device takes at once. The docs say 6 non-persistent channels. If too many clients also
   get 429.

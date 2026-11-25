@@ -1343,13 +1343,54 @@ public sealed class ShellyClientTests
         Assert.Equal((byte)1, await run.Client.TurnOnAsync(0b1, Cancel));
 
         var changes = run.Changes.Count;
-        simulator.SetInputMode(2, "cycle");
+        simulator.SetInputMode(2, "momentary");
         await run.PollAsync();
 
         Assert.True(run.Client.State.IsConnected);
         Assert.Equal(new OwnRules([new OwnRule(2, OwnRuleKind.InputToggle)], [[new OwnRule(2, OwnRuleKind.InputToggle)]]), run.Client.State.OwnRules);
         Assert.Equal(new OwnRules([new OwnRule(2, OwnRuleKind.InputToggle)], [[new OwnRule(2, OwnRuleKind.InputToggle)]]), run.OwnRulesChanges[^1].OwnRules);
         Assert.Equal(changes, run.Changes.Count);
+    }
+
+    // Switch 1 in cycle on a 2-relay device: a press steps both relays, so relays 1 and 2 each get an InputToggle, one
+    // unit, and turning off one names the other. Switch 2's own flip is its own unit. "Turn off" on relay 2's toggle
+    // detaches switch 1 alone, with one Switch.SetConfig, and reads the settings back: switch 2's flip stays.
+    [Fact]
+    public async Task Should_ReportCycle_OnBothRelaysAsOneUnit_AndDetachOnlyTheSwitchThatSaysIt()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays);
+        simulator.SetInputMode(1, "cycle");
+        simulator.SetInputMode(2, "flip");
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+        OwnRule toggle1 = new(1, OwnRuleKind.InputToggle), toggle2 = new(2, OwnRuleKind.InputToggle), edge2 = new(2, OwnRuleKind.InputEdge);
+
+        var rules = run.Client.State.OwnRules!;
+        Assert.Equal(new OwnRules([toggle1, toggle2, edge2], [[toggle1, toggle2], [edge2]]), rules);
+        Assert.Equal([toggle1], rules.GoesWith(toggle2));
+        Assert.Contains(run.Traces, t => t.Text == "Relay 1 after a power cut: off · a press on its input steps relays 1 and 2 through on and off");
+        var before = simulator.Received.Count;
+
+        Assert.Equal([toggle2], await run.Client.TurnOffOwnRulesAsync([toggle2], Cancel));
+
+        Assert.Equal([ShellyApi.SwitchSetConfig, ShellyApi.GetStatus, ShellyApi.SwitchGetConfig, ShellyApi.SwitchGetConfig], simulator.Received.Skip(before));
+        Assert.Equal(("detached", "flip"), (simulator.InputMode(1), simulator.InputMode(2)));
+        Assert.Contains(run.Traces, t => t.Text == "Stop relay 1's input switching it" && t.Direction == BoardTraceDirection.Sent);
+        Assert.Equal([edge2], run.Client.State.OwnRules!);
+    }
+
+    // The docs give cycle only to devices with 2 relays: on another, its rules are unknown, and it stays connected.
+    [Fact]
+    public async Task Should_LeaveTheRulesUnknown_ForCycleOnADeviceWithoutTwoRelays()
+    {
+        await using var simulator = Start(ShellyModels.ThreeRelays);
+        simulator.SetInputMode(1, "cycle");
+        await using var run = ClientRun.Start(simulator, ShellyModels.ThreeRelays);
+
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Null(run.Client.State.OwnRules);
+        Assert.True(run.Client.State.IsConnected);
     }
 
     // "Turn off" on relay 2's input: one Switch.SetConfig with only in_mode "detached" for that switch, also with both

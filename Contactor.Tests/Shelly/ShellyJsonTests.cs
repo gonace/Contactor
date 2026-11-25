@@ -722,7 +722,6 @@ public sealed class ShellyJsonTests
     [InlineData("""{"id":0,"in_mode":"flip","in_locked":false}""", OwnRuleKind.InputEdge)]
     [InlineData("""{"id":0,"in_mode":"follow","in_locked":false}""", OwnRuleKind.InputEdge)]
     [InlineData("""{"id":0,"in_mode":"momentary","in_locked":false}""", OwnRuleKind.InputToggle)]
-    [InlineData("""{"id":0,"in_mode":"cycle","in_locked":false}""", OwnRuleKind.InputToggle)]
     [InlineData("""{"id":0,"in_mode":"activate"}""", OwnRuleKind.InputToggle)]
     [InlineData("""{"id":0,"in_mode":"detached","in_locked":false}""", null)]
     [InlineData("""{"id":0,"in_mode":"flip","in_locked":true}""", null)]
@@ -733,6 +732,17 @@ public sealed class ShellyJsonTests
         using var document = System.Text.Json.JsonDocument.Parse(json);
 
         Assert.Equal(new ShellyInputRule(kind), ShellyJson.ReadInputRule(document.RootElement));
+    }
+
+    // "cycle" steps both relays of a 2-relay device ("Cycle in_mode explanation"); locked, it switches nothing.
+    [Fact]
+    public void Should_ReadCycle_AsAToggleThatStepsBothRelays()
+    {
+        using var cycle = System.Text.Json.JsonDocument.Parse("""{"id":0,"in_mode":"cycle","in_locked":false}""");
+        using var locked = System.Text.Json.JsonDocument.Parse("""{"id":0,"in_mode":"cycle","in_locked":true}""");
+
+        Assert.Equal(new ShellyInputRule(OwnRuleKind.InputToggle, Cycle: true), ShellyJson.ReadInputRule(cycle.RootElement));
+        Assert.Equal(ShellyInputRule.None, ShellyJson.ReadInputRule(locked.RootElement));
     }
 
     [Fact]

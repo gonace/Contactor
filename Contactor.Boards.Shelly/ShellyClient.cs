@@ -327,8 +327,9 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     /// too, as <see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/> says); a schedule is never deleted and its calls
     /// never changed. An <see cref="OwnRuleKind.AutoOn"/> rule is one <c>Switch.SetConfig</c> with only
     /// <c>auto_on:false</c> for that switch. An <see cref="OwnRuleKind.InputEdge"/> or <see cref="OwnRuleKind.InputToggle"/>
-    /// rule is one <c>Switch.SetConfig</c> with only <c>in_mode:"detached"</c> for that switch, once per switch also when
-    /// both are given. A rule given twice is taken once. Returns the rules asked that the device
+    /// rule is one <c>Switch.SetConfig</c> with only <c>in_mode:"detached"</c> for every switch whose input makes it as
+    /// last read (a switch in <c>cycle</c> makes relay 1's and relay 2's), each switch once; one that no switch makes any
+    /// more is taken without a request. A rule given twice is taken once. Returns the rules asked that the device
     /// took, in relay order: a timer once every schedule behind it took its update (also when, as last read, none
     /// switches it any more). Throws <see cref="ArgumentOutOfRangeException"/> for a relay the entry hasn't or another
     /// kind of rule, and <see cref="BoardNotConnectedException"/> without a connection, both before anything is sent;
@@ -779,15 +780,14 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
     // Under the poller's lock: the own rules as last read, or null while the schedules, a switch's auto_on or the rule
     // its input makes is unknown. A Timer rule on each relay an enabled schedule switches, one unit per such schedule
-    // (its relays' timers), an InputEdge or InputToggle rule on each relay whose input switches it, and an AutoOn rule
-    // on each relay whose auto_on is on, each of those two its own unit; in relay order, the timer first.
+    // (its relays' timers); the rules each switch's input makes, one unit per switch (InputUnits); and an AutoOn rule
+    // on each relay whose auto_on is on, its own unit. In relay order: a relay's timer, its input rules, its auto-on.
     private OwnRules? CurrentOwnRules()
     {
         if (_schedules is not { } schedules
             || _autoOn is not { } autoOn
             || Array.Exists(autoOn, a => a is null)
-            || _inputRules is not { } inputRules
-            || Array.Exists(inputRules, r => r is null))
+            || InputUnits(_inputRules) is not { } inputUnits)
         {
             return null;
         }
@@ -800,11 +800,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
                 rules.Add(new OwnRule(relay, OwnRuleKind.Timer));
             }
 
-            if (inputRules[relay - 1]?.Kind is { } input)
-            {
-                rules.Add(new OwnRule(relay, input));
-            }
-
+            var current = relay;
+            rules.AddRange(inputUnits.SelectMany(u => u.Rules).Where(r => r.Relay == current).Distinct().OrderBy(r => r.Kind));
             if (autoOn[relay - 1] == true)
             {
                 rules.Add(new OwnRule(relay, OwnRuleKind.AutoOn));
@@ -822,8 +819,42 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             units.Add([.. new ChannelMask(job.Relays).Channels.Select(r => new OwnRule(r, OwnRuleKind.Timer))]);
         }
 
-        units.AddRange(rules.Where(r => r.Kind != OwnRuleKind.Timer).Select(r => (IReadOnlyCollection<OwnRule>)[r]));
+        units.AddRange(inputUnits.Select(u => u.Rules));
+        units.AddRange(rules.Where(r => r.Kind == OwnRuleKind.AutoOn).Select(r => (IReadOnlyCollection<OwnRule>)[r]));
         return new OwnRules(rules, units);
+    }
+
+    // The rules each switch's input makes, as read: one unit per switch whose input switches a relay, with the switch
+    // (its relay number) and its rules. A switch in cycle makes an InputToggle on relays 1 and 2, one unit: a press
+    // steps both ("Cycle in_mode explanation"). Null while a switch's input rule is unknown, and on a device with other
+    // than 2 relays that says cycle, which the docs give only to the ShellyPlus2PM, ShellyPro2PM and ShellyPro2.
+    private static List<(int Switch, OwnRule[] Rules)>? InputUnits(ShellyInputRule?[]? inputRules)
+    {
+        if (inputRules is null || Array.Exists(inputRules, r => r is null))
+        {
+            return null;
+        }
+
+        List<(int Switch, OwnRule[] Rules)> units = [];
+        for (var relay = 1; relay <= inputRules.Length; relay++)
+        {
+            var rule = inputRules[relay - 1]!.Value;
+            if (rule.Cycle)
+            {
+                if (inputRules.Length != 2)
+                {
+                    return null;
+                }
+
+                units.Add((relay, [new OwnRule(1, OwnRuleKind.InputToggle), new OwnRule(2, OwnRuleKind.InputToggle)]));
+            }
+            else if (rule.Kind is { } kind)
+            {
+                units.Add((relay, [new OwnRule(relay, kind)]));
+            }
+        }
+
+        return units;
     }
 
     // Under the poller's lock: one Switch.SetConfig, then the status and every switch's settings read back.
@@ -864,7 +895,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     }
 
     // Under the poller's lock: one Schedule.Update per schedule behind the timers asked, one Switch.SetConfig per auto-on
-    // asked and one per switch whose input rule is asked, then the status, the settings and the schedules read back. Puts the rules the device took in taken.
+    // asked and one per switch behind the input rules asked, then the status, the settings and the schedules read back.
+    // Puts the rules the device took in taken.
     private async Task<CommandReading<ShellyStatus>> TurnOffRulesAndReadAsync(BoardEndpoint target, IReadOnlyList<OwnRule> asked, StrongBox<IReadOnlyList<OwnRule>> taken, CancellationToken cancellationToken)
     {
         // Another device may be at a new address, unchecked: nothing goes once the address moved or the device was lost.
@@ -930,8 +962,15 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             }
         }
 
-        // A switch has one input mode: one Switch.SetConfig takes every input rule asked for it.
-        foreach (var relay in inputs.Select(r => r.Relay).Distinct())
+        // The switches behind each input rule asked, as last read (the rules the person saw): every switch whose input
+        // makes it, e.g. switch 1 in cycle behind relay 2's InputToggle. While the input rules aren't known, the rule's
+        // own switch. A rule no switch makes any more is taken without a request, as a timer is. Each switch once.
+        var inputUnits = InputUnits(_inputRules);
+        var behind = inputs.ToDictionary(
+            r => r,
+            r => inputUnits is null ? [r.Relay] : inputUnits.Where(u => u.Rules.Contains(r)).Select(u => u.Switch).ToList());
+        HashSet<int> detached = [];
+        foreach (var relay in behind.Values.SelectMany(s => s).Distinct().Order())
         {
             EnsureSameDevice(target);
             sent = true;
@@ -941,13 +980,15 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
                 await CallAsync(ShellyJson.WriteSwitchInputDetached(id, relay), id, ShellyTraceText.DetachInput(relay), routine: false, target, cancellationToken)
                     .ConfigureAwait(false);
                 Trace(BoardTraceDirection.Received, ShellyTraceText.InputDetached(relay));
-                done.AddRange(inputs.Where(r => r.Relay == relay));
+                detached.Add(relay);
             }
             catch (Exception ex) when (ex is ShellyRpcException or ShellyProtocolException)
             {
                 Refused(string.Create(CultureInfo.InvariantCulture, $"relay {relay}'s input"), ex, ref refusal, ref unreadable);
             }
         }
+
+        done.AddRange(inputs.Where(r => behind[r].All(detached.Contains)));
 
         if (done.Count == 0)
         {

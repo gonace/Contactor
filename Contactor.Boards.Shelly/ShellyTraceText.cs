@@ -135,6 +135,7 @@ public static class ShellyTraceText
         var inputSuffix = input?.Kind switch
         {
             _ when input is null => " · input mode unknown",
+            _ when input.Value.Cycle => " · a press on its input steps relays 1 and 2 through on and off",
             OwnRuleKind.InputEdge => " · its input switches it at each change",
             OwnRuleKind.InputToggle => " · a press on its input switches it",
             _ => "",

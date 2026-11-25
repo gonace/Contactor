@@ -63,8 +63,8 @@ public static class ShellyApi
     public const string InputMode = "in_mode";
 
     /// <summary>
-    /// The member of a switch's configuration that locks its input, true or false ("Switch", "Configuration"): a locked
-    /// input switches nothing.
+    /// The member of a switch's configuration that locks its input: "If True, all changes to physical inputs are ignored,
+    /// regardless of mode" ("Switch", "Configuration").
     /// </summary>
     public const string InputLocked = "in_locked";
 
@@ -108,7 +108,10 @@ public static class ShellyApi
     /// <summary>
     /// The rule a switch's <see cref="InputMode"/> makes, as <see cref="ShellyInputRule"/>: <c>flip</c> and <c>follow</c>
     /// switch the relay at each change of the input (<see cref="OwnRuleKind.InputEdge"/>); <c>momentary</c>,
-    /// <c>cycle</c> and <c>activate</c> switch it, or turn it on, at a press (<see cref="OwnRuleKind.InputToggle"/>);
+    /// <c>cycle</c> and <c>activate</c> switch it, or turn it on, at a press (<see cref="OwnRuleKind.InputToggle"/>;
+    /// <c>cycle</c> steps both relays of a 2-relay device, "SW:0-ON &amp;&amp; SW:1-OFF, SW:0-OFF &amp;&amp; SW:1-ON,
+    /// SW:0-ON &amp;&amp; SW:1-ON, SW:0-OFF &amp;&amp; SW:1-OFF", "Cycle in_mode explanation", so it is marked
+    /// <see cref="ShellyInputRule.Cycle"/>);
     /// <c>detached</c>, or any mode while <paramref name="locked"/>, switches nothing. Null for a mode the docs don't
     /// name. The device still obeys the app in every mode, so none of them is <see cref="OwnRuleKind.InputLinkage"/>.
     /// </summary>
@@ -117,7 +120,8 @@ public static class ShellyApi
         var rule = mode switch
         {
             "flip" or "follow" => new ShellyInputRule(OwnRuleKind.InputEdge),
-            "momentary" or "cycle" or "activate" => new ShellyInputRule(OwnRuleKind.InputToggle),
+            "momentary" or "activate" => new ShellyInputRule(OwnRuleKind.InputToggle),
+            "cycle" => new ShellyInputRule(OwnRuleKind.InputToggle, Cycle: true),
             InputDetached => ShellyInputRule.None,
             _ => (ShellyInputRule?)null,
         };
