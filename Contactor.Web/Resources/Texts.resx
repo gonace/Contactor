@@ -1956,6 +1956,14 @@
     <value>Contactor couldn't read this board's own rules. Check its own web page.</value>
     <comment>A board that answers and reads its own rules, but couldn't read them this time, e.g. another firmware.</comment>
   </data>
+  <data name="OwnRules.Card.CouldntReadRelays_One" xml:space="preserve">
+    <value>Contactor couldn't read the own rules of this relay. Check the board's own web page.</value>
+    <comment>On the board's own-rules card, above the one relay whose own rules the board couldn't read while it read the others'.</comment>
+  </data>
+  <data name="OwnRules.Card.CouldntReadRelays_Other" xml:space="preserve">
+    <value>Contactor couldn't read the own rules of these relays. Check the board's own web page.</value>
+    <comment>As _One, above two or more relays.</comment>
+  </data>
   <data name="OwnRules.Card.Hint" xml:space="preserve">
     <value>They can turn relays on and off without Contactor.</value>
   </data>
