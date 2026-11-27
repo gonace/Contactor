@@ -124,30 +124,30 @@ public sealed class DaenetIp2SimulatedBoardTests
         await using var simulator = Started(DaenetIp2Models.Relays16);
         using var app = Client();
 
-        var set = DaenetIp2Snmp.Set(1, ReadWrite, DaenetIp2Api.PortOid(DaenetIp2Port.P3), 0b1010_0101, 255);
+        var set = DaenetIp2Snmp.Set(1, ReadWrite, DaenetIp2Oid.Port(DaenetIp2Port.P3), 0b1010_0101);
         Assert.Equal(Hex(DaenetIp2Snmp.Response(1, ReadWrite, set.Oid, 0b1010_0101)), await AskAsync(app, simulator, Hex(set.Message)));
         Assert.Equal(0b1010_0101UL, simulator.Relays);
 
-        var pin = DaenetIp2Snmp.Get(2, ReadOnly, DaenetIp2Api.PinOid(new DaenetIp2Pin(DaenetIp2Port.P3, 3)), 1);
+        var pin = DaenetIp2Snmp.Get(2, ReadOnly, DaenetIp2Oid.Pin(new DaenetIp2Pin(DaenetIp2Port.P3, 3)));
         Assert.Equal(Hex(DaenetIp2Snmp.Response(2, ReadOnly, pin.Oid, 1)), await AskAsync(app, simulator, Hex(pin.Message)));
     }
 
     public static TheoryData<string, int> NotTheBoards { get; } = new()
     {
         // cfgIP, an analog input 9, P6 as a byte (not in table 9.6), a pin 9 and a pin 0: no such name.
-        { Hex(DaenetIp2Snmp.Get(1, ReadOnly, [.. DaenetIp2Api.Enterprise, 9, 1, 1, 0], 255).Message), DaenetIp2Api.NoSuchName },
-        { Hex(DaenetIp2Snmp.Get(1, ReadOnly, [.. DaenetIp2Api.Enterprise, 9, 2, 3, 9, 0], 1023).Message), DaenetIp2Api.NoSuchName },
-        { Hex(DaenetIp2Snmp.Get(1, ReadOnly, [.. DaenetIp2Api.Enterprise, 9, 2, 3, 33, 0], 255).Message), DaenetIp2Api.NoSuchName },
-        { Hex(DaenetIp2Snmp.Set(1, ReadWrite, [.. DaenetIp2Api.Enterprise, 9, 2, 2, 9, 0], 1, 1).Message), DaenetIp2Api.NoSuchName },
-        { Hex(DaenetIp2Snmp.Set(1, ReadWrite, [.. DaenetIp2Api.Enterprise, 9, 2, 1, 0, 0], 1, 1).Message), DaenetIp2Api.NoSuchName },
+        { Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.GetRequest, 1, ReadOnly, [.. DaenetIp2Api.Enterprise, 9, 1, 1, 0], null)), DaenetIp2Api.NoSuchName },
+        { Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.GetRequest, 1, ReadOnly, [.. DaenetIp2Api.Enterprise, 9, 2, 3, 9, 0], null)), DaenetIp2Api.NoSuchName },
+        { Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.GetRequest, 1, ReadOnly, [.. DaenetIp2Api.Enterprise, 9, 2, 3, 33, 0], null)), DaenetIp2Api.NoSuchName },
+        { Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.SetRequest, 1, ReadWrite, [.. DaenetIp2Api.Enterprise, 9, 2, 2, 9, 0], 1)), DaenetIp2Api.NoSuchName },
+        { Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.SetRequest, 1, ReadWrite, [.. DaenetIp2Api.Enterprise, 9, 2, 1, 0, 0], 1)), DaenetIp2Api.NoSuchName },
 
         // An analog input is read-only: SNMPv1 answers a set of it with no such name (RFC 1157, section 4.1.5).
-        { Hex(DaenetIp2Snmp.Set(1, ReadWrite, DaenetIp2Api.AnalogOid(1), 5, 1023).Message), DaenetIp2Api.NoSuchName },
+        { Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.SetRequest, 1, ReadWrite, DaenetIp2Api.AnalogOid(1), 5)), DaenetIp2Api.NoSuchName },
 
         // A pin to 2, a port to 256 or −1: a bad value.
-        { Hex(DaenetIp2Snmp.Set(1, ReadWrite, DaenetIp2Api.PinOid(new DaenetIp2Pin(DaenetIp2Port.P5, 1)), 2, 1).Message), DaenetIp2Api.BadValue },
-        { Hex(DaenetIp2Snmp.Set(1, ReadWrite, DaenetIp2Api.PortOid(DaenetIp2Port.P5), 256, 255).Message), DaenetIp2Api.BadValue },
-        { Hex(DaenetIp2Snmp.Set(1, ReadWrite, DaenetIp2Api.PortOid(DaenetIp2Port.P5), -1, 255).Message), DaenetIp2Api.BadValue },
+        { Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.SetRequest, 1, ReadWrite, DaenetIp2Api.PinOid(new DaenetIp2Pin(DaenetIp2Port.P5, 1)), 2)), DaenetIp2Api.BadValue },
+        { Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.SetRequest, 1, ReadWrite, DaenetIp2Api.PortOid(DaenetIp2Port.P5), 256)), DaenetIp2Api.BadValue },
+        { Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.SetRequest, 1, ReadWrite, DaenetIp2Api.PortOid(DaenetIp2Port.P5), -1)), DaenetIp2Api.BadValue },
 
         // A set with a NULL value, as snmpget sends it.
         {
@@ -322,7 +322,7 @@ public sealed class DaenetIp2SimulatedBoardTests
         Assert.Equal(0UL, simulator.Relays);
 
         // A whole port that holds the relay is refused too.
-        answer = DaenetIp2Snmp.Decode(DaenetIp2SnmpTests.Bytes(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.Set(2, ReadWrite, DaenetIp2Api.PortOid(DaenetIp2Port.P5), 255, 255).Message))));
+        answer = DaenetIp2Snmp.Decode(DaenetIp2SnmpTests.Bytes(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.Set(2, ReadWrite, DaenetIp2Oid.Port(DaenetIp2Port.P5), 255).Message))));
         Assert.Equal(DaenetIp2Api.GenErr, answer.ErrorStatus);
         Assert.Equal(0UL, simulator.Relays);
     }
@@ -395,6 +395,64 @@ public sealed class DaenetIp2SimulatedBoardTests
         Assert.Throws<ArgumentException>(() => new DaenetIp2Simulator(Vm201Model.Model));
     }
 
+    // Table 9.1: cfgVersion is read-only, cfgP5DupRST read-write, 0 to 255, from firmware 4.097.
+    [Fact]
+    public async Task Should_AnswerTheFirmwareVersionAndTheRestartPins_AsTable9Point1Says()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays8);
+        using var app = Client();
+        await simulator.SetRestartPinsAsync(0b1000_0001);
+
+        var version = DaenetIp2Snmp.GetFirmwareVersion(1, ReadOnly);
+        Assert.Equal(Hex(DaenetIp2Snmp.Response(1, ReadOnly, version.Oid, 0x0461)), await AskAsync(app, simulator, Hex(version.Message)));
+        var pins = DaenetIp2Snmp.GetRestartPins(2, ReadOnly);
+        Assert.Equal(Hex(DaenetIp2Snmp.Response(2, ReadOnly, pins.Oid, 0b1000_0001)), await AskAsync(app, simulator, Hex(pins.Message)));
+
+        // A set is echoed and kept; it pulses nothing.
+        var set = DaenetIp2Snmp.SetRestartPins(3, ReadWrite, 0b1000_0000);
+        Assert.Equal(Hex(DaenetIp2Snmp.Response(3, ReadWrite, set.Oid, 0b1000_0000)), await AskAsync(app, simulator, Hex(set.Message)));
+        Assert.Equal(0b1000_0000, simulator.RestartPins);
+        Assert.Equal(0UL, simulator.Relays);
+
+        // A set of the version: no such name, as for any read-only OID. Pins out of range: a bad value. Refused: genErr.
+        Assert.Equal(DaenetIp2Api.NoSuchName, ErrorOf(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.SetRequest, 4, ReadWrite, version.Oid, 0x0500)))));
+        Assert.Equal(DaenetIp2Api.BadValue, ErrorOf(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.SetRequest, 5, ReadWrite, pins.Oid, 256)))));
+        simulator.RefuseRestartPinWrites = true;
+        Assert.Equal(DaenetIp2Api.GenErr, ErrorOf(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.SetRestartPins(6, ReadWrite, 0).Message))));
+        Assert.Equal(0b1000_0000, simulator.RestartPins);
+
+        // Before 4.097 the board has no cfgP5DupRST: no such name, for a get and a set.
+        simulator.FirmwareVersion = 0x0460;
+        Assert.Equal(0x0460, DaenetIp2Snmp.Decode(DaenetIp2SnmpTests.Bytes(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.GetFirmwareVersion(7, ReadOnly).Message)))).Value);
+        Assert.Equal(DaenetIp2Api.NoSuchName, ErrorOf(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.GetRestartPins(8, ReadOnly).Message))));
+        Assert.Equal(DaenetIp2Api.NoSuchName, ErrorOf(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.SetRestartPins(9, ReadWrite, 0).Message))));
+        Assert.Equal(0b1000_0000, simulator.RestartPins);
+        Assert.Empty(simulator.ForbiddenRequests);
+    }
+
+    // A read of cfgReset restarts the real board, one of cfgDefault loads its factory settings, pctrlRestart pulses the
+    // restart pin: each request for one is kept, whatever its type or community, so a test fails on it, and never answered.
+    [Fact]
+    public async Task Should_KeepEveryRequestFor_cfgReset_cfgDefault_AndPctrlRestart_AndAnswerNone()
+    {
+        await using var simulator = Started(DaenetIp2Models.Relays8);
+        using var app = Client();
+        int[] reset = [.. DaenetIp2Api.Enterprise, 9, 1, 10, 0];
+        int[] factory = [.. DaenetIp2Api.Enterprise, 9, 1, 30, 0];
+        int[] restart = [.. DaenetIp2Api.Enterprise, 9, 2, 4, 0];
+
+        await SendAsync(app, simulator, DaenetIp2Snmp.Encode(DaenetIp2Api.GetRequest, 1, ReadOnly, reset, null));
+        await SendAsync(app, simulator, DaenetIp2Snmp.Encode(DaenetIp2Api.GetRequest, 2, ReadWrite, factory, null));
+        await SendAsync(app, simulator, DaenetIp2Snmp.Encode(DaenetIp2Api.SetRequest, 3, ReadWrite, factory, 1));
+        await SendAsync(app, simulator, DaenetIp2Snmp.Encode(DaenetIp2Api.GetNextRequest, 4, ReadOnly, [.. DaenetIp2Api.Enterprise, 9, 2, 4], null));
+        await SendAsync(app, simulator, DaenetIp2Snmp.Encode(DaenetIp2Api.GetRequest, 5, "wrong", restart, null));
+
+        // The first answer is to the next good request.
+        Assert.Equal(DaenetIp2SnmpTests.P5Is5.Replace("02 01 05", "02 01 00", StringComparison.Ordinal), await AskAsync(app, simulator, DaenetIp2SnmpTests.GetP5));
+        Assert.Equal(5, simulator.ForbiddenRequests.Count);
+        Assert.Equal(5, simulator.UnansweredCount);
+    }
+
     private static DaenetIp2Simulator Started(BoardModel model)
     {
         var simulator = new DaenetIp2Simulator(model);
@@ -423,6 +481,12 @@ public sealed class DaenetIp2SimulatedBoardTests
         wait.CancelAfter(AnswerWait);
         var received = await app.ReceiveFromAsync(buffer, SocketFlags.None, new IPEndPoint(IPAddress.Any, 0), wait.Token);
         return DaenetIp2Snmp.Hex(buffer.AsSpan(0, received.ReceivedBytes));
+    }
+
+    // An answer's error-status.
+    private static int ErrorOf(string answer)
+    {
+        return DaenetIp2Snmp.Decode(DaenetIp2SnmpTests.Bytes(answer)).ErrorStatus;
     }
 
     // An answer's value bytes, e.g. "00".

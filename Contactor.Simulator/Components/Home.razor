@@ -499,6 +499,35 @@
                                         </div>
                                         <span class="hint">A row added here runs every day. The app turns a row off whole, with all its relays.</span>
                                     }
+                                    @if (current.Switches.RestartRelays is { } restartRelays)
+                                    {
+                                        var oldFirmware = current.Switches.OldFirmware == true;
+                                        <h4 class="label" id="restart-head">RESTART PINS (CFGP5DUPRST) · @MaskText(restartRelays, capabilities).ToUpperInvariant()</h4>
+                                        <div class="timer-relays" role="group" aria-labelledby="restart-head" style="--columns: @Math.Min(capabilities.RelayCount, 4).ToString(CultureInfo.InvariantCulture)">
+                                            @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
+                                            {
+                                                var number = relay;
+                                                if (current.Switches.CanRestart(number))
+                                                {
+                                                    <label class="check" @key="number">
+                                                        <input type="checkbox" checked="@restartRelays.Contains(number)" @onchange="e => current.Switches.SetRestartRelayAsync(number, e.Value is true)" />
+                                                        Relay @number
+                                                    </label>
+                                                }
+                                            }
+                                        </div>
+                                        <div class="schedule-list">
+                                            <label class="check">
+                                                <input type="checkbox" checked="@oldFirmware" @onchange="e => current.Switches.SetOldFirmware(e.Value is true)" />
+                                                Firmware 4.096 (older than 4.097: no restart pins)
+                                            </label>
+                                            <label class="check">
+                                                <input type="checkbox" checked="@(current.Switches.RefuseRestartPinWrites == true)" @onchange="e => current.Switches.SetRefuseRestartPinWrites(e.Value is true)" />
+                                                Writes of the restart pins refused
+                                            </label>
+                                        </div>
+                                        <span class="hint">The ICMP monitoring's restart pins, only on P5. The app reads them as the board's own rules and turns them off on a press. The simulator doesn't pulse them.</span>
+                                    }
                                     @if (current.RunnableRules is { Count: > 0 } runnable)
                                     {
                                         <h4 class="label" id="run-head">RUN NOW, AS WHEN ITS TIME COMES</h4>
@@ -946,6 +975,11 @@
         {
             var on = week.Rows.Count(r => r.Enabled);
             return on == 1 ? "1 week schedule row on" : $"{on.ToString(CultureInfo.InvariantCulture)} week schedule rows on";
+        }
+
+        if (board.Switches.RestartRelays is { } restart)
+        {
+            return board.Switches.OldFirmware == true ? "firmware older than 4.097" : $"restart pins: {MaskText(restart, capabilities)}";
         }
 
         if (board.Board is ISimulatedBoardRelayModes { Modes.Count: > 0 } modes)

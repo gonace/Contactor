@@ -44,6 +44,32 @@ public sealed class DaenetIp2Layout
         return _relayOf.TryGetValue(pin, out var relay) ? relay : null;
     }
 
+    /// <summary>
+    /// The board's own rules for a <c>cfgP5DupRST</c> value (<see cref="DaenetIp2Oid.RestartPins"/>, bit 0 = P5.1): a
+    /// <see cref="OwnRuleKind.Restart"/> rule on the relay of each pin set, in relay order, each on its own (one pin, one
+    /// rule). A pin set that no relay is on switches no relay, so it is no rule.
+    /// </summary>
+    public OwnRules RestartRules(int pins)
+    {
+        List<OwnRule> rules = [];
+        for (var relay = 1; relay <= Relays.Count; relay++)
+        {
+            var pin = Relays[relay - 1];
+            if (pin.Port == DaenetIp2Port.P5 && (pins & pin.Bit) != 0)
+            {
+                rules.Add(new OwnRule(relay, OwnRuleKind.Restart));
+            }
+        }
+
+        return rules.Count == 0 ? OwnRules.Empty : new OwnRules(rules);
+    }
+
+    /// <summary>Whether <paramref name="relay"/> (1-based) is on a P5 pin, the only pins the ICMP monitoring pulses.</summary>
+    public bool CanRestart(int relay)
+    {
+        return relay >= 1 && relay <= Relays.Count && Relays[relay - 1].Port == DaenetIp2Port.P5;
+    }
+
     /// <summary>The relays that are on (bit 0 = relay 1) for the ports' bytes: a relay is on when its pin is High.</summary>
     public ulong RelaysOf(int p3, int p5)
     {
@@ -64,7 +90,9 @@ public sealed class DaenetIp2Layout
 
 /// <summary>
 /// The Denkovi DAEnetIP2 v2 kits in the board catalogue: the controller with a Denkovi relay board on its outputs
-/// (manual, appendix 3). SNMPv1 on UDP port 161, a poll, no digital inputs and no pulse. Every kit has the controller's
+/// (manual, appendix 3). SNMPv1 on UDP port 161, a poll, no digital inputs and no pulse. The app reads the ICMP
+/// monitoring's restart pins on P5 as the board's own rules and turns them off on a person's press
+/// (<see cref="DaenetIp2Api.OwnRules"/>). Every kit has the controller's
 /// 8 analog inputs on P6, whatever relay board is on P3 and P5. The login is the board's read-write community, a
 /// password alone that the board always has: section 6.6.1 says it is used in read and write operations. From Denkovi's
 /// manual only, not yet checked on a real board.
@@ -165,7 +193,7 @@ public static class DaenetIp2Models
             id,
             DenkoviBrand.Name,
             name,
-            new BoardCapabilities(relays, 0, ReportsChanges: false, Analog: Analog, OwnRules: OwnRulesAbility.CantTell),
+            new BoardCapabilities(relays, 0, ReportsChanges: false, Analog: Analog, OwnRules: DaenetIp2Api.OwnRules),
             DaenetIp2Api.DefaultPort,
             LoginMaxLength: DaenetIp2Api.CommunityMaxLength,
             LoginHint: new LoginHint(

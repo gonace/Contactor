@@ -5,8 +5,9 @@ using System.Text;
 namespace Contactor.Boards.Denkovi;
 
 /// <summary>
-/// One SNMP request the app sends: a GetRequest or a SetRequest for one OID, with what it needs to check the answer. A
-/// class, not a record, so the community it holds can never end up in a log through a generated ToString.
+/// One SNMP request the app sends: a GetRequest or a SetRequest for one OID of the closed list (<see cref="DaenetIp2Oid"/>),
+/// with what it needs to check the answer. Only <see cref="DaenetIp2Snmp"/> makes one, and never from an OID given as
+/// data. A class, not a record, so the community it holds can never end up in a log through a generated ToString.
 /// </summary>
 public sealed class DaenetIp2Request
 {
@@ -14,17 +15,16 @@ public sealed class DaenetIp2Request
     private readonly byte[] _oid;
     private readonly int _pduOffset;
 
-    internal DaenetIp2Request(byte[] message, int pduOffset, byte pduType, int requestId, byte[] community, int[] oid, byte[] oidBytes, int? value, int maxValue)
+    internal DaenetIp2Request(byte[] message, int pduOffset, byte pduType, int requestId, byte[] community, DaenetIp2Oid target, byte[] oidBytes, int? value)
     {
         Message = message;
         _pduOffset = pduOffset;
         PduType = pduType;
         RequestId = requestId;
         _community = community;
-        Oid = oid;
+        Target = target;
         _oid = oidBytes;
         Value = value;
-        MaxValue = maxValue;
     }
 
     /// <summary>The whole datagram as sent. It holds the community: never trace or log it whole, only <see cref="Pdu"/>.</summary>
@@ -39,14 +39,20 @@ public sealed class DaenetIp2Request
     /// <summary>The request id the answer must carry.</summary>
     public int RequestId { get; }
 
+    /// <summary>The OID it asks for, one of <see cref="DaenetIp2Oid.All"/>.</summary>
+    public DaenetIp2Oid Target { get; }
+
     /// <summary>The OID's arcs, e.g. 1.3.6.1.4.1.42505.9.2.2.33.0.</summary>
-    public IReadOnlyList<int> Oid { get; }
+    public IReadOnlyList<int> Oid => Target.Arcs;
 
     /// <summary>The value a SetRequest writes; null for a GetRequest.</summary>
     public int? Value { get; }
 
-    /// <summary>The largest value the answer may carry: 1 for a pin, 255 for a port's byte, 1023 for an analog input.</summary>
-    public int MaxValue { get; }
+    /// <summary>
+    /// The largest value the answer may carry (<see cref="DaenetIp2Oid.MaxValue"/>): 1 for a pin, 255 for a port's byte
+    /// or the restart pins, 1023 for an analog input, 65535 for the firmware version.
+    /// </summary>
+    public int MaxValue => Target.MaxValue;
 
     internal ReadOnlySpan<byte> Community => _community;
 
@@ -128,7 +134,9 @@ public sealed class DaenetIp2Message
 
 /// <summary>
 /// Our own small SNMPv1 codec (RFC 1157, BER), only for what the app and the simulator use: a GetRequest, a SetRequest
-/// and a GetResponse, each with one variable, as the board takes one OID per request (manual, section 9). A message is
+/// and a GetResponse, each with one variable, as the board takes one OID per request (manual, section 9). A request the
+/// app sends (<see cref="DaenetIp2Request"/>) is only ever for an OID of the closed list (<see cref="DaenetIp2Oid"/>);
+/// <see cref="Encode"/> writes any other message, for the simulator's tests, as bytes the client never sends. A message is
 /// a SEQUENCE of the version (0), the community and the PDU; the PDU holds the request id, the error-status, the
 /// error-index and the variable (its OID and value). Lengths in the short form and the long form up to 2 bytes; a
 /// message is at most <see cref="DaenetIp2Api.MaxMessageBytes"/> bytes, and every length is checked against what is
@@ -143,7 +151,7 @@ public static class DaenetIp2Snmp
     /// <summary>snmpget of a port's whole byte, <c>pctrlP3byte</c> or <c>pctrlP5byte</c>: the answer is 0 to 255.</summary>
     public static DaenetIp2Request GetPort(int requestId, string community, DaenetIp2Port port)
     {
-        return Request(DaenetIp2Api.GetRequest, requestId, community, DaenetIp2Api.PortOid(port), null, DaenetIp2Api.MaxPortValue);
+        return Get(requestId, community, DaenetIp2Oid.Port(port));
     }
 
     /// <summary>
@@ -152,26 +160,67 @@ public static class DaenetIp2Snmp
     /// </summary>
     public static DaenetIp2Request GetAnalog(int requestId, string community, int input)
     {
-        return Request(DaenetIp2Api.GetRequest, requestId, community, DaenetIp2Api.AnalogOid(input), null, DaenetIp2Api.AnalogMaxCounts);
+        return Get(requestId, community, DaenetIp2Oid.Analog(input));
     }
 
     /// <summary>snmpset of one pin, High(1) or Low(0); the board echoes the value.</summary>
     public static DaenetIp2Request SetPin(int requestId, string community, DaenetIp2Pin pin, bool high)
     {
-        CheckPin(pin);
-        return Request(DaenetIp2Api.SetRequest, requestId, community, DaenetIp2Api.PinOid(pin), high ? DaenetIp2Api.High : DaenetIp2Api.Low, DaenetIp2Api.High);
+        return Set(requestId, community, DaenetIp2Oid.Pin(pin), high ? DaenetIp2Api.High : DaenetIp2Api.Low);
     }
 
-    /// <summary>A GetRequest for any OID; the answer may carry 0 to <paramref name="maxValue"/>.</summary>
-    public static DaenetIp2Request Get(int requestId, string community, IReadOnlyList<int> oid, int maxValue)
+    /// <summary>snmpget of the firmware version, <c>cfgVersion</c>: the answer is 0 to 65535 (table 9.1).</summary>
+    public static DaenetIp2Request GetFirmwareVersion(int requestId, string community)
     {
-        return Request(DaenetIp2Api.GetRequest, requestId, community, oid, null, maxValue);
+        return Get(requestId, community, DaenetIp2Oid.FirmwareVersion);
     }
 
-    /// <summary>A SetRequest of an INTEGER for any OID; the answer must echo it.</summary>
-    public static DaenetIp2Request Set(int requestId, string community, IReadOnlyList<int> oid, int value, int maxValue)
+    /// <summary>snmpget of the ICMP monitoring's restart pins, <c>cfgP5DupRST</c>: the answer is 0 to 255 (table 9.1).</summary>
+    public static DaenetIp2Request GetRestartPins(int requestId, string community)
     {
-        return Request(DaenetIp2Api.SetRequest, requestId, community, oid, value, maxValue);
+        return Get(requestId, community, DaenetIp2Oid.RestartPins);
+    }
+
+    /// <summary>snmpset of the restart pins, <c>cfgP5DupRST</c>, 0 to 255, bit 0 = P5.1; the board echoes the value.</summary>
+    public static DaenetIp2Request SetRestartPins(int requestId, string community, int pins)
+    {
+        return Set(requestId, community, DaenetIp2Oid.RestartPins, pins);
+    }
+
+    /// <summary>A GetRequest of an OID of the closed list; the answer may carry 0 to its <see cref="DaenetIp2Oid.MaxValue"/>.</summary>
+    public static DaenetIp2Request Get(int requestId, string community, DaenetIp2Oid oid)
+    {
+        ArgumentNullException.ThrowIfNull(oid);
+        return Request(DaenetIp2Api.GetRequest, requestId, community, oid, null);
+    }
+
+    /// <summary>
+    /// A SetRequest of an INTEGER for a read-write OID of the closed list, 0 to its <see cref="DaenetIp2Oid.MaxValue"/>;
+    /// the answer must echo it. Throws <see cref="ArgumentException"/> for a read-only OID and
+    /// <see cref="ArgumentOutOfRangeException"/> for a value out of range, before anything is made.
+    /// </summary>
+    public static DaenetIp2Request Set(int requestId, string community, DaenetIp2Oid oid, int value)
+    {
+        ArgumentNullException.ThrowIfNull(oid);
+        if (!oid.Writable)
+        {
+            throw new ArgumentException($"{oid.Name} is read-only: the app never sets it.", nameof(oid));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegative(value);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(value, oid.MaxValue);
+        return Request(DaenetIp2Api.SetRequest, requestId, community, oid, value);
+    }
+
+    /// <summary>
+    /// Any message with one variable, as bytes: what another SNMP manager could send, e.g. a GetNextRequest or an OID the
+    /// board doesn't have. Only for the simulator's tests: the client sends <see cref="DaenetIp2Request"/> alone, and never
+    /// this. <paramref name="value"/> is an INTEGER, or NULL when null.
+    /// </summary>
+    public static byte[] Encode(byte pduType, int requestId, string community, IReadOnlyList<int> oid, int? value)
+    {
+        var valueTlv = value is { } v ? Integer(v) : [DaenetIp2Api.NullTag, 0];
+        return Message(pduType, requestId, CommunityBytes(community), DaenetIp2Api.NoError, 0, Oid(oid), valueTlv, out _);
     }
 
     /// <summary>
@@ -362,14 +411,20 @@ public static class DaenetIp2Snmp
         return [.. bytes];
     }
 
-    private static DaenetIp2Request Request(byte pduType, int requestId, string community, IReadOnlyList<int> oid, int? value, int maxValue)
+    // The one place a request the app sends is made: only from the closed list, never one of the OIDs that change the
+    // board by a read (DaenetIp2Oid.Forbidden), checked once more here.
+    private static DaenetIp2Request Request(byte pduType, int requestId, string community, DaenetIp2Oid oid, int? value)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(maxValue);
+        if (!DaenetIp2Oid.All.Contains(oid) || DaenetIp2Oid.IsForbidden(oid.Arcs))
+        {
+            throw new InvalidOperationException($"{oid} isn't an OID the app may send.");
+        }
+
         var communityBytes = CommunityBytes(community);
-        var oidBytes = Oid(oid);
+        var oidBytes = Oid(oid.Arcs);
         var valueTlv = value is { } v ? Integer(v) : [DaenetIp2Api.NullTag, 0];
         var message = Message(pduType, requestId, communityBytes, DaenetIp2Api.NoError, 0, oidBytes, valueTlv, out var pduOffset);
-        return new DaenetIp2Request(message, pduOffset, pduType, requestId, communityBytes, [.. oid], oidBytes, value, maxValue);
+        return new DaenetIp2Request(message, pduOffset, pduType, requestId, communityBytes, oid, oidBytes, value);
     }
 
     // The community as its bytes: printable ASCII without spaces, as the board takes it, or none (DaenetIp2Models.CheckSendable).
@@ -521,14 +576,6 @@ public static class DaenetIp2Snmp
         }
 
         return [.. arcs];
-    }
-
-    private static void CheckPin(DaenetIp2Pin pin)
-    {
-        if (!Enum.IsDefined(pin.Port) || pin.Number is < 1 or > DaenetIp2Api.PinsPerPort)
-        {
-            throw new ArgumentOutOfRangeException(nameof(pin), pin, "The board has pins 1 to 8 on P3 and P5.");
-        }
     }
 
     private static DaenetIp2ProtocolException Unreadable(string message)

@@ -1793,6 +1793,9 @@
   <data name="OwnRules.Card.Title.Linkage" xml:space="preserve">
     <value>Reläer som kortet styr självt</value>
   </data>
+  <data name="OwnRules.Card.Title.Restart" xml:space="preserve">
+    <value>Reläer som kortet startar om</value>
+  </data>
   <data name="OwnRules.Card.Title.Rule" xml:space="preserve">
     <value>Kortets egna regler</value>
   </data>
@@ -1813,6 +1816,9 @@
   </data>
   <data name="OwnRules.CardLine.Linkage" xml:space="preserve">
     <value>Kortet styr det självt</value>
+  </data>
+  <data name="OwnRules.CardLine.Restart" xml:space="preserve">
+    <value>Kortet kan ge reläet en omstartspuls</value>
   </data>
   <data name="OwnRules.CardLine.Rule" xml:space="preserve">
     <value>Kortets egen regel kan slå om det</value>

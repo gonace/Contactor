@@ -15,7 +15,7 @@ namespace Contactor.Web.Persistence.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.15");
 
             modelBuilder.Entity("Contactor.Web.Persistence.AnalogInput", b =>
                 {
@@ -157,7 +157,7 @@ namespace Contactor.Web.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_BoardOwnRule_Channel", "\"Channel\" BETWEEN 1 AND 64");
 
-                            t.HasCheckConstraint("CK_BoardOwnRule_Kind", "\"Kind\" IN ('timer', 'input-linkage', 'input-toggle', 'input-edge', 'auto-on')");
+                            t.HasCheckConstraint("CK_BoardOwnRule_Kind", "\"Kind\" IN ('timer', 'input-linkage', 'input-toggle', 'input-edge', 'auto-on', 'restart')");
                         });
                 });
 

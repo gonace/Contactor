@@ -1984,6 +1984,10 @@
   <data name="OwnRules.Card.Title.Linkage" xml:space="preserve">
     <value>Relays the board controls itself</value>
   </data>
+  <data name="OwnRules.Card.Title.Restart" xml:space="preserve">
+    <value>Relays the board restarts</value>
+    <comment>The card on the board's page, for relays the board gives a restart pulse by itself, e.g. the DAEnetIP2 v2's ICMP monitoring.</comment>
+  </data>
   <data name="OwnRules.Card.Title.Rule" xml:space="preserve">
     <value>The board's own rules</value>
     <comment>The card on the board's page, for rules other than timers.</comment>
@@ -2007,6 +2011,10 @@
   </data>
   <data name="OwnRules.CardLine.Linkage" xml:space="preserve">
     <value>The board controls it itself</value>
+  </data>
+  <data name="OwnRules.CardLine.Restart" xml:space="preserve">
+    <value>The board can give the relay a restart pulse</value>
+    <comment>On a relay's card on Relays.</comment>
   </data>
   <data name="OwnRules.CardLine.Rule" xml:space="preserve">
     <value>The board's own rule can switch it</value>

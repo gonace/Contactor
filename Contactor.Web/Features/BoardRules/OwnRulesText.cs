@@ -10,7 +10,9 @@ namespace Contactor.Web.Features.BoardRules;
 /// <summary>
 /// The words about a board's own rules on Relays, the board's page and Settings (issue #497). Each text is keyed by
 /// the rules' kind: "Timer", "Linkage", "Toggle", "Edge" or "AutoOn" when all are of that kind, "Input" for a mix of
-/// input kinds, and "Rule" for any other mix, so a board with other kinds only adds keys.
+/// input kinds, and "Rule" for any other mix, so a board with other kinds only adds keys. The restart pulse
+/// (<see cref="OwnRuleKind.Restart"/>, issue #515) has words of its own only on a relay's card and as the board's card's
+/// heading ("Restart"); everywhere else it has the words for any rule ("Rule").
 /// </summary>
 public sealed class OwnRulesText
 {
@@ -111,7 +113,7 @@ public sealed class OwnRulesText
     /// <summary>The line on a relay's card: "The relay is also run by a timer on the board".</summary>
     public string CardLine(IEnumerable<OwnRuleKind> kinds)
     {
-        return _texts[$"OwnRules.CardLine.{Kind(kinds)}"];
+        return _texts[$"OwnRules.CardLine.{Kind(kinds, restartWords: true)}"];
     }
 
     /// <summary>
@@ -137,7 +139,7 @@ public sealed class OwnRulesText
     /// <summary>The board's card's heading: "The board's own timers".</summary>
     public string CardTitle(IEnumerable<OwnRuleKind> kinds)
     {
-        return _texts[$"OwnRules.Card.Title.{Kind(kinds)}"];
+        return _texts[$"OwnRules.Card.Title.{Kind(kinds, restartWords: true)}"];
     }
 
     /// <summary>
@@ -201,8 +203,9 @@ public sealed class OwnRulesText
     }
 
     // The key's kind: "Timer", "Linkage", "Toggle", "Edge" or "AutoOn" when every rule is of that kind ("Timer" when
-    // none is known), "Input" for a mix of input kinds, otherwise "Rule".
-    private static string Kind(IEnumerable<OwnRuleKind> kinds)
+    // none is known), "Input" for a mix of input kinds, otherwise "Rule". Restart pulses alone are "Restart" where that
+    // text has words of its own (restartWords), and "Rule" elsewhere.
+    private static string Kind(IEnumerable<OwnRuleKind> kinds, bool restartWords = false)
     {
         List<OwnRuleKind> distinct = [.. kinds.Distinct()];
         return distinct switch
@@ -212,6 +215,7 @@ public sealed class OwnRulesText
             [OwnRuleKind.InputToggle] => "Toggle",
             [OwnRuleKind.InputEdge] => "Edge",
             [OwnRuleKind.AutoOn] => "AutoOn",
+            [OwnRuleKind.Restart] => restartWords ? "Restart" : "Rule",
             _ when distinct.All(k => k is OwnRuleKind.InputLinkage or OwnRuleKind.InputToggle or OwnRuleKind.InputEdge) => "Input",
             _ => "Rule",
         };
