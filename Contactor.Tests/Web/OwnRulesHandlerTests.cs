@@ -60,6 +60,7 @@ public sealed class OwnRulesHandlerTests
 
         var board = rig.Database.Services.GetRequiredService<BoardRegistry>().Find(rig.BoardId);
         Assert.Equal(ChannelMask.Of(5), OwnRulesHandler.CouldntReadRelays(board));
+        Assert.Equal([5], rig.Handler.CouldntRead(rig.BoardId, [3, 5]));
         Assert.Equal(2, rig.Service.Rows(rig.BoardId).Count);
         Assert.True(rig.Handler.CanTurnOff(rig.BoardId, Timer3));
         Assert.False(rig.Handler.CanTurnOff(rig.BoardId, Timer5));
@@ -366,6 +367,24 @@ public sealed class OwnRulesHandlerTests
         await rig.HandledAsync();
         Assert.Equal(2, (await rig.EventsAsync(EventActions.BoardOwnRuleFound)).Count);
         Assert.Equal(2, (await rig.RowsAsync()).Count(r => r.KeptBy == Erik));
+    }
+
+    // A rule kept before the service saved it, on a relay whose rules were unknown before: found, but not new.
+    [Fact]
+    public async Task Should_KeepARuleOnARelayThatWasUnknown_AsFoundButNotNew()
+    {
+        var failing = new FailingQueries();
+        await using var rig = await OwnRulesRig.StartAsync(failing.AddTo);
+        rig.Board.SetOwnRules(new OwnRules([Timer3], null, null, ChannelMask.Of(5)));
+        await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 1);
+        failing.Fail(sql => sql.Contains("INSERT INTO \"BoardOwnRule\"", StringComparison.Ordinal) && failing.Failures == 0, () => new InvalidOperationException("The disk is full."));
+        rig.Board.SetOwnRules(new OwnRules([Timer3, Timer5]));
+        await Wait.UntilAsync(() => failing.Failures == 1);
+
+        Assert.Null(await rig.Handler.KeepAllAsync(rig.BoardId, [Timer5], Erik, Cancel));
+
+        var found = await rig.EventsAsync(EventActions.BoardOwnRuleFound);
+        Assert.Equal([false, false], found.Select(OwnRulesRig.IsNew));
     }
 
     // A relay joins a group between the check that it is in none and the keep's write (another person saves a group at

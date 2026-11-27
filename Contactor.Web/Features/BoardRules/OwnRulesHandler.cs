@@ -99,6 +99,18 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
+    /// Which of <paramref name="channels"/> (e.g. a group's relays) are among the board's relays whose rules it couldn't
+    /// read (<see cref="CouldntReadRelays"/>), in the order given: a group's card and page name them, since its relays
+    /// have no card of their own.
+    /// </summary>
+    public IReadOnlyList<int> CouldntRead(int boardId, IEnumerable<int> channels)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        var unknown = CouldntReadRelays(_registry.Find(boardId));
+        return unknown.IsEmpty ? [] : [.. channels.Where(unknown.Contains)];
+    }
+
+    /// <summary>
     /// The board's own rules the app warns about: those the board reports now that no person kept. None while the
     /// board's rules aren't known (it can't read them, or hasn't answered), until the app has read which rules people
     /// kept (just after the start), and for a board the app doesn't run.

@@ -124,6 +124,16 @@ public sealed class OwnRulesText
         return _texts[$"OwnRules.GroupLine.{Kind(kinds)}", _boards.And([.. roles.Distinct()])];
     }
 
+    /// <summary>
+    /// On a group whose relays' own rules the board couldn't read (issue #554), naming them by their role in the group:
+    /// "Contactor couldn't read the own rules of Heat. Check the board's own web page."
+    /// </summary>
+    public string GroupCouldntRead(IEnumerable<string> roles)
+    {
+        ArgumentNullException.ThrowIfNull(roles);
+        return _texts["OwnRules.Group.CouldntRead", _boards.And([.. roles.Distinct()])];
+    }
+
     /// <summary>The board's card's heading: "The board's own timers".</summary>
     public string CardTitle(IEnumerable<OwnRuleKind> kinds)
     {

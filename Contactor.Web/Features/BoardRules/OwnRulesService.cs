@@ -342,7 +342,7 @@ public sealed partial class OwnRulesService : BackgroundService
                             RelayId = relayId,
                             Actor = EventActors.System,
                             Action = EventActions.BoardOwnRuleFound,
-                            Details = JsonSerializer.Serialize(new { kind, @new = _seen.GetValueOrDefault(boardId) is { } seen && !seen.Contains(rule), relay = rule.Relay }),
+                            Details = JsonSerializer.Serialize(new { kind, @new = IsNew(_seen.GetValueOrDefault(boardId), rule), relay = rule.Relay }),
                         });
                     }
                     else if (row.KeptUtc is not null)
@@ -644,6 +644,13 @@ public sealed partial class OwnRulesService : BackgroundService
         _seen[boardId] = rules;
     }
 
+    // Whether a rule found now came while the app watched: this run had read the board's rules without it, and its
+    // relay's rules weren't unknown then.
+    private static bool IsNew(OwnRules? seen, OwnRule rule)
+    {
+        return seen is not null && !seen.Contains(rule) && !seen.Unknown.Contains(rule.Relay);
+    }
+
     // The board read rules other than the last: a row for each new rule, logged, and none for a rule it no longer has.
     private async Task ActAsync(int boardId, OwnRules rules, OwnRules? seen, CancellationToken cancellationToken)
     {
@@ -669,7 +676,7 @@ public sealed partial class OwnRulesService : BackgroundService
                 RelayId = relays.TryGetValue(rule.Relay, out var relayId) ? relayId : null,
                 Actor = EventActors.System,
                 Action = EventActions.BoardOwnRuleFound,
-                Details = JsonSerializer.Serialize(new { kind, @new = seen is not null && !seen.Contains(rule) && !seen.Unknown.Contains(rule.Relay), relay = rule.Relay }),
+                Details = JsonSerializer.Serialize(new { kind, @new = IsNew(seen, rule), relay = rule.Relay }),
             });
         }
 

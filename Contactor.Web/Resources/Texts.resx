@@ -2023,6 +2023,10 @@
     <value>Found yesterday at {0}</value>
     <comment>{0} is a time, e.g. 07:12.</comment>
   </data>
+  <data name="OwnRules.Group.CouldntRead" xml:space="preserve">
+    <value>Contactor couldn't read the own rules of {0}. Check the board's own web page.</value>
+    <comment>On a group with relays whose own rules the board couldn't read while it read the others'. {0} is their role names in the group, e.g. "Heat" or "Fan and Heat".</comment>
+  </data>
   <data name="OwnRules.GroupLine.AutoOn" xml:space="preserve">
     <value>The board turns {0} on again by itself</value>
     <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>

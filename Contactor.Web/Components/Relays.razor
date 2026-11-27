@@ -683,6 +683,23 @@
         </span>
     };
 
+    // A line on the card of a group with relays whose own rules the board couldn't read (issue #554), naming them by
+    // their role in the group: the relays have no card of their own.
+    private RenderFragment CouldntReadGroupLine(GroupView group) => __builder =>
+    {
+        var unknown = _shownCouldntRead.GetValueOrDefault(group.BoardId);
+        var members = group.Members.Where(m => unknown.Contains(m.Channel)).ToList();
+        if (members.Count == 0)
+        {
+            return;
+        }
+
+        <span class="input-line own-rule-line">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+            <span>@OwnRulesText.GroupCouldntRead(members.Select(m => m.RoleName))</span>
+        </span>
+    };
+
     // A relay the board controls by itself: its label, name and state, why there is no ON/OFF, and "Reset".
     private RenderFragment UnavailableCard(Relay relay) => __builder =>
     {
@@ -788,6 +805,7 @@
                     <span class="status @(group.Runtime.Phase != GroupPhases.Idle && state.HasAnswered ? "busy" : null)">@(!state.HasAnswered ? StatusText.Waiting : missing is { } m ? GroupStatus.MissingRelay(m) : GroupStatus.For(group, state, Clock.UtcNow, Clock.ToLocal, NameOf, _groupOutlook.GetValueOrDefault(group.Id)))</span>
                     @InputLines(_groupInputs[group.Id])
                     @OwnRuleGroupLine(group)
+                    @CouldntReadGroupLine(group)
                     @if (_failedGroupId == group.Id)
                     {
                         <span class="error" role="alert">@_groupError</span>
