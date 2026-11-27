@@ -325,7 +325,7 @@ public sealed partial class OwnRulesHandler
         await db.SaveChangesAsync(CancellationToken.None);
 
         // Part of them went off, but the board took none of those asked: the person is told, as when nothing went off.
-        return taken.Count == 0 ? _texts["OwnRules.TurnOff.NotTaken"] : null;
+        return taken.Count == 0 ? _texts["OwnRules.TurnOff.NotTaken"].Value : null;
 
         // Each rule's relay and kind, in relay order; null for none, so the details leave it out.
         static object? Rules(IReadOnlyList<OwnRule> list)
