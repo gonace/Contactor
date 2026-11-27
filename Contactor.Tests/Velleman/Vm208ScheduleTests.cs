@@ -192,7 +192,57 @@ public sealed class Vm208ScheduleTests
 
         await using var run = Run.Start(board.Port, pollSeconds: 30);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+        Assert.Empty(run.Client.State.OwnRules!);
+        Assert.Equal(ChannelMask.Of(1), run.Client.State.OwnRules!.Unknown);
+    }
+
+    // A schedule the app can't read (a time such as 99:00, which the firmware keeps) makes only that relay's rules
+    // unknown (issue #554): the other relays' schedules are read, and turned off, as usual, and nothing is sent for it.
+    [Fact]
+    public async Task Should_MakeOnlyThatRelayUnknown_WhenItsScheduleCantBeRead()
+    {
+        await using var simulator = new Vm208Simulator();
+        simulator.Start();
+        foreach (var relay in new[] { 1, 3, 4 })
+        {
+            await simulator.SetAlarmsAsync(relay, Weekdays);
+        }
+
+        await simulator.SetAlarmsAsync(2, Weekdays);
+        await simulator.StoreUnrunnableTimeAsync(2);
+        var broken = simulator.Alarms(2);
+        await using var run = Run.Start(simulator.Port);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        OwnRule[] known = [new(1, OwnRuleKind.Timer), new(3, OwnRuleKind.Timer), new(4, OwnRuleKind.Timer)];
+        Assert.Equal<OwnRule>(known, run.Client.State.OwnRules);
+        Assert.Equal(ChannelMask.Of(2), run.Client.State.OwnRules!.Unknown);
+        Assert.Equal(ScheduleReads, simulator.ReceivedRequests.Where(r => r.StartsWith("GET /getalarms", StringComparison.Ordinal)));
+
+        var taken = await run.Client.TurnOffOwnRulesAsync(known, Cancel);
+
+        Assert.Equal<OwnRule>(known, taken);
+        Assert.Empty(run.Client.State.OwnRules!);
+        Assert.Equal(ChannelMask.Of(2), run.Client.State.OwnRules!.Unknown);
+        Assert.Equal(broken, simulator.Alarms(2));
+        Assert.DoesNotContain(simulator.ReceivedRequests, r => r.StartsWith("POST /shedule_set relay=2&", StringComparison.Ordinal));
+        AssertOnlySafeRequests(simulator);
+    }
+
+    // No answer to a schedule read: the board is gone, not one schedule broken, so every relay's rules are unknown.
+    [Fact]
+    public async Task Should_MakeEveryRelayUnknown_WhenAScheduleReadGetsNoAnswer()
+    {
+        await using var board = FakeBoard.Start();
+        board.BrokenCode = 0;
+        await using var run = Run.Start(board.Port, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
         Assert.Null(run.Client.State.OwnRules);
+
+        // The read stopped at the first relay (the HTTP client may try a request that gets no answer more than once).
+        Assert.Equal(["Ask for relay 1's schedule"], run.Traces.Where(t => t.Text.EndsWith("'s schedule", StringComparison.Ordinal)).Select(t => t.Text));
+        Assert.True(run.Client.State.IsConnected);
     }
 
     // Channel 0 and a channel from 269 on crash the real board; 5–268 are an extension module's, not simulated.
@@ -904,7 +954,7 @@ public sealed class Vm208ScheduleTests
     }
 
     /// <summary>
-    /// A board whose status is fine, whose schedules answer <see cref="BrokenCode"/> (500) until <see cref="Fixed"/> and
+    /// A board whose status is fine, whose schedules answer <see cref="BrokenCode"/> (500; none for 0) until <see cref="Fixed"/> and
     /// then the relays in <see cref="Timers"/> (relay 1) have enabled alarms, and that answers a save with
     /// <see cref="SaveCode"/> (or <see cref="SaveCodes"/> for its relay), or closes the connection without an answer for 0,
     /// or answers 200 too long to read for -1. A save answered 200 turns the relay's alarms off, unless
@@ -1021,6 +1071,12 @@ public sealed class Vm208ScheduleTests
                     }
 
                     var (status, body) = isSchedule ? Schedule(request) : (200, StatusBody ?? Vm208Json.WriteStatus(new Vm208Status(0, false, 0)));
+                    if (status == 0)
+                    {
+                        // No answer: the connection closes.
+                        continue;
+                    }
+
                     await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status} X\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"), _stop.Token);
                 }
             }

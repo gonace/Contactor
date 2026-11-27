@@ -2077,6 +2077,10 @@
     <value>relay {0}</value>
     <comment>{0} is a relay's number.</comment>
   </data>
+  <data name="OwnRules.Relay.CouldntRead" xml:space="preserve">
+    <value>Contactor couldn't read this relay's own rules. Check the board's own web page.</value>
+    <comment>On one relay of a board that read the other relays' own rules but not this one's, e.g. a VM208 schedule with a time such as 99:00.</comment>
+  </data>
   <data name="OwnRules.Relays" xml:space="preserve">
     <value>relays {0}</value>
     <comment>{0} is a list of numbers, e.g. "3 and 5" (Relays.List.Last).</comment>

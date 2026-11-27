@@ -22,6 +22,22 @@ public sealed class OwnRulesTests
         Assert.Equal("[Timer 3, InputToggle 1]", rules.ToString());
     }
 
+    // The relays whose rules couldn't be read count (issue #554): a relay becoming readable again is a change.
+    [Fact]
+    public void Should_BeEqual_OnlyWithTheSameUnknownRelays()
+    {
+        OwnRule[] timer = [new OwnRule(1, OwnRuleKind.Timer)];
+        var unknown = new OwnRules(timer, null, null, ChannelMask.Of(2));
+
+        Assert.Equal(unknown, new OwnRules(timer, null, null, ChannelMask.Of(2)));
+        Assert.Equal(unknown.GetHashCode(), new OwnRules(timer, null, null, ChannelMask.Of(2)).GetHashCode());
+        Assert.NotEqual(unknown, new OwnRules(timer));
+        Assert.NotEqual(unknown, new OwnRules(timer, null, null, ChannelMask.Of(3)));
+        Assert.NotEqual(OwnRules.Empty, new OwnRules([], null, null, ChannelMask.Of(2)));
+        Assert.Equal(ChannelMask.None, new OwnRules(timer).Unknown);
+        Assert.Equal("[Timer 1; unknown: 2]", unknown.ToString());
+    }
+
     // A state with the same rules is the same state, so a board can tell when they changed.
     [Fact]
     public void Should_MakeStatesEqual_WhenTheirRulesAre()

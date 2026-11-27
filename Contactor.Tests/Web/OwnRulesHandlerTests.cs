@@ -2,6 +2,7 @@ using System.Data.Common;
 using Contactor.Boards;
 using Contactor.Boards.Velleman;
 using Contactor.Web.Features.BoardRules;
+using Contactor.Web.Features.Boards;
 using Contactor.Web.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -42,6 +43,32 @@ public sealed class OwnRulesHandlerTests
         await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 0);
         Assert.Empty(await rig.RowsAsync());
         Assert.Single(await rig.RowsAsync(rig.OtherId));
+        Assert.Equal(2, (await rig.EventsAsync(EventActions.BoardOwnRuleFound)).Count);
+    }
+
+    // A relay whose rules the board couldn't read (issue #554) is unknown, never shown as having none: its row from
+    // before stays, with no "Turn off", and comes back as known without a second "found".
+    [Fact]
+    public async Task Should_KeepARelayWhoseRulesCouldntBeRead_Unknown()
+    {
+        await using var rig = await OwnRulesRig.StartAsync();
+        rig.Board.SetOwnRules(new OwnRules([Timer3, Timer5]));
+        await Wait.UntilAsync(() => rig.Service.Rows(rig.BoardId).Count == 2);
+
+        rig.Board.SetOwnRules(new OwnRules([Timer3], null, null, ChannelMask.Of(5)));
+        await rig.HandledAsync();
+
+        var board = rig.Database.Services.GetRequiredService<BoardRegistry>().Find(rig.BoardId);
+        Assert.Equal(ChannelMask.Of(5), OwnRulesHandler.CouldntReadRelays(board));
+        Assert.Equal(2, rig.Service.Rows(rig.BoardId).Count);
+        Assert.True(rig.Handler.CanTurnOff(rig.BoardId, Timer3));
+        Assert.False(rig.Handler.CanTurnOff(rig.BoardId, Timer5));
+        Assert.Equal([Timer3], rig.Handler.Warnings(rig.BoardId));
+
+        rig.Board.SetOwnRules(new OwnRules([Timer3, Timer5]));
+        await rig.HandledAsync();
+
+        Assert.Equal(ChannelMask.None, OwnRulesHandler.CouldntReadRelays(board));
         Assert.Equal(2, (await rig.EventsAsync(EventActions.BoardOwnRuleFound)).Count);
     }
 
