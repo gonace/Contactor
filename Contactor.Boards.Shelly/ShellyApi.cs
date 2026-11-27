@@ -80,6 +80,20 @@ public static class ShellyApi
     /// <summary>"applies the same state change to multiple Switch components": <c>{"ids":[n,…],"on":bool}</c> ("Switch", "Switch.SetMany"). Only read in a schedule.</summary>
     public const string SwitchSetMany = "Switch.SetMany";
 
+    /// <summary>
+    /// "lists all available RPC methods. It takes into account both ACL and authentication restrictions and only lists
+    /// the methods allowed for the particular user/channel that's making the request": its result has <c>methods</c>,
+    /// an array of strings ("Shelly", "Shelly.ListMethods"). Asked once a connection, to tell whether the device has
+    /// <see cref="ScheduleList"/>.
+    /// </summary>
+    public const string ListMethods = "Shelly.ListMethods";
+
+    /// <summary>
+    /// The most method names the app reads from <see cref="ListMethods"/>; an answer with more is refused. The docs give
+    /// no limit: this is the app's own. The docs' example of a Pro 4PM lists 59.
+    /// </summary>
+    public const int MaxMethods = 1000;
+
     /// <summary>"lists all existing schedules for this device": its result has <c>jobs</c> and <c>rev</c> ("Schedule", "Schedule.List").</summary>
     public const string ScheduleList = "Schedule.List";
 

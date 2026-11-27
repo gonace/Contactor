@@ -265,6 +265,12 @@ public sealed class ShellyControls
     /// <summary>Whether <c>Schedule.List</c> is refused.</summary>
     public bool FailSchedules => _device.FailSchedules;
 
+    /// <summary>
+    /// Whether the device has schedules. Without them, <c>Shelly.ListMethods</c> lists no Schedule method and the
+    /// status has no <c>schedule_rev</c>.
+    /// </summary>
+    public bool HasSchedules => _device.HasSchedules;
+
     /// <summary>How a schedule's <c>Schedule.Update</c> can be answered, as the page offers it.</summary>
     public static IReadOnlyList<string> UpdateAnswers { get; } = [ConfigAnswered, ConfigRefused, ConfigSilent];
 
@@ -319,6 +325,22 @@ public sealed class ShellyControls
     {
         _device.ForgetNonces();
         _log("Nonces forgotten here, as after a reboot");
+    }
+
+    /// <summary>Gives the device schedules, or takes them away; the jobs it holds stay for when they come back.</summary>
+    public void SetHasSchedules(bool has)
+    {
+        lock (_lock)
+        {
+            if (_device.HasSchedules == has)
+            {
+                return;
+            }
+
+            _device.HasSchedules = has;
+        }
+
+        _log(has ? "Schedules available here" : "No schedules here: Shelly.ListMethods lists none");
     }
 
     /// <summary>Makes <c>Schedule.List</c> refused, or answered again.</summary>

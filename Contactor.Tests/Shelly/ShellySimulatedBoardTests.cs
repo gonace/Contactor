@@ -262,6 +262,35 @@ public sealed class ShellySimulatedBoardTests
         Assert.Equal("", await ReadAllAsync(stream));
     }
 
+    // "Shelly.ListMethods": "methods", the names of the methods allowed; the Schedule methods only on a device with
+    // schedules, whose status alone has schedule_rev ("present if schedules are enabled").
+    [Fact]
+    public async Task Should_ListItsMethods_WithTheSchedulesOnlyWhenItHasThem()
+    {
+        await using var device = new ShellySimulator(ShellyModels.OneRelay);
+        device.Start();
+
+        var with = ShellyJson.ReadMethods(Result(await PostAsync(device.Port, "{\"id\":1,\"method\":\"Shelly.ListMethods\"}"), 1));
+        Assert.Contains(ShellyApi.ScheduleList, with);
+        Assert.Contains(ShellyApi.ScheduleUpdate, with);
+        Assert.Contains("schedule_rev", Body(await PostAsync(device.Port, "{\"id\":2,\"method\":\"Shelly.GetStatus\"}")), StringComparison.Ordinal);
+
+        device.HasSchedules = false;
+        var without = ShellyJson.ReadMethods(Result(await PostAsync(device.Port, "{\"id\":3,\"method\":\"Shelly.ListMethods\"}"), 3));
+        Assert.Equal(with.Count - 2, without.Count);
+        Assert.DoesNotContain(without, m => m.StartsWith("Schedule.", StringComparison.Ordinal));
+        Assert.DoesNotContain("schedule_rev", Body(await PostAsync(device.Port, "{\"id\":4,\"method\":\"Shelly.GetStatus\"}")), StringComparison.Ordinal);
+        Assert.Contains("\"error\":{\"code\":404,", Body(await PostAsync(device.Port, "{\"id\":5,\"method\":\"Schedule.List\"}")), StringComparison.Ordinal);
+
+        device.FailListMethods = true;
+        Assert.Contains("\"error\":{\"code\":-109,", Body(await PostAsync(device.Port, "{\"id\":6,\"method\":\"Shelly.ListMethods\"}")), StringComparison.Ordinal);
+    }
+
+    private static System.Text.Json.JsonElement Result(string response, int id)
+    {
+        return ShellyJson.ReadFrame(Encoding.UTF8.GetBytes(Body(response)), id).Result!.Value;
+    }
+
     [Fact]
     public async Task Should_TurnAScheduleOnOrOff_OnlyWhenItIsNotAlready()
     {

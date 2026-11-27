@@ -23,6 +23,7 @@ public static class ShellyTraceText
             ShellyApi.SwitchSet when relay > 0 => string.Create(CultureInfo.InvariantCulture, $"Turn {(on ? "on" : "off")} relay {relay}"),
             ShellyApi.SwitchGetConfig when relay > 0 => string.Create(CultureInfo.InvariantCulture, $"Ask for relay {relay}'s settings"),
             ShellyApi.ScheduleList => "Ask for the schedules",
+            ShellyApi.ListMethods => "Ask which methods it has",
             _ => $"Call {Shorten(Printable(method))}",
         };
     }
@@ -163,6 +164,19 @@ public static class ShellyTraceText
         return switching == 0
             ? "Schedules: none switches a relay"
             : string.Create(CultureInfo.InvariantCulture, $"Schedules: {switching} {(switching == 1 ? "switches" : "switch")} {Channels(schedules.Relays, relayCount)}");
+    }
+
+    /// <summary>What <c>Shelly.ListMethods</c> said of the schedules: "Methods: has schedules", "Methods: has no schedules".</summary>
+    public static string Methods(bool hasSchedules)
+    {
+        return hasSchedules ? "Methods: has schedules" : "Methods: has no schedules";
+    }
+
+    /// <summary>A <c>Shelly.ListMethods</c> that failed: "Methods not read (…): whether it has schedules is unknown".</summary>
+    public static string MethodsNotRead(string reason)
+    {
+        ArgumentNullException.ThrowIfNull(reason);
+        return $"Methods not read ({Shorten(Printable(reason))}): whether it has schedules is unknown";
     }
 
     /// <summary>A schedules read that failed: "Schedules not read: the device's own rules are unknown".</summary>

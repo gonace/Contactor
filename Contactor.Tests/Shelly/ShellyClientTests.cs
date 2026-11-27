@@ -32,9 +32,9 @@ public sealed class ShellyClientTests
         Assert.True(run.Client.State.IsOn(2));
         Assert.Null(run.Client.State.Problem);
 
-        // Each switch's settings and the schedules once at connect, after the status: not with the first poll.
+        // Each switch's settings, the methods and the schedules once at connect, after the status: not with the first poll.
         Assert.Equal(
-            [ShellyApi.GetDeviceInfo, ShellyApi.GetStatus, .. Enumerable.Repeat(ShellyApi.SwitchGetConfig, 4), ShellyApi.ScheduleList, ShellyApi.GetStatus],
+            [ShellyApi.GetDeviceInfo, ShellyApi.GetStatus, .. Enumerable.Repeat(ShellyApi.SwitchGetConfig, 4), ShellyApi.ListMethods, ShellyApi.ScheduleList, ShellyApi.GetStatus],
             simulator.Received);
         Assert.Contains(run.Traces, t => t.Text == "Device SIM-4, generation 2, firmware 2.0.0");
         Assert.Contains(run.Traces, t => t.Text == "Status: relay 2 on · inputs off" && t.Direction == BoardTraceDirection.Received);
@@ -144,7 +144,7 @@ public sealed class ShellyClientTests
         // Only Switch.Set, one per relay, each followed by nothing else until the read after the command.
         Assert.Equal(
             [ShellyApi.SwitchSet, ShellyApi.SwitchSet, ShellyApi.GetStatus, ShellyApi.SwitchSet, ShellyApi.GetStatus],
-            simulator.Received.Skip(8));
+            simulator.Received.Skip(9));
         Assert.Contains(run.Traces, t => t.Text == "Turn on relay 3" && t.Direction == BoardTraceDirection.Sent);
         Assert.Contains(run.Traces, t => t.Text == "Relay 3 is on (it was off)");
         Assert.Equal(0, await run.Client.TurnOnAsync(0, Cancel));
@@ -184,9 +184,9 @@ public sealed class ShellyClientTests
 
         await run.Client.TurnOnAsync(0b0010, Cancel);
 
-        // Status, two Switch.GetConfig and Schedule.List at connect, the first poll, a poll, the Switch.Set and the read
-        // after it: eight challenges, each answered.
-        Assert.Equal(8, simulator.ChallengeCount);
+        // Status, two Switch.GetConfig, Shelly.ListMethods and Schedule.List at connect, the first poll, a poll, the
+        // Switch.Set and the read after it: nine challenges, each answered.
+        Assert.Equal(9, simulator.ChallengeCount);
         Assert.Equal(0, simulator.DeniedCount);
         Assert.Equal(
             [ShellyApi.GetDeviceInfo, ShellyApi.GetStatus, $"{ShellyApi.GetStatus} (signed)", ShellyApi.SwitchGetConfig, $"{ShellyApi.SwitchGetConfig} (signed)"],
@@ -1075,6 +1075,7 @@ public sealed class ShellyClientTests
         Assert.Equal([timer1], rules.GoesWith(timer2));
         Assert.Empty(rules.GoesWith(autoOn3));
         Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ScheduleList));
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ListMethods));
         Assert.Contains(run.Traces, t => t.Text == "Ask for the schedules" && t.Direction == BoardTraceDirection.Sent);
         Assert.Contains(run.Traces, t => t.Text == "Schedules: 2 switch relay 1 and 2" && t.Direction == BoardTraceDirection.Received);
         Assert.Contains(run.Traces, t => t.Text == "Relay 3 after a power cut: off · turns on again by itself");
@@ -1130,6 +1131,62 @@ public sealed class ShellyClientTests
         await run.PollAsync();
         Assert.Equal(2, simulator.Received.Count(r => r == ShellyApi.ScheduleList));
         Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], run.Client.State.OwnRules!);
+    }
+
+    // A device whose Shelly.ListMethods doesn't list Schedule.List has no schedules: its auto-on still shows, and it is
+    // never asked for schedules on this connection, also not every minute without schedule_rev (Issue #535). The methods
+    // are asked once, with the password.
+    [Fact]
+    public async Task Should_ShowAutoOn_AndNeverAskForSchedules_WhenTheDeviceListsNoScheduleList()
+    {
+        await using var simulator = Start(ShellyModels.TwoRelays, Password);
+        simulator.HasSchedules = false;
+        simulator.SetAutoOn(2, true);
+        await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, Password, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        var autoOn2 = new OwnRule(2, OwnRuleKind.AutoOn);
+        Assert.Equal(new OwnRules([autoOn2], [[autoOn2]]), run.Client.State.OwnRules);
+        Assert.Equal([$"{ShellyApi.ListMethods} (signed)"], simulator.Received.Where(r => r.StartsWith(ShellyApi.ListMethods, StringComparison.Ordinal)));
+        Assert.Contains(run.Traces, t => t.Text == "Methods: has no schedules");
+
+        for (var poll = 0; poll < 4; poll++)
+        {
+            await run.PollAsync();
+        }
+
+        Assert.DoesNotContain(simulator.Received, r => r.StartsWith("Schedule.", StringComparison.Ordinal));
+        Assert.Equal(1, simulator.Received.Count(r => r.StartsWith(ShellyApi.ListMethods, StringComparison.Ordinal)));
+        Assert.Equal(new OwnRules([autoOn2], [[autoOn2]]), run.Client.State.OwnRules);
+        Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("Schedules not read", StringComparison.Ordinal));
+    }
+
+    // A Shelly.ListMethods that fails tells nothing: the schedules are asked for as before, and an error answer to them
+    // leaves the rules unknown, whatever it is. Both are asked again a minute later.
+    [Fact]
+    public async Task Should_LeaveTheRulesUnknown_AndAskAgainAMinuteLater_WhenListMethodsFails()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay);
+        simulator.HasSchedules = false;
+        simulator.FailListMethods = true;
+        simulator.SetAutoOn(1, true);
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, pollSeconds: 30);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.Null(run.Client.State.OwnRules);
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ListMethods));
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ScheduleList));
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Methods not read", StringComparison.Ordinal) && t.IsError && !t.IsRoutine);
+        Assert.True(run.Client.State.IsConnected);
+
+        await run.PollAsync();
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ListMethods));
+
+        simulator.FailListMethods = false;
+        await run.PollAsync();
+        Assert.Equal(2, simulator.Received.Count(r => r == ShellyApi.ListMethods));
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ScheduleList));
+        Assert.Equal([new OwnRule(1, OwnRuleKind.AutoOn)], run.Client.State.OwnRules!);
     }
 
     // The rules are read before the device's first connected state, so unknown rules while it answers mean they couldn't

@@ -553,6 +553,118 @@ public sealed class ShellyJsonTests
         Assert.Null(ShellyJson.TryReadRequest("nope"u8));
     }
 
+    // "Shelly", "Shelly.ListMethods example", the HTTP GET response, byte for byte (a Pro 4PM).
+    private const string ListMethodsExample = """
+        {
+          "methods": [
+            "Switch.SetConfig",
+            "Switch.GetConfig",
+            "Switch.GetStatus",
+            "Switch.Toggle",
+            "Switch.Set",
+            "Schedule.List",
+            "Schedule.DeleteAll",
+            "Schedule.Delete",
+            "Schedule.Update",
+            "Schedule.Create",
+            "Input.SetConfig",
+            "Input.GetConfig",
+            "Input.GetStatus",
+            "Webhook.ListSupported",
+            "Webhook.List",
+            "Webhook.DeleteAll",
+            "Webhook.Delete",
+            "Webhook.Update",
+            "Webhook.Create",
+            "Mqtt.SetConfig",
+            "Mqtt.GetConfig",
+            "Mqtt.GetStatus",
+            "Cloud.SetConfig",
+            "Cloud.GetConfig",
+            "Cloud.GetStatus",
+            "BLE.SetConfig",
+            "BLE.GetConfig",
+            "BLE.GetStatus",
+            "Eth.SetConfig",
+            "Eth.GetConfig",
+            "Eth.GetStatus",
+            "Wifi.Scan",
+            "Wifi.SetConfig",
+            "Wifi.GetConfig",
+            "Wifi.GetStatus",
+            "Sys.SetConfig",
+            "Sys.GetConfig",
+            "Sys.GetStatus",
+            "HTTP.GET",
+            "Shelly.ListMethods",
+            "Shelly.PutTLSClientKey",
+            "Shelly.PutTLSClientCert",
+            "Shelly.PutUserCA",
+            "Shelly.PutHTTPServerCert",
+            "Shelly.PutHTTPServerKey",
+            "Shelly.PutHTTPServerCABundle",
+            "Shelly.Reboot",
+            "Shelly.SetAuth",
+            "Shelly.Update",
+            "Shelly.CheckForUpdate",
+            "Shelly.DetectLocation",
+            "Shelly.ListTimezones",
+            "Shelly.GetStatus",
+            "Shelly.FactoryReset",
+            "Shelly.ResetWiFiConfig",
+            "Shelly.GetConfig",
+            "Shelly.GetDeviceInfo",
+            "Shelly.ListProfiles",
+            "Shelly.SetProfile"
+          ]
+        }
+        """;
+
+    [Fact]
+    public void Should_ReadTheDocsListMethods_WithTheScheduleList()
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(ListMethodsExample);
+
+        var methods = ShellyJson.ReadMethods(document.RootElement);
+
+        Assert.Equal(59, methods.Count);
+        Assert.Contains(ShellyApi.ScheduleList, methods);
+        Assert.Contains(ShellyApi.ListMethods, methods);
+        Assert.DoesNotContain("schedule.list", methods);
+    }
+
+    // Anything but an array of names is refused, and so is a list longer than the app reads.
+    [Theory]
+    [InlineData("""{}""")]
+    [InlineData("""{"methods":{}}""")]
+    [InlineData("""{"methods":"Schedule.List"}""")]
+    [InlineData("""{"methods":["Schedule.List",1]}""")]
+    [InlineData("""{"methods":[null]}""")]
+    [InlineData("""[]""")]
+    public void Should_RefuseMethodsItCantRead(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+
+        Assert.Throws<ShellyProtocolException>(() => ShellyJson.ReadMethods(document.RootElement));
+    }
+
+    [Fact]
+    public void Should_RefuseMoreMethodsThanTheAppReads()
+    {
+        static string Methods(int count)
+        {
+            return $$"""{"methods":[{{string.Join(",", Enumerable.Range(1, count).Select(i => $"\"M.{i}\""))}}]}""";
+        }
+
+        using (var most = System.Text.Json.JsonDocument.Parse(Methods(ShellyApi.MaxMethods)))
+        {
+            Assert.Equal(ShellyApi.MaxMethods, ShellyJson.ReadMethods(most.RootElement).Count);
+        }
+
+        using var tooMany = System.Text.Json.JsonDocument.Parse(Methods(ShellyApi.MaxMethods + 1));
+        Assert.Throws<ShellyProtocolException>(() => ShellyJson.ReadMethods(tooMany.RootElement));
+    }
+
     // "Schedule", "Schedule.List example", the HTTP GET response, byte for byte.
     private const string ScheduleListExample = """
         {
