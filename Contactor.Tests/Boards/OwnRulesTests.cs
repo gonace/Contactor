@@ -170,10 +170,10 @@ public sealed class OwnRulesTests
         var board = new FakeRelayBoard(ownRules: OwnRulesAbility.ReadsAndTurnsOff);
         board.SetOwnRules(new OwnRules([T1, T2, T3, A4], [[T1, T2], [T3, T2], [T3, A4]]));
 
-        Assert.Equal([T1], await board.TurnOffOwnRulesAsync([T1], TestContext.Current.CancellationToken));
+        Assert.Equal([T1], (await board.TurnOffOwnRulesAsync([T1], TestContext.Current.CancellationToken)).Taken);
         Assert.Equal(new OwnRules([T2, T3, A4], [[T3, T2], [T3, A4]]), board.State.OwnRules);
 
-        Assert.Equal([T3], await board.TurnOffOwnRulesAsync([T3], TestContext.Current.CancellationToken));
+        Assert.Equal([T3], (await board.TurnOffOwnRulesAsync([T3], TestContext.Current.CancellationToken)).Taken);
         Assert.Equal(OwnRules.Empty, board.State.OwnRules);
     }
 

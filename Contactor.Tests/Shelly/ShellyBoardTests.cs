@@ -233,7 +233,7 @@ public sealed class ShellyBoardTests
                 statesBefore = states.Count;
             }
 
-            Assert.Equal([timer2], await board.TurnOffOwnRulesAsync([timer2], Cancel));
+            Assert.Equal([timer2], (await board.TurnOffOwnRulesAsync([timer2], Cancel)).Taken);
 
             Assert.False(simulator.ScheduleEnabled(job));
             Assert.Equal([autoOn1], board.State.OwnRules!);

@@ -1344,10 +1344,13 @@ public sealed class ShellyClientTests
         var before = simulator.Received.Count;
         var changes = run.Changes.Count;
 
-        var taken = await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel);
+        var result = await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel);
 
         // Only the schedule behind relay 1's timer, never deleted or rewritten; then the schedules read back at once.
-        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], taken);
+        // It switched relay 2 too, whose other schedule stays: part of relay 2's timer went.
+        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], result.Taken);
+        Assert.Empty(result.AlsoOff);
+        Assert.Equal([new OwnRule(2, OwnRuleKind.Timer)], result.PartlyOff);
         Assert.Equal([ShellyApi.ScheduleUpdate, ShellyApi.GetStatus, ShellyApi.ScheduleList], simulator.Received.Skip(before));
         Assert.Equal((false, true, true), (simulator.ScheduleEnabled(both), simulator.ScheduleEnabled(two), simulator.ScheduleEnabled(three)));
         Assert.Equal([new OwnRule(2, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer)], run.Client.State.OwnRules!);
@@ -1358,7 +1361,7 @@ public sealed class ShellyClientTests
 
         // Relay 2's timer and relay 3's, given twice: the one schedule still behind each, once each.
         before = simulator.Received.Count;
-        taken = await run.Client.TurnOffOwnRulesAsync([new OwnRule(3, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer)], Cancel);
+        var taken = (await run.Client.TurnOffOwnRulesAsync([new OwnRule(3, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer)], Cancel)).Taken;
         Assert.Equal([new OwnRule(2, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer)], taken);
         Assert.Equal([ShellyApi.ScheduleUpdate, ShellyApi.ScheduleUpdate, ShellyApi.GetStatus, ShellyApi.ScheduleList], simulator.Received.Skip(before));
         Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
@@ -1374,9 +1377,12 @@ public sealed class ShellyClientTests
         OwnRule timer1 = new(1, OwnRuleKind.Timer), timer2 = new(2, OwnRuleKind.Timer);
         Assert.Equal([timer2], run.Client.State.OwnRules!.GoesWith(timer1));
 
-        Assert.Equal([timer1], await run.Client.TurnOffOwnRulesAsync([timer1], Cancel));
+        var result = await run.Client.TurnOffOwnRulesAsync([timer1], Cancel);
 
-        // The one schedule switched both: relay 2's timer went with it, as GoesWith said, but isn't returned.
+        // The one schedule switched both: relay 2's timer went with it, as GoesWith said, and is returned as also off.
+        Assert.Equal([timer1], result.Taken);
+        Assert.Equal([timer2], result.AlsoOff);
+        Assert.Empty(result.PartlyOff);
         Assert.False(simulator.ScheduleEnabled(shared));
         Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
     }
@@ -1392,7 +1398,7 @@ public sealed class ShellyClientTests
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
         var before = simulator.Received.Count;
 
-        Assert.Equal([new OwnRule(2, OwnRuleKind.AutoOn)], await run.Client.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.AutoOn)], Cancel));
+        Assert.Equal([new OwnRule(2, OwnRuleKind.AutoOn)], (await run.Client.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.AutoOn)], Cancel)).Taken);
 
         // One Switch.SetConfig with auto_on alone, then the status and every switch's settings, in the same command.
         Assert.Equal([ShellyApi.SwitchSetConfig, ShellyApi.GetStatus, ShellyApi.SwitchGetConfig, ShellyApi.SwitchGetConfig], simulator.Received.Skip(before));
@@ -1473,7 +1479,7 @@ public sealed class ShellyClientTests
         Assert.Contains(run.Traces, t => t.Text == "Relay 1 after a power cut: off · a press on its input steps relays 1 and 2 through on and off");
         var before = simulator.Received.Count;
 
-        Assert.Equal([toggle2], await run.Client.TurnOffOwnRulesAsync([toggle2], Cancel));
+        Assert.Equal([toggle2], (await run.Client.TurnOffOwnRulesAsync([toggle2], Cancel)).Taken);
 
         Assert.Equal([ShellyApi.SwitchSetConfig, ShellyApi.GetStatus, ShellyApi.SwitchGetConfig, ShellyApi.SwitchGetConfig], simulator.Received.Skip(before));
         Assert.Equal(("detached", "flip"), (simulator.InputMode(1), simulator.InputMode(2)));
@@ -1535,7 +1541,7 @@ public sealed class ShellyClientTests
         var before = simulator.Received.Count;
         OwnRule edge2 = new(2, OwnRuleKind.InputEdge), toggle2 = new(2, OwnRuleKind.InputToggle);
 
-        Assert.Equal([toggle2, edge2], await run.Client.TurnOffOwnRulesAsync([edge2, toggle2], Cancel));
+        Assert.Equal([toggle2, edge2], (await run.Client.TurnOffOwnRulesAsync([edge2, toggle2], Cancel)).Taken);
 
         Assert.Equal([ShellyApi.SwitchSetConfig, ShellyApi.GetStatus, ShellyApi.SwitchGetConfig, ShellyApi.SwitchGetConfig], simulator.Received.Skip(before));
         Assert.Equal(("follow", "detached"), (simulator.InputMode(1), simulator.InputMode(2)));
@@ -1556,7 +1562,7 @@ public sealed class ShellyClientTests
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
         var before = simulator.Received.Count;
 
-        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
+        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], (await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel)).Taken);
 
         // Already gone as last read: nothing to turn off, and the schedules read back to confirm it.
         Assert.Equal([ShellyApi.GetStatus, ShellyApi.ScheduleList], simulator.Received.Skip(before));
@@ -1568,7 +1574,7 @@ public sealed class ShellyClientTests
         using var unconnected = CreateClient(1, ShellyModels.TwoRelays);
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => unconnected.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
         await Assert.ThrowsAsync<BoardNotConnectedException>(() => unconnected.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.InputEdge)], Cancel));
-        Assert.Empty(await unconnected.TurnOffOwnRulesAsync([], Cancel));
+        Assert.Empty((await unconnected.TurnOffOwnRulesAsync([], Cancel)).Taken);
 
         await using var simulator = Start(ShellyModels.TwoRelays);
         await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
@@ -1580,31 +1586,38 @@ public sealed class ShellyClientTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.AutoOn), new OwnRule(1, OwnRuleKind.InputLinkage)], Cancel));
         await Assert.ThrowsAsync<ArgumentException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), null!], Cancel));
         await Assert.ThrowsAsync<ArgumentNullException>(() => run.Client.TurnOffOwnRulesAsync(null!, Cancel));
-        Assert.Empty(await run.Client.TurnOffOwnRulesAsync([], Cancel));
+        Assert.Empty((await run.Client.TurnOffOwnRulesAsync([], Cancel)).Taken);
 
         Assert.Equal(before, simulator.Received.Count);
     }
 
     [Fact]
-    public async Task Should_SayTheDeviceDidntTakeIt_AndReturnOnlyWhatItTook()
+    public async Task Should_SayTheDeviceDidntTakeIt_AndReturnOnlyWhatWentOff()
     {
         await using var simulator = Start(ShellyModels.TwoRelays);
         var first = simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
-        var second = simulator.AddSchedule("""[{"method":"Switch.Toggle","params":{"id":0}}]""");
+        var second = simulator.AddSchedule("""[{"method":"Switch.Toggle","params":{"id":0}},{"method":"Switch.Set","params":{"id":1,"on":true}}]""");
         simulator.SetAutoOn(2, true);
         await using var run = ClientRun.Start(simulator, ShellyModels.TwoRelays, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
         simulator.FailScheduleUpdates = new HashSet<long> { first };
 
-        // One of the two schedules behind relay 1's timer refused: the timer isn't taken, the other schedule still went.
+        // One of the two schedules behind relay 1's timer refused: the timer isn't taken, but the other schedule went,
+        // and with it relay 2's timer, which only that schedule switched (issue #604).
+        var part = await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel);
+        Assert.Empty(part.Taken);
+        Assert.Equal([new OwnRule(2, OwnRuleKind.Timer)], part.AlsoOff);
+        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], part.PartlyOff);
+        Assert.Equal((true, false), (simulator.ScheduleEnabled(first), simulator.ScheduleEnabled(second)));
+
+        // Now only the refused schedule is behind it: nothing goes, and the device says why.
         var refused = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
         Assert.Equal("The Shelly didn't turn its rules off: schedule 1: Overtemp condition present (error -109)", refused.Message);
-        Assert.Equal((true, false), (simulator.ScheduleEnabled(first), simulator.ScheduleEnabled(second)));
 
         // With an auto-on that goes: only that is returned.
         Assert.Equal(
             [new OwnRule(2, OwnRuleKind.AutoOn)],
-            await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.AutoOn)], Cancel));
+            (await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.AutoOn)], Cancel)).Taken);
         Assert.True(simulator.ScheduleEnabled(first));
         Assert.False(simulator.AutoOn(2));
 
@@ -1699,7 +1712,7 @@ public sealed class ShellyClientTests
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
         var before = simulator.Received.Count;
 
-        var taken = await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(1, OwnRuleKind.AutoOn)], Cancel);
+        var taken = (await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(1, OwnRuleKind.AutoOn)], Cancel)).Taken;
 
         // The timer can't be taken without the schedules: nothing goes for it, and the auto-on goes alone.
         Assert.Equal([new OwnRule(1, OwnRuleKind.AutoOn)], taken);

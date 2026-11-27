@@ -571,7 +571,7 @@ public sealed class Vm208ScheduleTests
 
         Assert.Equal(new OwnRulesAbility(Reads: true, TurnsOff: true, MayHaveUnseen: true), board.Capabilities.OwnRules);
         Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer)], board.State.OwnRules);
-        Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer)], await board.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel));
+        Assert.Equal<OwnRule>([new OwnRule(1, OwnRuleKind.Timer)], (await board.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel)).Taken);
         Assert.Equal(OwnRules.Empty, board.State.OwnRules);
         Assert.Equal(1, Volatile.Read(ref ruleChanges));
 

@@ -58,7 +58,7 @@ public sealed class SmartDenBoard : IRelayBoard
     /// Turns off the week schedule's rows behind the <see cref="OwnRuleKind.Timer"/> rules, one FC 06 to each row's enable
     /// flag, and reads the schedule back (<see cref="SmartDenClient.TurnOffOwnRulesAsync"/>).
     /// </summary>
-    public Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    public Task<OwnRulesTurnOff> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
         return _client.TurnOffOwnRulesAsync(rules, cancellationToken);
     }

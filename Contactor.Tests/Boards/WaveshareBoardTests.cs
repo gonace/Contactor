@@ -80,8 +80,8 @@ public sealed class WaveshareBoardTests
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.Timer)], Cancel));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => board.TurnOffOwnRulesAsync([new OwnRule(9, OwnRuleKind.InputEdge)], Cancel));
-        Assert.Empty(await board.TurnOffOwnRulesAsync([], Cancel));
-        var taken = await board.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.InputLinkage), new OwnRule(2, OwnRuleKind.InputLinkage)], Cancel);
+        Assert.Empty((await board.TurnOffOwnRulesAsync([], Cancel)).Taken);
+        var taken = (await board.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.InputLinkage), new OwnRule(2, OwnRuleKind.InputLinkage)], Cancel)).Taken;
 
         Assert.Equal([new OwnRule(2, OwnRuleKind.InputLinkage)], taken);
         Assert.Equal(new ushort[] { 0, 0, 3, 0, 0, 0, 0, 0 }, simulator.RelayModes);

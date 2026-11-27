@@ -127,7 +127,7 @@ public sealed class Vm201BoardTests
         await WaitUntilAsync(() => board.State.IsConnected);
         var asked = new[] { new OwnRule(5, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer), new OwnRule(3, OwnRuleKind.Timer) };
 
-        var taken = await board.TurnOffOwnRulesAsync(asked, Cancel);
+        var taken = (await board.TurnOffOwnRulesAsync(asked, Cancel)).Taken;
 
         Assert.Equal([new OwnRule(3, OwnRuleKind.Timer), new OwnRule(5, OwnRuleKind.Timer)], taken);
         // The command is on its way when the call returns; the simulator takes it a moment later.
@@ -177,7 +177,7 @@ public sealed class Vm201BoardTests
         // No board at all: had it sent anything, it would have thrown BoardNotConnectedException.
         var board = new Vm201Board(CreateClient(port: 1), NullLogger<Vm201Board>.Instance);
 
-        Assert.Empty(await board.TurnOffOwnRulesAsync([], Cancel));
+        Assert.Empty((await board.TurnOffOwnRulesAsync([], Cancel)).Taken);
     }
 
     [Fact]

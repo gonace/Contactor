@@ -281,7 +281,7 @@ public sealed partial class LiveBoard : IRelayBoard, IBoardConnection, IBoardTra
     }
 
     /// <summary>Throws <see cref="BoardNotConnectedException"/> before a model is chosen, as every command does.</summary>
-    public Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    public Task<OwnRulesTurnOff> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
         return Chosen().Board.TurnOffOwnRulesAsync(rules, cancellationToken);
     }

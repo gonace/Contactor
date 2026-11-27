@@ -71,6 +71,31 @@ public sealed class OwnRulesHandlerTests
         Assert.Contains(await rig.EventsAsync(EventActions.BoardOwnRuleFound), e => e.Details!.Contains("\"kind\":\"auto-on\"", StringComparison.Ordinal));
     }
 
+    // Relay 3's timer sits in two rows; the board turned off one and refused the other, which also held relay 5's timer
+    // alone: relay 3's isn't taken and the person is told, but what went off is logged (issue #604).
+    [Fact]
+    public async Task Should_LogWhatWentOff_AndSayItWasntTaken_WhenOnlyPartWentOff()
+    {
+        await using var rig = await OwnRulesRig.StartAsync();
+        rig.Board.SetOwnRules(new OwnRules([Timer3, Timer5], [[Timer3, Timer5], [Timer3]]));
+        rig.Board.OwnRulesAnswer = new OwnRulesTurnOff([], [Timer5], [Timer3]);
+
+        Assert.Equal("The relay board didn't turn them off. Try again.", await rig.Handler.TurnOffAsync(rig.BoardId, [Timer3], Erik, Cancel));
+
+        var entry = Assert.Single(await rig.EventsAsync(EventActions.BoardOwnRulesTurnedOff));
+        Assert.Equal(
+            (Erik, """{"relays":[],"kinds":[],"also":[{"relay":5,"kind":"timer"}],"partly":[{"relay":3,"kind":"timer"}]}"""),
+            (entry.Actor, entry.Details));
+        Assert.Equal("Erik turned off part of the board's own timer for relay 3, and with it the timer for relay 5", TestTexts.Events.For(entry, null, "Erik").Text);
+
+        // Taken, with part of another relay's timer: no message, and the part is logged too.
+        rig.Board.OwnRulesAnswer = new OwnRulesTurnOff([Timer5], [], [Timer3]);
+        Assert.Null(await rig.Handler.TurnOffAsync(rig.BoardId, [Timer5], Erik, Cancel));
+        entry = (await rig.EventsAsync(EventActions.BoardOwnRulesTurnedOff))[^1];
+        Assert.Equal("""{"relays":[5],"kinds":["timer"],"partly":[{"relay":3,"kind":"timer"}]}""", entry.Details);
+        Assert.Equal("Erik turned off the board's own timer for relay 5, and part of the timer for relay 3", TestTexts.Events.For(entry, null, "Erik").Text);
+    }
+
     [Fact]
     public async Task Should_SendNothingAndLogNothing_WhenNoneAreAsked()
     {
