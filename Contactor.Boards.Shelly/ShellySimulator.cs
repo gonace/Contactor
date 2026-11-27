@@ -204,6 +204,27 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     /// <summary>When true, <c>Schedule.List</c> is refused with <see cref="Refusal"/>.</summary>
     public bool FailSchedules { get; set; }
 
+    /// <summary>
+    /// Whether the device has schedules; true by default. False: a device without the Schedule service, whose
+    /// <c>Shelly.ListMethods</c> lists no Schedule method, whose status has no <c>sys.schedule_rev</c> ("present if
+    /// schedules are enabled"), and which answers <c>Schedule.List</c> and <c>Schedule.Update</c> as any other method
+    /// it hasn't.
+    /// </summary>
+    public bool HasSchedules { get; set; } = true;
+
+    /// <summary>When true, <c>Shelly.ListMethods</c> is refused with <see cref="Refusal"/>.</summary>
+    public bool FailListMethods { get; set; }
+
+    /// <summary>When true, the device never answers <c>Shelly.ListMethods</c>, holding the connection until the simulator stops.</summary>
+    public bool SilentListMethods { get; set; }
+
+    /// <summary>
+    /// For the tests only: with a password, <c>Shelly.ListMethods</c> without the digest gets no 401 but a list of only
+    /// <c>Shelly.GetDeviceInfo</c> and <c>Shelly.ListMethods</c>, what a caller without the password may call. The docs
+    /// say it "only lists the methods allowed for the particular user/channel", and don't say whether a device does this.
+    /// </summary>
+    public bool AnonymousListMethods { get; set; }
+
     /// <summary>The schedules whose <c>Schedule.Update</c> is refused with <see cref="Refusal"/>, by job id.</summary>
     public IReadOnlySet<long> FailScheduleUpdates { get; set; } = new HashSet<long>();
 
@@ -676,14 +697,14 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     /// <summary>
     /// Each schedule that is on, with the relays its <c>Switch.Set</c> calls switch, and each relay with auto-on that is
     /// off, which it turns on again, as the device does at their times. A schedule without a <c>Switch.Set</c> the simulator can
-    /// read isn't among them.
+    /// read isn't among them, and no schedule is while it has none (<see cref="HasSchedules"/>).
     /// </summary>
     public IReadOnlyList<SimulatedRule> RunnableRules
     {
         get
         {
             List<SimulatedRule> rules = [];
-            foreach (var schedule in Schedules.Where(s => s.Enable))
+            foreach (var schedule in Schedules.Where(s => s.Enable && HasSchedules))
             {
                 var switches = SwitchSets(schedule.Calls);
                 if (switches.Count > 0)
@@ -844,7 +865,7 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
             Interlocked.Increment(ref _requestCount);
             if (response is null)
             {
-                // Never answered (SilentConfigRelays, SilentScheduleUpdates): held until the simulator stops.
+                // Never answered (SilentConfigRelays, SilentScheduleUpdates, SilentListMethods): held until the simulator stops.
                 await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -973,6 +994,20 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         }
 
         // "When enabled, all communication is protected except … the RPC method Shelly.GetDeviceInfo".
+        if (HasLogin && AnonymousListMethods && rpc.Method == ShellyApi.ListMethods && http.Authorization is null)
+        {
+            return Result(
+                rpc,
+                writer =>
+                {
+                    writer.WriteStartArray("methods");
+                    writer.WriteStringValue(ShellyApi.ListMethods);
+                    writer.WriteStringValue(ShellyApi.GetDeviceInfo);
+                    writer.WriteEndArray();
+                },
+                "Methods a caller without the password may call");
+        }
+
         if (HasLogin && rpc.Method != ShellyApi.GetDeviceInfo && Authenticate(http.Authorization) is { } refusal)
         {
             return refusal;
@@ -985,10 +1020,12 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
             ShellyApi.SwitchSet => SetSwitch(rpc, relay, on),
             ShellyApi.SwitchGetConfig => GetConfig(rpc, relay),
             ShellyApi.SwitchSetConfig => SetConfig(rpc, relay, initialState, autoOn, inputMode),
-            ShellyApi.ScheduleList => ListSchedules(rpc),
-            ShellyApi.ScheduleUpdate => UpdateSchedule(rpc, job),
+            ShellyApi.ListMethods => ListMethods(rpc),
+            ShellyApi.ScheduleList when HasSchedules => ListSchedules(rpc),
+            ShellyApi.ScheduleUpdate when HasSchedules => UpdateSchedule(rpc, job),
 
-            // Not from the docs read: the app sends no other method, and any error tells it so.
+            // Not from the docs read but from the community sources (Shelly X MOD1 in aioshelly, and Mongoose OS): the app
+            // sends no other method, and any error tells it so.
             _ => Error(rpc, new ShellyRpcError(404, $"No handler for {rpc.Method}")),
         };
     }
@@ -1227,7 +1264,7 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
                 writer.WriteNumber(ShellyApi.ConfigRevision, ConfigRevision);
             }
 
-            if (ReportsScheduleRevision)
+            if (ReportsScheduleRevision && HasSchedules)
             {
                 writer.WriteNumber(ShellyApi.ScheduleRevision, ScheduleRevision);
             }
@@ -1381,6 +1418,44 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         }
 
         return Result(rpc, writer => writer.WriteBoolean("restart_required", false), ShellyTraceText.SettingSaved(relay!.Value));
+    }
+
+    // As "Shelly.ListMethods": "methods", the names of the methods it answers; the Schedule methods only while it has
+    // schedules.
+    private byte[]? ListMethods(ShellyRequest rpc)
+    {
+        if (SilentListMethods)
+        {
+            Trace(BoardTraceDirection.None, "No answer to the methods request", null, isError: true);
+            return null;
+        }
+
+        if (FailListMethods)
+        {
+            return Error(rpc, Refusal);
+        }
+
+        List<string> methods = [ShellyApi.SwitchSetConfig, ShellyApi.SwitchGetConfig, ShellyApi.SwitchSet];
+        var hasSchedules = HasSchedules;
+        if (hasSchedules)
+        {
+            methods.AddRange([ShellyApi.ScheduleList, ShellyApi.ScheduleUpdate]);
+        }
+
+        methods.AddRange([ShellyApi.ListMethods, ShellyApi.GetStatus, ShellyApi.GetDeviceInfo]);
+        return Result(
+            rpc,
+            writer =>
+            {
+                writer.WriteStartArray("methods");
+                foreach (var method in methods)
+                {
+                    writer.WriteStringValue(method);
+                }
+
+                writer.WriteEndArray();
+            },
+            hasSchedules ? "Methods, with the schedules" : "Methods, without schedules");
     }
 
     // As "Schedule.List": every job in the order it was made, with "id", "enable", "timespec" and "calls", and "rev".

@@ -43,7 +43,10 @@ namespace Contactor.Boards.Shelly;
 /// The device's own rules (<see cref="ShellyStatus.OwnRules"/>) come from the same <c>Switch.GetConfig</c> (each switch's
 /// <c>auto_on</c>, and its <c>in_mode</c> and <c>in_locked</c>) and from <c>Schedule.List</c>, read at connect, and in a poll only when <c>sys.schedule_rev</c>
 /// differs from the one it was read with, or every <see cref="SettingsInterval"/> while that can't tell; never in the
-/// read that confirms a <c>Switch.Set</c>. A read that fails makes the rules unknown, never the device lost.
+/// read that confirms a <c>Switch.Set</c>. Before them, <c>Shelly.ListMethods</c>, once a connection while it answers
+/// (again with the next schedules read after an error frame or an answer that can't be read): a device that doesn't list
+/// <c>Schedule.List</c> has no schedules, and is not asked for them until the next connection; with a password, only a
+/// list that answered the digest counts for that. A read that fails makes the rules unknown, never the device lost.
 /// <see cref="TurnOffOwnRulesAsync"/> turns them off with <c>Schedule.Update</c> and <c>Switch.SetConfig</c> (<c>auto_on</c>
 /// false, or <c>in_mode</c> detached), only on a
 /// person's press, and reads them back at once.
@@ -73,6 +76,9 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     public static readonly TimeSpan SettingsInterval = TimeSpan.FromSeconds(60);
 
     private const int MaxResponseHeadersKilobytes = 8;
+
+    // The schedules of a device without Schedule.List: none.
+    private static readonly ShellySchedules NoSchedules = new([], null);
 
     private readonly BoardModel _model;
     private readonly TimeProvider _timeProvider;
@@ -113,6 +119,11 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     private bool _schedulesRead;
     private bool _schedulesFailed;
     private DateTimeOffset _schedulesReadUtc;
+
+    // Only used under the poller's lock: whether Shelly.ListMethods listed Schedule.List on the current connection (null
+    // until it answered), and whether its last ask failed. ConnectAsync starts them afresh.
+    private bool? _hasSchedules;
+    private bool _methodsFailed;
 
     // Only used under the poller's lock: how many inputs the device has for the current connection, from the connect's
     // status; those of them not set as a switch then (no state); and those whose setting changed since the connect,
@@ -443,6 +454,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         _scheduleRevision = null;
         _schedulesRead = false;
         _schedulesFailed = false;
+        _hasSchedules = null;
+        _methodsFailed = false;
 
         var switches = await GetSwitchesAsync(target, routine: false, cancellationToken).ConfigureAwait(false);
         CheckCount(switches);
@@ -736,6 +749,11 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     // Under the poller's lock: one Schedule.List, after the status that gave scheduleRevision. Never fails the connect
     // or the poll, as the settings read: a refusal, an answer that can't be read, no answer, a password refused or a 429
     // makes the schedules unknown, and the read is tried again after SettingsInterval, or at the next schedule_rev.
+    // Before it, one Shelly.ListMethods while that isn't known for this connection (ReadMethodsAsync): a device that
+    // doesn't list Schedule.List has no schedules, so they are none, and nothing more is sent for them until the next
+    // connection. A ListMethods that fails or tells nothing leaves that unknown: Schedule.List is asked as before
+    // (unless it got no answer, a password refused or a 429), and ListMethods again with the next read. A missing
+    // schedule_rev never counts as no schedules: firmware before 0.11.0 has none.
     // With skip, the settings read just before stopped for one of the last three: nothing is sent, and it counts as
     // failed. Only a cancelled poll ends it without a result.
     private async Task ReadSchedulesAsync(BoardEndpoint target, long? scheduleRevision, bool skip, CancellationToken cancellationToken)
@@ -743,9 +761,23 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         _schedulesRead = false;
         var before = _schedules;
         ShellySchedules? schedules = null;
-        if (skip)
+        if (_hasSchedules == false)
+        {
+            // Known for this connection: the device has no Schedule.List.
+            schedules = NoSchedules;
+        }
+        else if (skip)
         {
             Trace(BoardTraceDirection.None, ShellyTraceText.SchedulesNotRead("the settings read before it stopped"), isError: true, isRoutine: _schedulesFailed);
+        }
+        else if (_hasSchedules is null && !await ReadMethodsAsync(target, cancellationToken).ConfigureAwait(false))
+        {
+            Trace(BoardTraceDirection.None, ShellyTraceText.SchedulesNotRead("the methods read before it stopped"), isError: true, isRoutine: _schedulesFailed);
+        }
+        else if (_hasSchedules == false)
+        {
+            schedules = NoSchedules;
+            Trace(BoardTraceDirection.Received, ShellyTraceText.Schedules(schedules, _model.Capabilities.RelayCount), isRoutine: before is not null && Same(before, schedules));
         }
         else
         {
@@ -776,6 +808,49 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         {
             return a.Jobs.Where(j => j.Enabled && j.Relays != 0).Select(j => j.Relays)
                 .SequenceEqual(b.Jobs.Where(j => j.Enabled && j.Relays != 0).Select(j => j.Relays));
+        }
+    }
+
+    // Under the poller's lock: one Shelly.ListMethods, which sets _hasSchedules from whether it lists Schedule.List.
+    // It lists "only the methods allowed for the particular user/channel that's making the request", so while the app
+    // has a password, a list without Schedule.List counts only from a request that went with the digest: an answer to a
+    // request without it may be a shorter list, and would hide schedules that switch relays. Such an answer tells
+    // nothing. A refusal or an answer that can't be read leaves it unknown too, and returns true: Schedule.List may
+    // still be asked.
+    // No answer, a password refused or a 429 also leaves it unknown, and returns false: asking more would only wait or
+    // count toward the device's brute-force protection.
+    private async Task<bool> ReadMethodsAsync(BoardEndpoint target, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var id = NextId();
+            var (result, signed) = await CallSignedAsync(ShellyJson.WriteRequest(id, ShellyApi.ListMethods), id, ShellyTraceText.Request(ShellyApi.ListMethods), routine: true, target, cancellationToken)
+                .ConfigureAwait(false);
+            var hasSchedules = ShellyJson.ReadMethods(result).Contains(ShellyApi.ScheduleList);
+            _methodsFailed = false;
+            if (!hasSchedules && !signed && Password.Length > 0)
+            {
+                Trace(BoardTraceDirection.Received, ShellyTraceText.MethodsUnsigned(), isRoutine: true);
+                return true;
+            }
+
+            _hasSchedules = hasSchedules;
+            Trace(BoardTraceDirection.Received, ShellyTraceText.Methods(hasSchedules), isRoutine: true);
+            return true;
+        }
+        catch (Exception ex) when (ex is ShellyRpcException or ShellyProtocolException)
+        {
+            // The device answered (a refusal is traced by CallAsync). A toast only the first time on this connection.
+            Trace(BoardTraceDirection.None, ShellyTraceText.MethodsNotRead(ex.Message), isError: true, isRoutine: _methodsFailed);
+            _methodsFailed = true;
+            return true;
+        }
+        catch (Exception ex) when (IsNoAnswer(ex) || IsNotTaken(ex) || ex is UriFormatException)
+        {
+            // Traced by CallAsync or PostAsync.
+            Trace(BoardTraceDirection.None, ShellyTraceText.MethodsNotRead(ex.Message), isError: true, isRoutine: _methodsFailed);
+            _methodsFailed = true;
+            return false;
         }
     }
 
@@ -1223,6 +1298,12 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     /// </summary>
     private async Task<JsonElement> CallAsync(byte[] frame, int id, string text, bool routine, BoardEndpoint target, CancellationToken cancellationToken)
     {
+        return (await CallSignedAsync(frame, id, text, routine, target, cancellationToken).ConfigureAwait(false)).Result;
+    }
+
+    // As CallAsync, and whether the request that got the result went with the password's digest.
+    private async Task<(JsonElement Result, bool Signed)> CallSignedAsync(byte[] frame, int id, string text, bool routine, BoardEndpoint target, CancellationToken cancellationToken)
+    {
         var answer = await AuthenticatedPostAsync(frame, text, routine, target, cancellationToken).ConfigureAwait(false);
         switch (answer.StatusCode)
         {
@@ -1234,7 +1315,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
                     throw new ShellyRpcException(error);
                 }
 
-                return parsed.Result!.Value;
+                return (parsed.Result!.Value, answer.Signed);
             case HttpStatusCode.TooManyRequests:
                 // After wrong passwords, or with too many clients: the screens say to wait, and to check a new password.
                 var throttled = new ShellyThrottledException(new ConnectionProblem(ConnectionProblemKind.AskedToWait, _model));
@@ -1376,7 +1457,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             IReadOnlyList<string> challenges = response.StatusCode == HttpStatusCode.Unauthorized && response.Headers.TryGetValues("WWW-Authenticate", out var values)
                 ? [.. values]
                 : [];
-            return new Answer(response.StatusCode, body, ShellyTraceText.Answer((int)response.StatusCode, Encoding.UTF8.GetString(body)), challenges);
+            return new Answer(response.StatusCode, body, ShellyTraceText.Answer((int)response.StatusCode, Encoding.UTF8.GetString(body)), challenges, authorization is not null);
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -1440,5 +1521,6 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         }
     }
 
-    private sealed record Answer(HttpStatusCode StatusCode, byte[] Body, string Text, IReadOnlyList<string> Challenges);
+    // Signed: the request went with the password's digest.
+    private sealed record Answer(HttpStatusCode StatusCode, byte[] Body, string Text, IReadOnlyList<string> Challenges, bool Signed);
 }

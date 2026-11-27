@@ -243,6 +243,38 @@ public static class ShellyJson
     }
 
     /// <summary>
+    /// Reads <c>Shelly.ListMethods</c>'s result ("Shelly", "Shelly.ListMethods"): <c>methods</c> an array of at most
+    /// <see cref="ShellyApi.MaxMethods"/> strings, the "Names of the methods allowed". Anything else is refused.
+    /// </summary>
+    public static IReadOnlySet<string> ReadMethods(JsonElement result)
+    {
+        if (result.ValueKind != JsonValueKind.Object
+            || !result.TryGetProperty("methods", out var methods)
+            || methods.ValueKind != JsonValueKind.Array)
+        {
+            throw new ShellyProtocolException("The Shelly's methods have no list.");
+        }
+
+        if (methods.GetArrayLength() > ShellyApi.MaxMethods)
+        {
+            throw new ShellyProtocolException($"The Shelly lists more than {ShellyApi.MaxMethods} methods.");
+        }
+
+        HashSet<string> read = new(StringComparer.Ordinal);
+        foreach (var method in methods.EnumerateArray())
+        {
+            if (method.ValueKind != JsonValueKind.String)
+            {
+                throw new ShellyProtocolException("The Shelly lists a method that isn't a name.");
+            }
+
+            read.Add(method.GetString()!);
+        }
+
+        return read;
+    }
+
+    /// <summary>
     /// Reads <c>Schedule.List</c>'s result ("Schedule", "Schedule.List" and "Schedule Object Structure"): <c>jobs</c> an
     /// array of at most <see cref="ShellyApi.MaxScheduleJobs"/> objects, each with a whole-number <c>id</c> of its own,
     /// <c>enable</c> true or false (true when missing, as the docs say), and <c>calls</c> an array of at most

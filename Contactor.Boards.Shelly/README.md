@@ -17,18 +17,28 @@ The pages, and what the app takes from each:
 | General → *RPC Protocol* | The request frame (`id`, `src`, `method`, `params`) and the response frame (`id`, `src`, `dst`, and `result` or `error`, never both) |
 | General → *RPC Channels* | `POST /rpc` with the whole frame as the body, answered with a whole frame. HTTP has no keepalive and no notifications |
 | General → *Authentication* | Digest with SHA-256 (RFC 7616), user `admin`, realm the device id. The 401 challenge in `WWW-Authenticate`. Nonce reuse with `nc`, `stale=true`, 1 hour and 30,000 requests a nonce, and 429 after wrong passwords (firmware 2.0.0 and later). A new challenge for every request before 2.0.0. `Shelly.GetDeviceInfo` needs no password |
-| General → *Common Errors* | The error object (`code`, `message`), and -109 FAILED PRECONDITION, e.g. "Overtemp condition present" |
+| General → *Common Errors* | The error object (`code`, `message`), and -109 FAILED PRECONDITION, e.g. "Overtemp condition present", also "when a reboot has been scheduled and the device is shutting down". -114 UNAVAILABLE: "a service is unavailable" (read 2026-11-27). The page has no code for a method the device hasn't |
 | General → *Firmware Update Policy* | The Plus devices (Plus 1, Plus 1PM, Plus 2PM, Plus Plug S …) stay on firmware 1.7.x |
-| Components and Services → *Shelly* | `Shelly.GetDeviceInfo` (`id`, `model`, `gen`, `ver`, `profile`) and `Shelly.GetStatus` (a member per component, e.g. `switch:0`), with their examples |
+| Components and Services → *Shelly* | `Shelly.GetDeviceInfo` (`id`, `model`, `gen`, `ver`, `profile`) and `Shelly.GetStatus` (a member per component, e.g. `switch:0`), with their examples. `Shelly.ListMethods` (read 2026-11-27): "lists all available RPC methods. It takes into account both ACL and authentication restrictions and only lists the methods allowed for the particular user/channel that's making the request", no parameters, and its result `methods`, "array of type string", "Names of the methods allowed", with the example of a Pro 4PM, which lists `Schedule.List`. The example's curl response puts the list in `params` instead of `result`, against "RPC Protocol"; the app reads `result`, as for every other method, and the HTTP GET response has the same list |
 | Components and Services → *Switch* | `Switch.Set` (`id` and `on`, and its result `was_on`) and the switch status (`output`). `Switch.GetConfig` (`id`) and `Switch.SetConfig` (`id` and `config`, and its result `restart_required`), with their examples. In the configuration, `initial_state`: "Output state to set on power_on. Range of values: off, on, restore_last, match_input", `auto_on`: "True if the "Automatic ON" function is enabled, false otherwise", `in_mode`: "Mode of the associated input. Range of values: momentary, follow, flip, detached, cycle (if applicable), activate (if applicable)" (issue #622, read 2026-11-25), its "Cycle in_mode explanation", and `in_locked`: "If True, all changes to physical inputs are ignored, regardless of mode". `Switch.Toggle` (`id`), `Switch.SetAll` (`on`) and `Switch.SetMany` (`ids` and `on`), only to read them in a schedule |
 | Components and Services → *Schedule* | The job (`id`, `enable`, "true by default", `timespec`, `calls` with `method` and `params`), "a limit of 20 schedule instances per device" and "a limit of 5 calls per schedule job". `Schedule.List` (`jobs` and `rev`) and `Schedule.Update` (`id` and `enable`, and its result `rev`), with their examples |
 | Components and Services → *Input* (read 2026-11-20) | The input's status: `state` "boolean or null (only for type switch, button)", "null if the input instance is stateless, i.e. for type button", `percent` for type `analog` and `counts` for type `count`. `enable`: "When disabled, the input instance ... reports status properties as null". Inputs are "identified with input:<id>". The `Input.GetStatus` example `{"id":0,"state":false}` |
 | Devices → *Shelly Plus 1*, *Pro 1*, *Plus 2PM*, *Pro 3*, *Pro 4PM* (read 2026-11-20) | Their inputs: `input:0` on the Plus 1, `input:0` and `input:1` on the Pro 1 and Plus 2PM, `input:0` to `input:2` on the Pro 3, and `input:0` to `input:3` on the Pro 4PM |
 | Components and Services → *Sys* | `cfg_rev` in the status: "Configuration revision. This number will be incremented for every configuration change of a device component. If the new config value is the same as the old one there will be no change of this property". `schedule_rev`: "Schedules revision number, present if schedules are enabled" |
-| *Changelog* | 2.0.0 (2026-07-13): "Authentication: Implement brute-force protection" and "RFC 7616-compliant nonce management" |
+| *Changelog* | 2.0.0 (2026-07-13): "Authentication: Implement brute-force protection" and "RFC 7616-compliant nonce management". 0.11.0: "Webhooks and schedules revisions", so older firmware has no `schedule_rev`. 0.11.4: "RPC handlers are disabled when a soft reboot is scheduled. Error code will be -109" (both read 2026-11-27) |
 
 Also RFC 7616, *HTTP Digest Access Authentication*, section 3.4.1 (the response with qop "auth") and section 3.9.1
 (the SHA-256 example the tests use).
+
+Community sources (read 2026-11-20, issue #535). The app takes no format from them; each fact is on the list in "To
+check on a real board":
+
+- aioshelly (https://github.com/home-assistant-libs/aioshelly), the library behind Home Assistant's Shelly
+  integration: its recorded devices answer a method they haven't with error 404 "No handler for …" (Shelly X MOD1) or
+  -114 "Method not found!" (Wall Display). Since 2026-04 it asks `Shelly.ListMethods` to tell whether a device has a
+  method. A battery H&T sensor's recorded status has no `schedule_rev`; every recorded relay device has it.
+- Mongoose OS (https://mongoose-os.com), which the Gen2 firmware is understood to build on: a method it hasn't over
+  `POST /rpc` gets HTTP 200 with error 404.
 
 ## Models
 
@@ -67,10 +77,11 @@ HTTP, so the app polls it every 2 s.
 | Switch one relay | `{"id":3,"src":"contactor","method":"Switch.Set","params":{"id":1,"on":true}}` | `{"was_on":false}` |
 | Read one relay's settings | `{"id":4,"src":"contactor","method":"Switch.GetConfig","params":{"id":1}}` | `{"id":1,"name":null,"in_mode":"follow","initial_state":"match_input",…}` |
 | Set one relay's state after a power cut | `{"id":5,"src":"contactor","method":"Switch.SetConfig","params":{"id":1,"config":{"initial_state":"off"}}}` | `{"restart_required":false}` |
-| Read the schedules | `{"id":6,"src":"contactor","method":"Schedule.List"}` | `{"jobs":[{"id":1,"enable":true,"timespec":"0 0 8 * * *","calls":[{"method":"Switch.Set","params":{"id":0,"on":false}}]}],"rev":4}` |
-| Turn one schedule off | `{"id":7,"src":"contactor","method":"Schedule.Update","params":{"id":3,"enable":false}}` | `{"rev":11}` |
-| Turn one relay's auto-on off | `{"id":8,"src":"contactor","method":"Switch.SetConfig","params":{"id":1,"config":{"auto_on":false}}}` | `{"restart_required":false}` |
-| Stop one relay's input switching it | `{"id":9,"src":"contactor","method":"Switch.SetConfig","params":{"id":1,"config":{"in_mode":"detached"}}}` | `{"restart_required":false}` |
+| Which methods it has | `{"id":6,"src":"contactor","method":"Shelly.ListMethods"}` | `{"methods":["Switch.SetConfig",…,"Schedule.List",…,"Shelly.SetProfile"]}` |
+| Read the schedules | `{"id":7,"src":"contactor","method":"Schedule.List"}` | `{"jobs":[{"id":1,"enable":true,"timespec":"0 0 8 * * *","calls":[{"method":"Switch.Set","params":{"id":0,"on":false}}]}],"rev":4}` |
+| Turn one schedule off | `{"id":8,"src":"contactor","method":"Schedule.Update","params":{"id":3,"enable":false}}` | `{"rev":11}` |
+| Turn one relay's auto-on off | `{"id":9,"src":"contactor","method":"Switch.SetConfig","params":{"id":1,"config":{"auto_on":false}}}` | `{"restart_required":false}` |
+| Stop one relay's input switching it | `{"id":10,"src":"contactor","method":"Switch.SetConfig","params":{"id":1,"config":{"in_mode":"detached"}}}` | `{"restart_required":false}` |
 
 - `switch:0` is relay 1. `Switch.Set`'s `id` is the relay number minus 1.
 - The app switches one relay per `Switch.Set`. It never sends `Switch.SetAll`, `Switch.Toggle` or a method that
@@ -85,7 +96,7 @@ HTTP, so the app polls it every 2 s.
 
 `ShellyJsonTests` reads the docs' own examples, byte for byte: the `Shelly.GetStatus` result of a Pro 4PM (with
 `cfg_rev` 26, and its four inputs with the state false), the input status of `Input.GetStatus`, the `/shelly` answer, the `Switch.Set` answers of "RPC Channels" and "RPC Protocol", the
-`Switch.GetConfig` and `Switch.SetConfig` answers of "Switch", the `Schedule.List` answer of "Schedule", and the error
+`Switch.GetConfig` and `Switch.SetConfig` answers of "Switch", the `Shelly.ListMethods` answer of "Shelly", the `Schedule.List` answer of "Schedule", and the error
 frames of "RPC Protocol" (-105) and
 "Common Errors" (-109).
 
@@ -202,6 +213,23 @@ The app reads three kinds of rules on the device that switch its relays without 
   `sys.schedule_rev` differs from the one the schedules were read with. While `schedule_rev` can't tell (the status
   has none, or the last read failed), a poll reads them again once a minute (`ShellyClient.SettingsInterval`). Never
   in the read that confirms a `Switch.Set`.
+  - Before the first `Schedule.List` of a connection, the app asks `Shelly.ListMethods` once, with the password (it
+    lists only what the caller may call) (issue #535):
+    - `Schedule.List` not in `methods`: the device has no schedules. The schedules are none, so the device's auto-on
+      and inputs still show, and the app sends no `Schedule.List` and asks nothing more for the schedules until the
+      next connection.
+    - While the app has a password, that counts only from an answer to a request with the digest. The method "only
+      lists the methods allowed for the particular user/channel", so an answer to a request without the digest may be
+      a shorter list, and would hide schedules that switch relays. Such an answer without `Schedule.List` tells
+      nothing.
+    - `Schedule.List` in `methods`: as below.
+    - An error frame, or an answer the app can't read (no `methods` array, a name that isn't a string, more than
+      1,000 names, the app's own limit): it tells nothing. `Schedule.List` is asked as before, and `Shelly.ListMethods`
+      again with the next schedules read (a minute later while they can't be read).
+    - No answer, a password refused or a 429: no `Schedule.List` either, and the rules are unknown. Both are asked
+      again a minute later.
+  - A status without `schedule_rev` never means "no schedules": firmware before 0.11.0 has none ("Changelog").
+  - Every error answer to `Schedule.List`, -109 and -114 too, makes the rules unknown.
   - An enabled job is a `Timer` rule on each relay its calls switch: `Switch.Set` and `Switch.Toggle` with an `id`,
     `Switch.SetAll` (every relay) and `Switch.SetMany` with `ids`. A call the app can't read, an id the device hasn't
     and any other method don't count. A disabled job is no rule.
@@ -359,8 +387,14 @@ The `Shelly` section applies to all four entries:
   4-relay device, each of type `switch` and open at start. `SetInputAsync` closes or opens one, and the simulator's
   page has a checkbox per input. `SetInputType`, for the tests only (the page has no control for it), makes one a
   `button` (`state` null) or `analog` (`percent` 0 or 100) "at the device", which grows `cfg_rev`.
-- Any other method gets the error 404 "No handler for …", which isn't from the docs: the app sends no
-  other method.
+- It answers `Shelly.ListMethods` with `methods`, the methods it answers, as "Shelly" shows. `HasSchedules` false
+  (true at start) makes a device without schedules: `Shelly.ListMethods` lists no Schedule method, the status has no
+  `schedule_rev`, and `Schedule.List` and `Schedule.Update` get the error for a method it hasn't. `FailListMethods`
+  refuses `Shelly.ListMethods` and `SilentListMethods` never answers it. `AnonymousListMethods`, for the tests only,
+  answers it without the digest, on a device with a password, with only `Shelly.GetDeviceInfo` and
+  `Shelly.ListMethods` (the docs don't say whether a device does this). The page has a checkbox for `HasSchedules`.
+- Any other method gets the error 404 "No handler for …", which isn't from the docs but from the community sources
+  above.
 - With a password it asks for the digest, in the way of the firmware it is set to (`Firmware`, "2.0.0" by default):
   - 2.0.0 and later: a base64 nonce for many requests, `nc` strictly higher each time, `stale=true` after 1 hour or
     30,000 requests (on its `TimeProvider`), 32 nonces at most, and 429 after more than 10 wrong passwords in 10
@@ -410,6 +444,13 @@ The `Shelly` section applies to all four entries:
   and that `Schedule.Update {id, enable:false}` leaves the job's `timespec` and `calls` as they were.
 - What `Schedule.List` answers on a device with no schedules, and if a device answers without `schedule_rev` or
   refuses `Schedule.List` ("present if schedules are enabled"). The app then shows the rules as unknown.
+- If any relay Shelly lacks the Schedule service, so `Shelly.ListMethods` lists no `Schedule.List`, and what it
+  answers to `Schedule.List` then (the community sources saw 404 "No handler for …" and -114 "Method not found!").
+- That `Shelly.ListMethods` lists `Schedule.List` on a device with schedules, with and without a password, and that
+  its answer comes in `result` (the docs' curl example shows `params`).
+- On a device with a password, that `Shelly.ListMethods` without the digest gets 401, not a shorter list.
+- If `schedule_rev` can be missing on a relay device with firmware 0.11.0 or later (a battery H&T sensor has none).
+- That a method the device hasn't gets HTTP 200 with an error frame, as Mongoose OS answers, not HTTP 404.
 - What `Schedule.Update` answers for a job that no longer exists.
 - That a schedule made in the Shelly app or the cloud is in `Schedule.List`, with its calls as `Switch.Set`.
 - That `auto_on` turns the relay on again after `auto_on_delay`, that `Switch.SetConfig` with `auto_on:false` stops
