@@ -93,6 +93,17 @@ public sealed class OwnRulesTests
         return new OwnRules([T1, T2, T3, A4], [[T1, T2], [T3, T2]]);
     }
 
+    // A unit with relays 1, 2 and 3 went off, relay 1's taken: relay 3's went with it, and relay 2's, which the app
+    // can't turn off, stays (issue #604, as GoesWith).
+    [Fact]
+    public void Should_LeaveOutARuleTheAppCantTurnOff_FromWhatWentOff()
+    {
+        var result = OwnRulesTurnOff.From([T1], [([T1, T2, T3], true)], cantTurnOff: [T2]);
+
+        Assert.Equal([T3], result.AlsoOff);
+        Assert.Empty(result.PartlyOff);
+    }
+
     // Turning off relay 1's timer turns off A, but B still makes relay 2's: nothing else goes. Turning off 1 and 3
     // together turns off both, and relay 2's goes with them.
     [Fact]

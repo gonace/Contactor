@@ -45,15 +45,22 @@ public sealed class OwnRulesTurnOff
     /// <summary>
     /// The rules <paramref name="taken"/>, and what else went off with the <paramref name="units"/> the board turned off:
     /// each unit's rules and whether the board confirmed it off. A rule not taken in a unit that went off is also off
-    /// when every unit that holds it went off, otherwise partly off.
+    /// when every unit that holds it went off, otherwise partly off. Never a rule of <paramref name="cantTurnOff"/>
+    /// (<see cref="OwnRules.CantTurnOff"/>), which stays, as <see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/> says.
     /// </summary>
-    public static OwnRulesTurnOff From(IReadOnlyList<OwnRule> taken, IEnumerable<(IReadOnlyCollection<OwnRule> Rules, bool Off)> units)
+    public static OwnRulesTurnOff From(
+        IReadOnlyList<OwnRule> taken,
+        IEnumerable<(IReadOnlyCollection<OwnRule> Rules, bool Off)> units,
+        IEnumerable<OwnRule>? cantTurnOff = null)
     {
         ArgumentNullException.ThrowIfNull(taken);
         ArgumentNullException.ThrowIfNull(units);
         List<(IReadOnlyCollection<OwnRule> Rules, bool Off)> all = [.. units];
         HashSet<OwnRule> done = [.. taken];
-        List<OwnRule> touched = [.. all.Where(u => u.Off).SelectMany(u => u.Rules).Distinct().Where(r => !done.Contains(r)).OrderBy(r => r.Relay).ThenBy(r => r.Kind)];
+        HashSet<OwnRule> stays = [.. cantTurnOff ?? []];
+        List<OwnRule> touched = [.. all.Where(u => u.Off).SelectMany(u => u.Rules).Distinct()
+            .Where(r => !done.Contains(r) && !stays.Contains(r))
+            .OrderBy(r => r.Relay).ThenBy(r => r.Kind)];
         List<OwnRule> also = [.. touched.Where(r => all.Where(u => u.Rules.Contains(r)).All(u => u.Off))];
         return new OwnRulesTurnOff(taken, also, [.. touched.Except(also)]);
     }
