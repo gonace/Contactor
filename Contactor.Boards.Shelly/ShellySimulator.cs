@@ -215,6 +215,16 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
     /// <summary>When true, <c>Shelly.ListMethods</c> is refused with <see cref="Refusal"/>.</summary>
     public bool FailListMethods { get; set; }
 
+    /// <summary>When true, the device never answers <c>Shelly.ListMethods</c>, holding the connection until the simulator stops.</summary>
+    public bool SilentListMethods { get; set; }
+
+    /// <summary>
+    /// For the tests only: with a password, <c>Shelly.ListMethods</c> without the digest gets no 401 but a list of only
+    /// <c>Shelly.GetDeviceInfo</c> and <c>Shelly.ListMethods</c>, what a caller without the password may call. The docs
+    /// say it "only lists the methods allowed for the particular user/channel", and don't say whether a device does this.
+    /// </summary>
+    public bool AnonymousListMethods { get; set; }
+
     /// <summary>The schedules whose <c>Schedule.Update</c> is refused with <see cref="Refusal"/>, by job id.</summary>
     public IReadOnlySet<long> FailScheduleUpdates { get; set; } = new HashSet<long>();
 
@@ -855,7 +865,7 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
             Interlocked.Increment(ref _requestCount);
             if (response is null)
             {
-                // Never answered (SilentConfigRelays, SilentScheduleUpdates): held until the simulator stops.
+                // Never answered (SilentConfigRelays, SilentScheduleUpdates, SilentListMethods): held until the simulator stops.
                 await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -984,6 +994,20 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
         }
 
         // "When enabled, all communication is protected except … the RPC method Shelly.GetDeviceInfo".
+        if (HasLogin && AnonymousListMethods && rpc.Method == ShellyApi.ListMethods && http.Authorization is null)
+        {
+            return Result(
+                rpc,
+                writer =>
+                {
+                    writer.WriteStartArray("methods");
+                    writer.WriteStringValue(ShellyApi.ListMethods);
+                    writer.WriteStringValue(ShellyApi.GetDeviceInfo);
+                    writer.WriteEndArray();
+                },
+                "Methods a caller without the password may call");
+        }
+
         if (HasLogin && rpc.Method != ShellyApi.GetDeviceInfo && Authenticate(http.Authorization) is { } refusal)
         {
             return refusal;
@@ -1398,8 +1422,14 @@ public sealed class ShellySimulator : ISimulatedBoard, ISimulatedBoardRejectConn
 
     // As "Shelly.ListMethods": "methods", the names of the methods it answers; the Schedule methods only while it has
     // schedules.
-    private byte[] ListMethods(ShellyRequest rpc)
+    private byte[]? ListMethods(ShellyRequest rpc)
     {
+        if (SilentListMethods)
+        {
+            Trace(BoardTraceDirection.None, "No answer to the methods request", null, isError: true);
+            return null;
+        }
+
         if (FailListMethods)
         {
             return Error(rpc, Refusal);

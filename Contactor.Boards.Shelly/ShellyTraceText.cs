@@ -172,6 +172,15 @@ public static class ShellyTraceText
         return hasSchedules ? "Methods: has schedules" : "Methods: has no schedules";
     }
 
+    /// <summary>
+    /// A <c>Shelly.ListMethods</c> without <c>Schedule.List</c> that answered a request without the password's digest:
+    /// it may list only what a caller without the password may call.
+    /// </summary>
+    public static string MethodsUnsigned()
+    {
+        return "Methods: answered without the password, so they don't tell whether it has schedules";
+    }
+
     /// <summary>A <c>Shelly.ListMethods</c> that failed: "Methods not read (…): whether it has schedules is unknown".</summary>
     public static string MethodsNotRead(string reason)
     {

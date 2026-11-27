@@ -83,8 +83,9 @@ public static class ShellyApi
     /// <summary>
     /// "lists all available RPC methods. It takes into account both ACL and authentication restrictions and only lists
     /// the methods allowed for the particular user/channel that's making the request": its result has <c>methods</c>,
-    /// an array of strings ("Shelly", "Shelly.ListMethods"). Asked once a connection, to tell whether the device has
-    /// <see cref="ScheduleList"/>.
+    /// an array of strings ("Shelly", "Shelly.ListMethods"). Asked once a connection while it answers (again with the
+    /// next schedules read after an error frame or an answer that can't be read), to tell whether the device has
+    /// <see cref="ScheduleList"/>; with a password, only from an answer to a request with the digest.
     /// </summary>
     public const string ListMethods = "Shelly.ListMethods";
 

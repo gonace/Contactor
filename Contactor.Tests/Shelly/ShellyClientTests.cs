@@ -1189,6 +1189,51 @@ public sealed class ShellyClientTests
         Assert.Equal([new OwnRule(1, OwnRuleKind.AutoOn)], run.Client.State.OwnRules!);
     }
 
+    // Shelly.ListMethods lists "only the methods allowed for the particular user/channel": with a password, a list
+    // without Schedule.List that answered a request without the digest tells nothing, so the schedules are still read.
+    // Firmware 1.7 sends each request without the digest first.
+    [Fact]
+    public async Task Should_StillReadTheSchedules_WhenAListWithoutThemAnsweredARequestWithoutThePassword()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay, Password, firmware: "1.7.1");
+        simulator.AnonymousListMethods = true;
+        simulator.AddSchedule("""[{"method":"Switch.Set","params":{"id":0,"on":true}}]""");
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, Password);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        Assert.Equal([ShellyApi.ListMethods], simulator.Received.Where(r => r.StartsWith(ShellyApi.ListMethods, StringComparison.Ordinal)));
+        Assert.Contains($"{ShellyApi.ScheduleList} (signed)", simulator.Received);
+        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], run.Client.State.OwnRules!);
+    }
+
+    // No answer to Shelly.ListMethods: no Schedule.List either, the rules are unknown and the device stays connected.
+    // Both are asked again a minute later, not at every poll.
+    [Fact]
+    public async Task Should_SkipTheSchedules_WhenListMethodsGetsNoAnswer_AndAskAgainAMinuteLater()
+    {
+        await using var simulator = Start(ShellyModels.OneRelay);
+        simulator.SilentListMethods = true;
+        await using var run = ClientRun.Start(simulator, ShellyModels.OneRelay, pollSeconds: 30);
+
+        await Wait.UntilAsync(() => simulator.Received.Contains(ShellyApi.ListMethods) && run.Time.WaitsOnly(ShellyClient.RequestTimeout));
+        run.Time.Advance(ShellyClient.RequestTimeout);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
+
+        Assert.DoesNotContain(ShellyApi.ScheduleList, simulator.Received);
+        Assert.Null(run.Client.State.OwnRules);
+        Assert.Contains(run.Traces, t => t.Text.StartsWith("Methods not read", StringComparison.Ordinal) && t.IsError);
+
+        simulator.SilentListMethods = false;
+        await run.PollAsync();
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ListMethods));
+        Assert.True(run.Client.State.IsConnected);
+
+        await run.PollAsync();
+        Assert.Equal(2, simulator.Received.Count(r => r == ShellyApi.ListMethods));
+        Assert.Equal(1, simulator.Received.Count(r => r == ShellyApi.ScheduleList));
+        Assert.Equal(OwnRules.Empty, run.Client.State.OwnRules);
+    }
+
     // The rules are read before the device's first connected state, so unknown rules while it answers mean they couldn't
     // be read, which the screens say (issue #551); a refused read is in the test below.
     [Fact]

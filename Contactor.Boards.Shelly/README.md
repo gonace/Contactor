@@ -218,6 +218,10 @@ The app reads three kinds of rules on the device that switch its relays without 
     - `Schedule.List` not in `methods`: the device has no schedules. The schedules are none, so the device's auto-on
       and inputs still show, and the app sends no `Schedule.List` and asks nothing more for the schedules until the
       next connection.
+    - While the app has a password, that counts only from an answer to a request with the digest. The method "only
+      lists the methods allowed for the particular user/channel", so an answer to a request without the digest may be
+      a shorter list, and would hide schedules that switch relays. Such an answer without `Schedule.List` tells
+      nothing.
     - `Schedule.List` in `methods`: as below.
     - An error frame, or an answer the app can't read (no `methods` array, a name that isn't a string, more than
       1,000 names, the app's own limit): it tells nothing. `Schedule.List` is asked as before, and `Shelly.ListMethods`
@@ -386,7 +390,9 @@ The `Shelly` section applies to all four entries:
 - It answers `Shelly.ListMethods` with `methods`, the methods it answers, as "Shelly" shows. `HasSchedules` false
   (true at start) makes a device without schedules: `Shelly.ListMethods` lists no Schedule method, the status has no
   `schedule_rev`, and `Schedule.List` and `Schedule.Update` get the error for a method it hasn't. `FailListMethods`
-  refuses `Shelly.ListMethods`. The page has a checkbox for `HasSchedules`.
+  refuses `Shelly.ListMethods` and `SilentListMethods` never answers it. `AnonymousListMethods`, for the tests only,
+  answers it without the digest, on a device with a password, with only `Shelly.GetDeviceInfo` and
+  `Shelly.ListMethods` (the docs don't say whether a device does this). The page has a checkbox for `HasSchedules`.
 - Any other method gets the error 404 "No handler for …", which isn't from the docs but from the community sources
   above.
 - With a password it asks for the digest, in the way of the firmware it is set to (`Firmware`, "2.0.0" by default):
@@ -442,6 +448,7 @@ The `Shelly` section applies to all four entries:
   answers to `Schedule.List` then (the community sources saw 404 "No handler for …" and -114 "Method not found!").
 - That `Shelly.ListMethods` lists `Schedule.List` on a device with schedules, with and without a password, and that
   its answer comes in `result` (the docs' curl example shows `params`).
+- On a device with a password, that `Shelly.ListMethods` without the digest gets 401, not a shorter list.
 - If `schedule_rev` can be missing on a relay device with firmware 0.11.0 or later (a battery H&T sensor has none).
 - That a method the device hasn't gets HTTP 200 with an error frame, as Mongoose OS answers, not HTTP 404.
 - What `Schedule.Update` answers for a job that no longer exists.
