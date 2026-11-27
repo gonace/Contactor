@@ -944,6 +944,9 @@
   <data name="Events.OwnRules.NamedEndingInS" xml:space="preserve">
     <value>{0}</value>
   </data>
+  <data name="Events.OwnRules.Part" xml:space="preserve">
+    <value>, och en del av {0}</value>
+  </data>
   <data name="Events.OwnRules.Relay" xml:space="preserve">
     <value>relä {0}</value>
   </data>
@@ -961,6 +964,9 @@
   </data>
   <data name="Events.OwnRules.TurnedOff.AutoOn" xml:space="preserve">
     <value>{0} gjorde att {1} inte längre slår på {2} igen av sig självt</value>
+  </data>
+  <data name="Events.OwnRules.TurnedOffPart" xml:space="preserve">
+    <value>{0} stängde av en del av {1} {2} för {3}</value>
   </data>
   <data name="Events.OwnRules.Who.TheBoard" xml:space="preserve">
     <value>kortet</value>

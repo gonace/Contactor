@@ -201,7 +201,10 @@ The week schedule is the board's own rules (`SmartDenApi.OwnRules`: `Reads`, `Tu
   that isn't written isn't returned, and the next state shows the rules as they are now. When no timer's rows can go,
   nothing is written. It never writes the outputs code, so the row's other relays lose
   their timer too: a row is turned off whole. A refused write doesn't stop the others. It returns the timers whose rows
-  all took it, and reads the schedule back in the same command. A timer whose relay has no rows, as read before and
+  all took it (`Taken`), and reads the schedule back in the same command. The rows that went off are also returned as
+  rules (issue #604): another relay's timer whose rows all went off as `AlsoOff`, and a timer of which only some rows
+  went off, asked or not, as `PartlyOff`. So when the board refuses one of a timer's rows, that timer isn't taken, but
+  what did go off is returned instead of an error. Only when no row went off does it throw. A timer whose relay has no rows, as read before and
   again, is returned with nothing written for it. When the schedule isn't known, it sends nothing.
 - It doesn't read the pulse width of each relay (0x6000 to 0x600F): the board turns a relay off again after that time,
   but never on, so it isn't a rule. Nor "Save Outputs" (0x6800), which is what the relays do after a power cut.

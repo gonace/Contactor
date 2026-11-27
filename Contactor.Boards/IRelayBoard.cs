@@ -83,16 +83,19 @@ public interface IRelayBoard
     /// accord). Sent at once or not at all, as <see cref="TurnOnAsync"/>: without a connection it throws
     /// <see cref="BoardNotConnectedException"/> and is never queued. Throws <see cref="ArgumentOutOfRangeException"/> for
     /// a relay or a kind of rule the board doesn't have, before anything is sent. A rule given more than once is taken
-    /// once. Returns the rules the board took, each once, and none (sending nothing) for none asked; when it took none
-    /// of them, it throws instead. Turning off a rule turns off the units behind it (<see cref="OwnRules.Units"/>), so it
-    /// may also remove other rules (<see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/>), e.g. a schedule that switches
-    /// two relays: those aren't returned. A rule the app can't turn off (<see cref="OwnRules.CantTurnOff"/>, as the
-    /// board last reported) isn't taken and nothing is sent for it. The next state confirms what is gone
-    /// (<see cref="BoardState.OwnRules"/>).
+    /// once. Returns what went off (<see cref="OwnRulesTurnOff"/>): the rules the board took, each once, and nothing
+    /// (sending nothing) for none asked; when nothing went off, it throws instead. Turning off a rule turns off the units
+    /// behind it (<see cref="OwnRules.Units"/>), so it may also remove other rules
+    /// (<see cref="OwnRules.GoesWith(IEnumerable{OwnRule})"/>), e.g. a schedule that switches two relays: those are
+    /// returned as <see cref="OwnRulesTurnOff.AlsoOff"/>. When some units of a rule went off and the board refused the
+    /// others, the rule isn't taken, and it is returned with the other rules of those units as
+    /// <see cref="OwnRulesTurnOff.PartlyOff"/> or <see cref="OwnRulesTurnOff.AlsoOff"/>, also when no rule asked was
+    /// taken. A rule the app can't turn off (<see cref="OwnRules.CantTurnOff"/>, as the board last reported) isn't taken
+    /// and nothing is sent for it. The next state confirms what is gone (<see cref="BoardState.OwnRules"/>).
     /// Throws <see cref="NotSupportedException"/> on a board that can't turn its rules off
     /// (<see cref="OwnRulesAbility.TurnsOff"/>), the default.
     /// </summary>
-    Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    Task<OwnRulesTurnOff> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
         throw new NotSupportedException("This board can't turn its own rules off.");
     }

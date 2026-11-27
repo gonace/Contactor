@@ -176,15 +176,17 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
     /// row above was deleted on the board's web page, an OFF row may stand where its ON row was). A row that is also behind
     /// an asked rule whose rows changed isn't written either, and its rules don't go, so no rule is left half off. A row's
     /// outputs code, state and time are never written. A refused write or one whose answer can't be read doesn't stop the
-    /// others. A rule given twice is taken once. Returns the rules asked whose rows all took it, in relay order, and a rule
-    /// whose relay has no rows as last read and still has none, with nothing written for it; none, and nothing sent, for
-    /// none asked.
+    /// others. A rule given twice is taken once. Returns as taken the rules asked whose rows all took it, in relay order,
+    /// and a rule whose relay has no rows as last read and still has none, with nothing written for it; nothing, and
+    /// nothing sent, for none asked. The rows that took it may hold other relays' timers, and a rule whose other rows
+    /// were refused: those are returned as also or partly off (<see cref="OwnRulesTurnOff.From"/>, issue #604), also when
+    /// no rule asked was taken.
     /// Throws <see cref="ArgumentOutOfRangeException"/> for another kind of rule or a relay the board doesn't have, and
     /// <see cref="BoardNotConnectedException"/> without a connection, both before anything is sent; and
     /// <see cref="BoardNotConnectedException"/> when the schedule isn't known or couldn't be read again, or every rule's
-    /// rows changed (nothing sent), the board took none of them or didn't answer.
+    /// rows changed (nothing sent), no row went off or the board didn't answer.
     /// </summary>
-    public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    public async Task<OwnRulesTurnOff> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rules);
         List<OwnRule> asked = [];
@@ -213,7 +215,7 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
 
         if (asked.Count == 0)
         {
-            return [];
+            return OwnRulesTurnOff.None;
         }
 
         if (!State.IsConnected)
@@ -223,9 +225,9 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
 
         try
         {
-            var taken = new StrongBox<IReadOnlyList<OwnRule>>([]);
+            var taken = new StrongBox<OwnRulesTurnOff>(OwnRulesTurnOff.None);
             await _poller.RunSwitchesAsync(token => TurnOffRowsAndReadAsync(asked, taken, token), cancellationToken).ConfigureAwait(false);
-            return taken.Value ?? [];
+            return taken.Value ?? OwnRulesTurnOff.None;
         }
         catch (Exception ex) when (IsNoAnswer(ex))
         {
@@ -435,8 +437,8 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
     }
 
     // Under the poller's lock: the schedule read again, then one FC 06 per row behind the timers asked that is still as
-    // the person saw it, then the board's state read back with the schedule. Puts the rules the board took in taken.
-    private async Task<CommandReading<SmartDenStatus>> TurnOffRowsAndReadAsync(IReadOnlyList<OwnRule> asked, StrongBox<IReadOnlyList<OwnRule>> taken, CancellationToken cancellationToken)
+    // the person saw it, then the board's state read back with the schedule. Puts what went off in taken.
+    private async Task<CommandReading<SmartDenStatus>> TurnOffRowsAndReadAsync(IReadOnlyList<OwnRule> asked, StrongBox<OwnRulesTurnOff> taken, CancellationToken cancellationToken)
     {
         // The schedule as last read, which the person saw.
         if (_schedule is not { } seen)
@@ -515,9 +517,14 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
             }
         }
 
-        // A timer is taken when it could go and every row behind it took the write.
+        // A timer is taken when it could go and every row behind it took the write. A row that went off also took the
+        // timers of the other relays it switches, and part of a timer whose other rows were refused (issue #604): read
+        // from the rows as the board has them now, where each row written is as it was seen.
         List<OwnRule> done = [.. ready.Where(r => seen.Switching(r.Relay).All(row => off.Contains(row.Row)))];
-        if (done.Count == 0)
+        var result = OwnRulesTurnOff.From(
+            [.. done.OrderBy(r => r.Relay)],
+            fresh.Rows.Select(row => ((IReadOnlyCollection<OwnRule>)[.. new ChannelMask(row.Relays).Channels.Select(r => new OwnRule(r, OwnRuleKind.Timer))], off.Contains(row.Row))));
+        if (!result.AnyOff)
         {
             if (!sent)
             {
@@ -525,13 +532,13 @@ public sealed class SmartDenClient : IPolledBoard<SmartDenStatus>, IDisposable, 
                 throw new BoardNotConnectedException("The smartDEN board's week schedule changed; nothing was sent.");
             }
 
-            // Never null here: a row was sent and no timer is done, so a write was refused or unreadable. The fallback only
-            // keeps the message from being null should that change.
-            var why = refusal ?? "no timer's rows all went off";
+            // Never null here: a row was sent and none went off, so every write was refused or unreadable. The fallback
+            // only keeps the message from being null should that change.
+            var why = refusal ?? "no row went off";
             throw unreadable ? new SmartDenProtocolException(why) : new BoardRefusedException(why);
         }
 
-        taken.Value = [.. done.OrderBy(r => r.Relay)];
+        taken.Value = result;
         try
         {
             return new CommandReading<SmartDenStatus>(await ReadStatusAsync(ScheduleRead.Now, cancellationToken).ConfigureAwait(false));

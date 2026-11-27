@@ -63,7 +63,7 @@ public sealed class WaveshareBoard : IRelayBoard
     /// anything is sent. A relay has one mode, so the rules for a relay are taken together. Returns the rules whose relay
     /// the board took, each once, in relay order; none, and nothing sent, for none asked.
     /// </summary>
-    public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    public async Task<OwnRulesTurnOff> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rules);
         if (!Capabilities.OwnRulesOrCantTell.TurnsOff)
@@ -98,11 +98,11 @@ public sealed class WaveshareBoard : IRelayBoard
         var mask = ChannelMask.Of(asked.Select(r => r.Relay));
         if (mask.IsEmpty)
         {
-            return [];
+            return OwnRulesTurnOff.None;
         }
 
         var taken = new ChannelMask(await _client.TurnOffModesAsync(mask.Bits, cancellationToken).ConfigureAwait(false));
-        return [.. asked.Where(r => taken.Contains(r.Relay)).OrderBy(r => r.Relay).ThenBy(r => r.Kind)];
+        return OwnRulesTurnOff.Of([.. asked.Where(r => taken.Contains(r.Relay)).OrderBy(r => r.Relay).ThenBy(r => r.Kind)]);
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default)

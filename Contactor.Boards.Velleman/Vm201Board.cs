@@ -60,7 +60,7 @@ public sealed class Vm201Board : IRelayBoard
     /// before anything is sent. A rule given twice is sent once. Returns the rules sent, in relay order; none, and nothing
     /// sent, for none asked.
     /// </summary>
-    public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    public async Task<OwnRulesTurnOff> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rules);
         var relays = ChannelMask.None;
@@ -87,11 +87,11 @@ public sealed class Vm201Board : IRelayBoard
         var mask = ToMask(relays);
         if (mask == 0)
         {
-            return [];
+            return OwnRulesTurnOff.None;
         }
 
         await _client.TurnOffTimersAsync(mask, cancellationToken).ConfigureAwait(false);
-        return ToOwnRules(mask);
+        return OwnRulesTurnOff.Of(ToOwnRules(mask));
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default)

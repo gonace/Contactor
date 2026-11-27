@@ -94,7 +94,7 @@ public sealed class SmartDenBoardTests
 
         Assert.Equal([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.Timer)], board.State.OwnRules);
 
-        Assert.Equal([new OwnRule(2, OwnRuleKind.Timer)], await board.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.Timer)], Cancel));
+        Assert.Equal([new OwnRule(2, OwnRuleKind.Timer)], (await board.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.Timer)], Cancel)).Taken);
 
         Assert.Equal(OwnRules.Empty, board.State.OwnRules);
         Assert.Equal(OwnRules.Empty, Assert.Single(rulesChanges).OwnRules);

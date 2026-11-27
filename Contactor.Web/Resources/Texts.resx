@@ -1043,6 +1043,10 @@
     <value>{0}'s</value>
     <comment>A board's name that ends in s, x or z in the genitive, e.g. "Lars's"; a language may add nothing.</comment>
   </data>
+  <data name="Events.OwnRules.Part" xml:space="preserve">
+    <value>, and part of {0}</value>
+    <comment>Added to Events.OwnRules.TurnedOff for the rules of which only part went off: {0} is e.g. "the timer for relay 4" (Events.OwnRules.With.Timer).</comment>
+  </data>
   <data name="Events.OwnRules.Relay" xml:space="preserve">
     <value>relay {0}</value>
   </data>
@@ -1064,6 +1068,10 @@
   <data name="Events.OwnRules.TurnedOff.AutoOn" xml:space="preserve">
     <value>{0} stopped {1} turning {2} on again by itself</value>
     <comment>{0} is the person, {1} "the board" or the board's name, {2} e.g. "relay 3".</comment>
+  </data>
+  <data name="Events.OwnRules.TurnedOffPart" xml:space="preserve">
+    <value>{0} turned off part of {1} {2} for {3}</value>
+    <comment>The board took none of the rules asked, but part of them went off. {0} is the person, {1} "the board's" or the board's name in the genitive, {2} e.g. "own timer", {3} e.g. "relay 1".</comment>
   </data>
   <data name="Events.OwnRules.Who.TheBoard" xml:space="preserve">
     <value>the board</value>

@@ -278,7 +278,10 @@ reads are routine in the Debug trace. Only a change in which relays the enabled 
   or another kind of rule, before anything is sent. A rule given twice is taken once.
 - It returns the rules asked that the device took, in relay order. A timer is taken when every job behind it took its
   update. An auto-on or an input is taken when its `Switch.SetConfig` was. A timer that no job switches any more, as last read, is taken without a request. A refused request is an
-  answer: the others still go. When the device took none, it throws `BoardNotConnectedException`. While the schedules
+  answer: the others still go. The jobs and switches that went off are also returned as rules (issue #604): another
+  relay's rule whose jobs or switches all went off as `AlsoOff`, and a rule of which only some went off, asked or
+  not, as `PartlyOff`, also when no rule asked was taken. When nothing went off, it throws
+  `BoardNotConnectedException`. While the schedules
   aren't known, a timer sends nothing.
 - In the same command, it reads the status and the schedules (after a timer) or every switch's settings (after an
   auto-on or an input) back, and the poller takes that as the new state.

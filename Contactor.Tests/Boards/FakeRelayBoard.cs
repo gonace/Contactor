@@ -336,6 +336,12 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// </summary>
     public bool HoldOwnRules { get; set; }
 
+    /// <summary>
+    /// When set, a turn-off of its own rules answers this and changes nothing, like a board that took only some of the
+    /// units behind them (issue #604); the next state shows what is left.
+    /// </summary>
+    public OwnRulesTurnOff? OwnRulesAnswer { get; set; }
+
     /// <summary>How many times the board was asked to turn its own rules off.</summary>
     public int OwnRulesTurnOffs => Volatile.Read(ref _ownRulesTurnOffs);
 
@@ -362,7 +368,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
     /// and reports what is left, as a board that reads its rules does. Returns only the rules asked. Only on a board made
     /// with an ability that turns them off.
     /// </summary>
-    public Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    public Task<OwnRulesTurnOff> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rules);
         if (Capabilities.OwnRules is not { TurnsOff: true })
@@ -380,7 +386,7 @@ internal sealed class FakeRelayBoard : IRelayBoard
         Interlocked.Increment(ref _ownRulesTurnOffs);
         if (rules.Count == 0)
         {
-            return Task.FromResult<IReadOnlyList<OwnRule>>([]);
+            return Task.FromResult(OwnRulesTurnOff.None);
         }
 
         if (RefuseOwnRules)
@@ -388,32 +394,38 @@ internal sealed class FakeRelayBoard : IRelayBoard
             throw new BoardNotConnectedException("The board refused to turn its own rules off.");
         }
 
+        if (OwnRulesAnswer is { } answer)
+        {
+            return Task.FromResult(answer);
+        }
+
         BoardState state;
-        IReadOnlyList<OwnRule> taken;
+        OwnRulesTurnOff result;
         lock (_lock)
         {
             var had = _state.OwnRules ?? OwnRules.Empty;
             // Never a rule it can't turn off (OwnRules.CantTurnOff), as the IRelayBoard contract says.
-            taken = [.. rules.Where(r => had.Contains(r) && had.CanTurnOff(r)).Distinct()];
+            List<OwnRule> taken = [.. rules.Where(r => had.Contains(r) && had.CanTurnOff(r)).Distinct()];
             if (taken.Count == 0)
             {
                 throw new BoardNotConnectedException("The board has none of those rules.");
             }
 
+            // Every unit behind a rule taken goes off, and the rules only those units made go too (OwnRules.GoesWith).
+            result = new OwnRulesTurnOff(taken, had.GoesWith(taken), []);
             if (HoldOwnRules)
             {
-                return Task.FromResult(taken);
+                return Task.FromResult(result);
             }
 
-            // Every unit behind a rule taken goes off, and the rules only those units made go too (OwnRules.GoesWith).
-            HashSet<OwnRule> gone = [.. taken, .. had.GoesWith(taken)];
+            HashSet<OwnRule> gone = [.. taken, .. result.AlsoOff];
             List<OwnRule> left = [.. had.Where(r => !gone.Contains(r))];
             var units = had.Units.Where(u => !u.Any(taken.Contains)).Select(IReadOnlyCollection<OwnRule> (u) => [.. u.Where(left.Contains)]);
             state = _state = Stamp(_state with { OwnRules = new OwnRules(left, units, had.CantTurnOff.Where(left.Contains)) });
         }
 
         OwnRulesChanged?.Invoke(this, state);
-        return Task.FromResult(taken);
+        return Task.FromResult(result);
     }
 
     /// <summary>Only the relays' states after a power cut change, and the board reports them alone, not as a state.</summary>

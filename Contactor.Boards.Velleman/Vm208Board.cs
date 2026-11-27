@@ -57,9 +57,9 @@ public sealed class Vm208Board : IRelayBoard
     }
 
     /// <summary>Turns off the relays' schedules behind the <see cref="OwnRuleKind.Timer"/> rules (<see cref="Vm208Client.TurnOffOwnRulesAsync"/>).</summary>
-    public Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    public async Task<OwnRulesTurnOff> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
-        return _client.TurnOffOwnRulesAsync(rules, cancellationToken);
+        return OwnRulesTurnOff.Of(await _client.TurnOffOwnRulesAsync(rules, cancellationToken).ConfigureAwait(false));
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default)

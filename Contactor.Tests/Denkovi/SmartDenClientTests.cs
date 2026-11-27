@@ -713,10 +713,13 @@ public sealed class SmartDenClientTests
         await using var run = ClientRun.Start(simulator.Port);
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        // Relay 1's timer is row 0, which switches relay 2 too: the row goes whole, row 3 and row 5 stay.
-        var taken = await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(1, OwnRuleKind.Timer)], Cancel);
+        // Relay 1's timer is row 0, which switches relay 2 too: the row goes whole, row 3 and row 5 stay. Relay 2 keeps
+        // row 3, so part of its timer went.
+        var result = await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(1, OwnRuleKind.Timer)], Cancel);
 
-        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], taken);
+        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], result.Taken);
+        Assert.Empty(result.AlsoOff);
+        Assert.Equal([new OwnRule(2, OwnRuleKind.Timer)], result.PartlyOff);
         Assert.Equal(
             [
                 .. FirstPoll,
@@ -795,9 +798,9 @@ public sealed class SmartDenClientTests
         await simulator.SetRowAsync(new SmartDenSimulatedRow(0, Enabled: true, Relays: 0b0010, TurnOn: false, Hour: 22, Minute: 0, WeekDays: 0x7F));
         await simulator.SetRowAsync(new SmartDenSimulatedRow(1, Enabled: false, Relays: 0, TurnOn: false, Hour: 0, Minute: 0, WeekDays: 0));
 
-        var taken = await run.Client.TurnOffOwnRulesAsync(
+        var taken = (await run.Client.TurnOffOwnRulesAsync(
             [new OwnRule(1, OwnRuleKind.Timer), new OwnRule(2, OwnRuleKind.Timer), new OwnRule(4, OwnRuleKind.Timer)],
-            Cancel);
+            Cancel)).Taken;
 
         // Row 5 is as seen and goes off. Row 0 now holds relay 2's OFF timer, which the person never saw at that place:
         // it isn't written. Relay 1's and relay 2's timers aren't taken: their rows changed.
@@ -868,13 +871,47 @@ public sealed class SmartDenClientTests
         await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        var taken = await run.Client.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.Timer), new OwnRule(1, OwnRuleKind.Timer)], Cancel);
+        var taken = (await run.Client.TurnOffOwnRulesAsync([new OwnRule(2, OwnRuleKind.Timer), new OwnRule(1, OwnRuleKind.Timer)], Cancel)).Taken;
 
         Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], taken);
         Assert.Equal<ushort>([0, 1, 0], enabled[..3]);
         Assert.Contains(run.Traces, t => t.Text.StartsWith("The board didn't turn off week schedule row 1: ", StringComparison.Ordinal) && t.IsError);
         Assert.Equal(new SmartDenSchedule([new SmartDenRow(1, 0b10)]), run.Client.State.Schedule);
         Assert.Equal(1, board.Connections);
+
+        static byte[] Write(byte[] request, ushort[] registers)
+        {
+            registers[request[9]] = BinaryPrimitives.ReadUInt16BigEndian(request.AsSpan(10));
+            return request;
+        }
+    }
+
+    [Fact]
+    public async Task Should_ReportWhatWentOff_WhenTheBoardRefusesOneRowOfTheTimerAsked()
+    {
+        // Relay 1 is in rows 0 and 2; row 0 also switches relay 3, which is in no other row. The board refuses row 2.
+        ushort[] enabled = [1, 0, 1, .. new ushort[27]];
+        ushort[] outputs = [0b101, 0, 0b001, .. new ushort[27]];
+        await using var board = ScriptedBoard.Start(request => request[7] switch
+        {
+            SmartDenApi.ReadHoldingRegisters => Registers(request, BinaryPrimitives.ReadUInt16BigEndian(request.AsSpan(8)) == SmartDenApi.RowEnableRegister ? enabled : outputs),
+            SmartDenApi.WriteSingleRegister when request[9] == 2 => SmartDenModbus.Frame(BinaryPrimitives.ReadUInt16BigEndian(request), 0, [0x86, SmartDenApi.DeviceFailure]),
+            SmartDenApi.WriteSingleRegister => Write(request, enabled),
+            _ => Relays(request, 0),
+        });
+        board.AnswersSchedule = false;
+        await using var run = ClientRun.Start(board.Port, pollSeconds: 60);
+        await Wait.UntilAsync(() => run.Client.State.IsConnected);
+
+        var result = await run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer)], Cancel);
+
+        // Relay 1's timer isn't taken, but row 0 went off: part of relay 1's timer, and all of relay 3's.
+        Assert.Empty(result.Taken);
+        Assert.Equal([new OwnRule(3, OwnRuleKind.Timer)], result.AlsoOff);
+        Assert.Equal([new OwnRule(1, OwnRuleKind.Timer)], result.PartlyOff);
+        Assert.Equal<ushort>([0, 0, 1], enabled[..3]);
+        Assert.Equal(new SmartDenSchedule([new SmartDenRow(2, 0b001)]), run.Client.State.Schedule);
+        Assert.True(run.Client.State.IsConnected);
 
         static byte[] Write(byte[] request, ushort[] registers)
         {
@@ -910,7 +947,7 @@ public sealed class SmartDenClientTests
         await using var run = ClientRun.Start(simulator.Port);
         await Wait.UntilAsync(() => run.Client.State.IsConnected);
 
-        Assert.Empty(await run.Client.TurnOffOwnRulesAsync([], Cancel));
+        Assert.Empty((await run.Client.TurnOffOwnRulesAsync([], Cancel)).Taken);
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.AutoOn)], Cancel));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Timer), new OwnRule(17, OwnRuleKind.Timer)], Cancel));
 

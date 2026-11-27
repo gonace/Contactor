@@ -341,13 +341,16 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
     /// rule is one <c>Switch.SetConfig</c> with only <c>in_mode:"detached"</c> for every switch whose input makes it as
     /// last read (a switch in <c>cycle</c> makes relay 1's and relay 2's), each switch once; one that no switch makes any
     /// more is taken without a request, and while the input modes aren't known none is sent or taken. A rule given twice
-    /// is taken once. Returns the rules asked that the device
+    /// is taken once. Returns as taken the rules asked that the device
     /// took, in relay order: a timer once every schedule behind it took its update (also when, as last read, none
-    /// switches it any more). Throws <see cref="ArgumentOutOfRangeException"/> for a relay the entry hasn't or another
-    /// kind of rule, and <see cref="BoardNotConnectedException"/> without a connection, both before anything is sent;
-    /// and <see cref="BoardNotConnectedException"/> when the device took none of them or didn't answer.
+    /// switches it any more). The schedules and switches that took it may hold other relays' rules, and a rule whose
+    /// other schedules or switches were refused: those are returned as also or partly off
+    /// (<see cref="OwnRulesTurnOff.From"/>, issue #604), also when no rule asked was taken. Throws
+    /// <see cref="ArgumentOutOfRangeException"/> for a relay the entry hasn't or another kind of rule, and
+    /// <see cref="BoardNotConnectedException"/> without a connection, both before anything is sent; and
+    /// <see cref="BoardNotConnectedException"/> when nothing went off or the device didn't answer.
     /// </summary>
-    public async Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    public async Task<OwnRulesTurnOff> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rules);
         List<OwnRule> asked = [];
@@ -376,7 +379,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
         if (asked.Count == 0)
         {
-            return [];
+            return OwnRulesTurnOff.None;
         }
 
         if (!State.IsConnected)
@@ -387,9 +390,9 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
         var target = Endpoint;
         try
         {
-            var taken = new StrongBox<IReadOnlyList<OwnRule>>([]);
+            var taken = new StrongBox<OwnRulesTurnOff>(OwnRulesTurnOff.None);
             await _poller.RunSwitchesAsync(token => TurnOffRulesAndReadAsync(target, asked, taken, token), cancellationToken).ConfigureAwait(false);
-            return taken.Value ?? [];
+            return taken.Value ?? OwnRulesTurnOff.None;
         }
         catch (Exception ex) when (IsNoAnswer(ex) || ex is UriFormatException)
         {
@@ -972,8 +975,8 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
 
     // Under the poller's lock: one Schedule.Update per schedule behind the timers asked, one Switch.SetConfig per auto-on
     // asked and one per switch behind the input rules asked, then the status, the settings and the schedules read back.
-    // Puts the rules the device took in taken.
-    private async Task<CommandReading<ShellyStatus>> TurnOffRulesAndReadAsync(BoardEndpoint target, IReadOnlyList<OwnRule> asked, StrongBox<IReadOnlyList<OwnRule>> taken, CancellationToken cancellationToken)
+    // Puts what went off in taken.
+    private async Task<CommandReading<ShellyStatus>> TurnOffRulesAndReadAsync(BoardEndpoint target, IReadOnlyList<OwnRule> asked, StrongBox<OwnRulesTurnOff> taken, CancellationToken cancellationToken)
     {
         // Another device may be at a new address, unchecked: nothing goes once the address moved or the device was lost.
         EnsureSameDevice(target);
@@ -1075,7 +1078,19 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             }
         }
 
-        if (done.Count == 0)
+        // A schedule or a switch that went off also took the other relays' rules it holds, and part of a rule whose other
+        // schedules or switches were refused (issue #604): as last read, which the person saw and the requests followed.
+        IEnumerable<(IReadOnlyCollection<OwnRule>, bool)> units = schedules is null
+            ? []
+            : schedules.Jobs.Where(j => j.Enabled && j.Relays != 0)
+                .Select(j => ((IReadOnlyCollection<OwnRule>)[.. new ChannelMask(j.Relays).Channels.Select(r => new OwnRule(r, OwnRuleKind.Timer))], off.Contains(j.Id)));
+        if (inputUnits is not null)
+        {
+            units = units.Concat(inputUnits.Select(u => ((IReadOnlyCollection<OwnRule>)u.Rules, detached.Contains(u.Switch))));
+        }
+
+        var result = OwnRulesTurnOff.From([.. done.OrderBy(r => r.Relay).ThenBy(r => r.Kind)], units);
+        if (!result.AnyOff)
         {
             if (!sent)
             {
@@ -1090,7 +1105,7 @@ public sealed class ShellyClient : IPolledBoard<ShellyStatus>, IDisposable, IAsy
             throw new BoardRefusedException(refusal!);
         }
 
-        taken.Value = [.. done.OrderBy(r => r.Relay).ThenBy(r => r.Kind)];
+        taken.Value = result;
         if (Endpoint != target)
         {
             return default;

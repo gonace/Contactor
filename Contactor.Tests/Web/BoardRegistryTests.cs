@@ -191,7 +191,7 @@ public sealed class BoardRegistryTests
         Assert.Equal(timer, board.State.OwnRules);
 
         // Turning them off goes to the model, which reports what is left.
-        Assert.Equal([new OwnRule(3, OwnRuleKind.Timer)], await board.TurnOffOwnRulesAsync([new OwnRule(3, OwnRuleKind.Timer)], Cancel));
+        Assert.Equal([new OwnRule(3, OwnRuleKind.Timer)], (await board.TurnOffOwnRulesAsync([new OwnRule(3, OwnRuleKind.Timer)], Cancel)).Taken);
         Assert.Equal(OwnRules.Empty, rules[^1].OwnRules);
 
         // Only the next model's rules come through, and they are the board's.

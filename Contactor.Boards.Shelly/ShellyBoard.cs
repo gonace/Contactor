@@ -73,7 +73,7 @@ public sealed class ShellyBoard : IRelayBoard
     /// <see cref="OwnRuleKind.AutoOn"/> rules and the input mode of the <see cref="OwnRuleKind.InputEdge"/> and
     /// <see cref="OwnRuleKind.InputToggle"/> rules (<see cref="ShellyClient.TurnOffOwnRulesAsync"/>), and reads them back.
     /// </summary>
-    public Task<IReadOnlyList<OwnRule>> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    public Task<OwnRulesTurnOff> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
     {
         return _client.TurnOffOwnRulesAsync(rules, cancellationToken);
     }

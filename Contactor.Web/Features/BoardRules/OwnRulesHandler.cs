@@ -263,11 +263,12 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
-    /// Turns off the board's own <paramref name="rules"/> at once, as <paramref name="userEmail"/> pressed, and logs the
-    /// rules the board took. Returns null when sent (or none asked), otherwise the message to show: without a
-    /// connection, or when the board didn't take them, nothing is logged or queued. The board's next state shows them
-    /// gone, and their rows go then; so do the rules that went with them (<see cref="AlsoTurnsOff"/>), which the event
-    /// names as "also", as the board's rules before the command said.
+    /// Turns off the board's own <paramref name="rules"/> at once, as <paramref name="userEmail"/> pressed, and logs
+    /// what went off: the rules the board took, the rules that went with them ("also"), and the rules of which only part
+    /// went off ("partly", issue #604), as the board reported them (<see cref="OwnRulesTurnOff"/>). Returns null when
+    /// sent (or none asked), otherwise the message to show: without a connection, or when nothing went off, nothing is
+    /// logged or queued. When the board took none of them but part of them went off, that is logged and the message
+    /// says they weren't turned off. The board's next state shows what is gone, and their rows go then.
     /// </summary>
     public async Task<string?> TurnOffAsync(int boardId, IReadOnlyCollection<OwnRule> rules, string userEmail, CancellationToken cancellationToken)
     {
@@ -278,12 +279,10 @@ public sealed partial class OwnRulesHandler
             return _texts["Boards.NotChosen"];
         }
 
-        // What the board's rules were before the command: what goes with the rules taken is read from them.
-        var before = board.State.OwnRules;
-        IReadOnlyList<OwnRule> taken;
+        OwnRulesTurnOff result;
         try
         {
-            taken = await board.TurnOffOwnRulesAsync(rules, cancellationToken);
+            result = await board.TurnOffOwnRulesAsync(rules, cancellationToken);
         }
         catch (BoardNotConnectedException)
         {
@@ -301,13 +300,13 @@ public sealed partial class OwnRulesHandler
             return _texts["OwnRules.TurnOff.NotTaken"];
         }
 
-        if (taken.Count == 0)
+        if (!result.AnyOff)
         {
             return null;
         }
 
-        // The board took them: logged also when the page closed meanwhile, with what went with them (none: no "also").
-        List<OwnRule> also = [.. (before?.GoesWith(taken) ?? []).OrderBy(r => r.Relay).ThenBy(r => r.Kind)];
+        // What went off: logged also when the page closed meanwhile, with what went with it (none: no "also" or "partly").
+        var taken = result.Taken;
         await using var db = await _dbFactory.CreateDbContextAsync(CancellationToken.None);
         db.EventLog.Add(new EventLogEntry
         {
@@ -319,11 +318,20 @@ public sealed partial class OwnRulesHandler
             {
                 relays = taken.Select(r => r.Relay).Distinct().Order(),
                 kinds = taken.Select(r => r.Kind).Distinct().Order().Select(OwnRuleKinds.For),
-                also = also.Count == 0 ? null : also.Select(r => new { relay = r.Relay, kind = OwnRuleKinds.For(r.Kind) }),
+                also = Rules(result.AlsoOff),
+                partly = Rules(result.PartlyOff),
             }, LeaveOutNull),
         });
         await db.SaveChangesAsync(CancellationToken.None);
-        return null;
+
+        // Part of them went off, but the board took none of those asked: the person is told, as when nothing went off.
+        return taken.Count == 0 ? _texts["OwnRules.TurnOff.NotTaken"].Value : null;
+
+        // Each rule's relay and kind, in relay order; null for none, so the details leave it out.
+        static object? Rules(IReadOnlyList<OwnRule> list)
+        {
+            return list.Count == 0 ? null : list.OrderBy(r => r.Relay).ThenBy(r => r.Kind).Select(r => new { relay = r.Relay, kind = OwnRuleKinds.For(r.Kind) }).ToList();
+        }
     }
 
     /// <summary>
