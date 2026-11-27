@@ -2075,8 +2075,8 @@
     <value>The board no longer has that rule.</value>
   </data>
   <data name="OwnRules.Keep.InGroup" xml:space="preserve">
-    <value>Can't be kept: {0} is in a group, and the board would turn it on again without the group's order.</value>
-    <comment>In place of "Keep" for the board's auto-on of a relay in a group: {0} is the relay's name, e.g. "Heat".</comment>
+    <value>Can't be kept: {0} is in a group, and the board would switch it by itself without the group's order.</value>
+    <comment>In place of "Keep" for a rule that switches a relay in a group by itself, the board's auto-on or restart pulse: {0} is the relay's name, e.g. "Heat".</comment>
   </data>
   <data name="OwnRules.Keep.Unavailable" xml:space="preserve">
     <value>The board controls this relay itself, so it can't be kept. Reset it instead.</value>

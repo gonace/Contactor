@@ -411,8 +411,8 @@ public sealed partial class OwnRulesHandler
 
     /// <summary>
     /// Why a rule on a relay in a group can't be kept (<see cref="CanKeep"/>), shown where "Keep" would be: "Can't be
-    /// kept: Heat is in a group, and the board would turn it on again without the group's order." The relay by its name,
-    /// or "Relay 3" without one.
+    /// kept: Heat is in a group, and the board would switch it by itself without the group's order." The relay by its
+    /// name, or "Relay 3" without one.
     /// </summary>
     public string InGroup(int channel, string? name)
     {

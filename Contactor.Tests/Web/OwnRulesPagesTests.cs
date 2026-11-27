@@ -158,7 +158,7 @@ public sealed partial class OwnRulesPagesTests
         await NameAsync(app, 2, "Heat");
         Assert.Null((await CreateGroupAsync(app)).Error);
         await RulesAsync(app, board, auto2, Timer3, auto5);
-        const string Why = "Can't be kept: Heat is in a group, and the board would turn it on again without the group's order.";
+        const string Why = "Can't be kept: Heat is in a group, and the board would switch it by itself without the group's order.";
 
         var card = RulesCard(await PageAsync(app, $"/board/{BoardId}"));
         var rows = Regex.Split(card, "<li[^>]*>").Skip(1).Select(r => WebUtility.HtmlDecode(Tags().Replace(r, " "))).Select(r => Regex.Replace(r, "\\s+", " ").Trim()).ToList();
@@ -179,7 +179,7 @@ public sealed partial class OwnRulesPagesTests
         Assert.Equal(2, (await EventsAsync(app)).Count(e => e.Action == EventActions.BoardOwnRuleKept));
 
         using var swedish = TestCulture.Language("sv");
-        Assert.Equal("Kan inte behållas: Värme ingår i en grupp, och kortet skulle slå på det igen utan gruppens ordning.", TestTexts.Localizer["OwnRules.Keep.InGroup", "Värme"].Value);
+        Assert.Equal("Kan inte behållas: Värme ingår i en grupp, och kortet skulle slå om det självt utan gruppens ordning.", TestTexts.Localizer["OwnRules.Keep.InGroup", "Värme"].Value);
     }
 
     // A kept auto-on whose relay then joins a group, by a new group or a group's new relay, is not kept from then on: the

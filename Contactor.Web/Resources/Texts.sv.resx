@@ -1869,7 +1869,7 @@
     <value>Kortet har inte längre den regeln.</value>
   </data>
   <data name="OwnRules.Keep.InGroup" xml:space="preserve">
-    <value>Kan inte behållas: {0} ingår i en grupp, och kortet skulle slå på det igen utan gruppens ordning.</value>
+    <value>Kan inte behållas: {0} ingår i en grupp, och kortet skulle slå om det självt utan gruppens ordning.</value>
   </data>
   <data name="OwnRules.Keep.Unavailable" xml:space="preserve">
     <value>Kortet styr reläet självt, så det kan inte behållas. Återställ det i stället.</value>
