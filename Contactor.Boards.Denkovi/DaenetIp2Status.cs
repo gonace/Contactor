@@ -9,8 +9,8 @@ namespace Contactor.Boards.Denkovi;
 /// </param>
 /// <param name="RestartPins">
 /// The ICMP monitoring's restart pins, <c>cfgP5DupRST</c> (bit 0 = P5.1), as last read on this connection; null before
-/// they were read, on a firmware older than 4.097 or whose version couldn't be read, and when the board refused the read,
-/// its answer couldn't be read or it gave no answer: never a guess.
+/// they were read, on a board without them (no such name, as a firmware older than 4.097 answers), and when the board
+/// refused the read, its answer couldn't be read or it gave no answer: never a guess.
 /// </param>
 public sealed record DaenetIp2Status(ulong Relays, AnalogReadings? Analog = null, int? RestartPins = null)
 {

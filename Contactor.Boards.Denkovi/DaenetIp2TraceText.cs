@@ -14,8 +14,8 @@ public static class DaenetIp2TraceText
 
     /// <summary>
     /// What a request asks for: "Ask for port P5", "Ask for analog input 3 (P6.3)", "Turn on relay 3 (P5.3)", "Turn off
-    /// relay 3 (P5.3)", "Set P3.2 high", "Set port P5 to 255", "Ask for the firmware version (cfgVersion)", "Ask for the
-    /// restart pins (cfgP5DupRST)", "Set the restart pins (cfgP5DupRST) to P5.8", or the OID for anything else.
+    /// relay 3 (P5.3)", "Set P3.2 high", "Set port P5 to 255", "Ask for the restart pins (cfgP5DupRST)", "Set the
+    /// restart pins (cfgP5DupRST) to P5.8", or the OID for anything else.
     /// </summary>
     public static string Request(byte pduType, IReadOnlyList<int> oid, int? value, DaenetIp2Layout layout)
     {
@@ -23,11 +23,9 @@ public static class DaenetIp2TraceText
         ArgumentNullException.ThrowIfNull(layout);
         var target = Target(oid);
         var analog = DaenetIp2Api.AnalogInputOf(oid);
-        var version = oid.SequenceEqual(DaenetIp2Oid.FirmwareVersion.Arcs);
         var restart = oid.SequenceEqual(DaenetIp2Oid.RestartPins.Arcs);
         return pduType switch
         {
-            DaenetIp2Api.GetRequest when version => "Ask for the firmware version (cfgVersion)",
             DaenetIp2Api.GetRequest when restart => "Ask for the restart pins (cfgP5DupRST)",
             DaenetIp2Api.SetRequest when restart && value is >= 0 and <= DaenetIp2Api.MaxPortValue => $"Set the restart pins (cfgP5DupRST) to {PinList(value.Value, layout)}",
             DaenetIp2Api.GetRequest when analog is { } input => $"Ask for analog input {Number(input)} (P6.{Number(input)})",
@@ -57,12 +55,6 @@ public static class DaenetIp2TraceText
     {
         ArgumentNullException.ThrowIfNull(request);
         return Request(request.PduType, request.Oid, request.Value, layout);
-    }
-
-    /// <summary>A <c>cfgVersion</c> answer: "Firmware 4.097".</summary>
-    public static string Firmware(int version)
-    {
-        return $"Firmware {DaenetIp2Api.FirmwareText(version)}";
     }
 
     /// <summary>

@@ -481,17 +481,12 @@ public sealed class DaenetIp2SnmpTests
         }
     }
 
-    // Table 9.1: cfgVersion x.9.1.8.0 INTEGER(0..65535), LSB=VER_MINOR, MSB=VER_MAJOR; cfgP5DupRST x.9.1.29.0
-    // INTEGER(0..255), read-write.
+    // Table 9.1: cfgP5DupRST x.9.1.29.0 INTEGER(0..255), read-write.
     [Fact]
-    public void Should_AskForTheFirmwareVersionAndTheRestartPins_AsTable9Point1Says()
+    public void Should_AskForTheRestartPins_AsTable9Point1Says()
     {
-        Assert.Equal(".1.3.6.1.4.1.42505.9.1.8.0", DaenetIp2Snmp.OidText(DaenetIp2Oid.FirmwareVersion.Arcs));
         Assert.Equal(".1.3.6.1.4.1.42505.9.1.29.0", DaenetIp2Snmp.OidText(DaenetIp2Oid.RestartPins.Arcs));
-        Assert.Equal((65535, false), (DaenetIp2Oid.FirmwareVersion.MaxValue, DaenetIp2Oid.FirmwareVersion.Writable));
         Assert.Equal((255, true), (DaenetIp2Oid.RestartPins.MaxValue, DaenetIp2Oid.RestartPins.Writable));
-        Assert.Equal(0x0461, DaenetIp2Api.RestartPinsFirmware);
-        Assert.Equal("4.097", DaenetIp2Api.FirmwareText(0x0461));
 
         // snmpset -v1 -c private … .1.3.6.1.4.1.42505.9.1.29.0 i 192 (P5.7 and P5.8), request id 7, and its echo.
         var set = DaenetIp2Snmp.SetRestartPins(7, "private", 0b1100_0000);
@@ -500,12 +495,6 @@ public sealed class DaenetIp2SnmpTests
             Hex(set.Message));
         var echo = DaenetIp2Snmp.Decode(DaenetIp2Snmp.Response(7, "private", DaenetIp2Oid.RestartPins.Arcs, 0b1100_0000));
         Assert.Equal(0b1100_0000, DaenetIp2Snmp.Value(echo, set));
-
-        // Version 4.097 as an INTEGER of two bytes: 04 61.
-        var get = DaenetIp2Snmp.GetFirmwareVersion(1, ReadOnly);
-        var version = Hex(DaenetIp2Snmp.Response(1, ReadOnly, get.Oid, 0x0461));
-        Assert.EndsWith("06 0C 2B 06 01 04 01 82 CC 09 09 01 08 00 02 02 04 61", version, StringComparison.Ordinal);
-        Assert.Equal(0x0461, DaenetIp2Snmp.Value(DaenetIp2Snmp.Decode(Bytes(version)), get));
 
         Assert.Throws<ArgumentOutOfRangeException>(() => DaenetIp2Snmp.SetRestartPins(1, "private", 256));
         Assert.Throws<ArgumentOutOfRangeException>(() => DaenetIp2Snmp.SetRestartPins(1, "private", -1));

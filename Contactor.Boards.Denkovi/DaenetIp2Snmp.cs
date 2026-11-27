@@ -50,7 +50,7 @@ public sealed class DaenetIp2Request
 
     /// <summary>
     /// The largest value the answer may carry (<see cref="DaenetIp2Oid.MaxValue"/>): 1 for a pin, 255 for a port's byte
-    /// or the restart pins, 1023 for an analog input, 65535 for the firmware version.
+    /// or the restart pins, 1023 for an analog input.
     /// </summary>
     public int MaxValue => Target.MaxValue;
 
@@ -167,12 +167,6 @@ public static class DaenetIp2Snmp
     public static DaenetIp2Request SetPin(int requestId, string community, DaenetIp2Pin pin, bool high)
     {
         return Set(requestId, community, DaenetIp2Oid.Pin(pin), high ? DaenetIp2Api.High : DaenetIp2Api.Low);
-    }
-
-    /// <summary>snmpget of the firmware version, <c>cfgVersion</c>: the answer is 0 to 65535 (table 9.1).</summary>
-    public static DaenetIp2Request GetFirmwareVersion(int requestId, string community)
-    {
-        return Get(requestId, community, DaenetIp2Oid.FirmwareVersion);
     }
 
     /// <summary>snmpget of the ICMP monitoring's restart pins, <c>cfgP5DupRST</c>: the answer is 0 to 255 (table 9.1).</summary>

@@ -54,15 +54,16 @@ public sealed partial class OwnRulesHandler
     /// a person resets it. Never the board's auto-on (<see cref="OwnRuleKind.AutoOn"/>) on a relay in a group
     /// (<paramref name="inGroup"/>): the board would turn it on again without the group's order, so its warning stays
     /// until it is turned off, and a "Keep" from before the relay joined the group is forgotten then
-    /// (<see cref="OwnRulesService.ForgetKeepsInGroupsAsync"/>). Every other rule may be kept, the board's restart pulse
-    /// (<see cref="OwnRuleKind.Restart"/>) as its timer, also on a relay in a group.
+    /// (<see cref="OwnRulesService.ForgetKeepsInGroupsAsync"/>). The same for the board's restart pulse
+    /// (<see cref="OwnRuleKind.Restart"/>, issue #515): it would switch the relay without the group's order. Every other
+    /// rule may be kept.
     /// </summary>
     public static bool CanKeep(OwnRuleKind kind, bool inGroup)
     {
         return kind switch
         {
             OwnRuleKind.InputLinkage => false,
-            OwnRuleKind.AutoOn => !inGroup,
+            OwnRuleKind.AutoOn or OwnRuleKind.Restart => !inGroup,
             _ => true,
         };
     }

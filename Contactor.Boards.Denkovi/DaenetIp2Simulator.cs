@@ -17,9 +17,9 @@ namespace Contactor.Boards.Denkovi;
 /// noSuchName, a value out of range badValue. Only GetRequest and SetRequest are answered (section 9:
 /// snmpwalk isn't supported). A datagram it can't read is skipped, and the next one served. Its relays are the kit's
 /// pins: a pin that is High is a relay that is on. It never tells the app anything by itself, as the real board. It
-/// holds the firmware version (<c>cfgVersion</c>, <see cref="FirmwareVersion"/>) and, from firmware 4.097, the ICMP
-/// monitoring's restart pins (<c>cfgP5DupRST</c>, <see cref="RestartPins"/>), which a get and a set reach (table 9.1);
-/// it doesn't pulse them. It records every request for an OID whose read changes the real board (<c>cfgReset</c>,
+/// holds the ICMP monitoring's restart pins (<c>cfgP5DupRST</c>, <see cref="RestartPins"/>), which a get and a set reach
+/// (table 9.1), or, as a firmware older than 4.097, doesn't have them (<see cref="HasRestartPins"/>). It doesn't pulse
+/// them: the manual doesn't say which level the restart pulse puts on a pin. It records every request for an OID whose read changes the real board (<c>cfgReset</c>,
 /// <c>cfgDefault</c>, <c>pctrlRestart</c>, <see cref="DaenetIp2Oid.Forbidden"/>) in <see cref="ForbiddenRequests"/>, so
 /// a test fails on one, and answers it nothing. Used by the tests and, in development, by Contactor.Simulator. It
 /// listens on the loopback interface only. Its traces show the PDU only, never a community.
@@ -57,7 +57,7 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
     private int _unansweredCount;
     private int _dropRequests;
     private bool _noAnalogAnswer;
-    private int _firmwareVersion = DaenetIp2Api.RestartPinsFirmware;
+    private bool _hasRestartPins = true;
     private int _restartPins;
     private bool _refuseRestartPinWrites;
 
@@ -222,24 +222,18 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
     public IReadOnlyList<string> ForbiddenRequests => [.. _forbiddenRequests];
 
     /// <summary>
-    /// The firmware version it answers for <c>cfgVersion</c>, "LSB=VER_MINOR, MSB=VER_MAJOR" (table 9.1): 4.097 by default,
-    /// the first with <c>cfgP5DupRST</c>. An older one answers <c>cfgP5DupRST</c> with no such name, as an OID it doesn't
-    /// have.
+    /// Whether its firmware has <c>cfgP5DupRST</c> ("Available from v.4.097", table 9.1): true by default. Without it, a
+    /// get or a set of it gets no such name, as an OID it doesn't have.
     /// </summary>
-    public int FirmwareVersion
+    public bool HasRestartPins
     {
-        get => Volatile.Read(ref _firmwareVersion);
+        get => Volatile.Read(ref _hasRestartPins);
         set
         {
-            ArgumentOutOfRangeException.ThrowIfNegative(value);
-            ArgumentOutOfRangeException.ThrowIfGreaterThan(value, DaenetIp2Oid.FirmwareVersion.MaxValue);
-            Volatile.Write(ref _firmwareVersion, value);
+            Volatile.Write(ref _hasRestartPins, value);
             RaiseChanged();
         }
     }
-
-    /// <summary>Whether its firmware has <c>cfgP5DupRST</c> (4.097 and later).</summary>
-    public bool HasRestartPins => FirmwareVersion >= DaenetIp2Api.RestartPinsFirmware;
 
     /// <summary>The ICMP monitoring's restart pins, <c>cfgP5DupRST</c>: bit 0 = P5.1. None by default.</summary>
     public int RestartPins
@@ -620,15 +614,6 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         }
 
         Remember(from);
-        if (request.Oid.SequenceEqual(DaenetIp2Oid.FirmwareVersion.Arcs))
-        {
-            // Read-only (table 9.1): a set gets no such name, as for an analog input.
-            var version = FirmwareVersion;
-            return request.PduType == DaenetIp2Api.GetRequest
-                ? Answer(request, community, version, DaenetIp2TraceText.Firmware(version), routine: true)
-                : Refuse(request, community, DaenetIp2Api.NoSuchName);
-        }
-
         if (request.Oid.SequenceEqual(DaenetIp2Oid.RestartPins.Arcs))
         {
             // From firmware 4.097 only (table 9.1): before that, an OID it doesn't have.

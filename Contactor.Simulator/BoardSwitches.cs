@@ -100,21 +100,15 @@ public sealed class BoardSwitches
         _log(string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s pin {(restart ? "made" : "no longer")} a restart pin here"));
     }
 
-    /// <summary>Makes the DAEnetIP2 answer as a firmware older than 4.097 (4.096), without restart pins, or as 4.097 again.</summary>
+    /// <summary>Makes the DAEnetIP2 answer as a firmware older than 4.097, without restart pins, or with them again.</summary>
     public void SetOldFirmware(bool old)
     {
-        if (_board is not DaenetIp2Simulator daenet)
+        if (_board is not DaenetIp2Simulator daenet || !Change(() => daenet.HasRestartPins, v => daenet.HasRestartPins = v, !old))
         {
             return;
         }
 
-        var version = old ? DaenetIp2Api.RestartPinsFirmware - 1 : DaenetIp2Api.RestartPinsFirmware;
-        if (!Change(() => daenet.FirmwareVersion, v => daenet.FirmwareVersion = v, version))
-        {
-            return;
-        }
-
-        _log($"Firmware {DaenetIp2Api.FirmwareText(version)} here");
+        _log(old ? "No restart pins here (a firmware older than 4.097)" : "Restart pins here again");
     }
 
     public void SetRefuseRestartPinWrites(bool refuse)

@@ -519,14 +519,14 @@
                                         <div class="schedule-list">
                                             <label class="check">
                                                 <input type="checkbox" checked="@oldFirmware" @onchange="e => current.Switches.SetOldFirmware(e.Value is true)" />
-                                                Firmware 4.096 (older than 4.097: no restart pins)
+                                                No cfgP5DupRST (a firmware older than 4.097)
                                             </label>
                                             <label class="check">
                                                 <input type="checkbox" checked="@(current.Switches.RefuseRestartPinWrites == true)" @onchange="e => current.Switches.SetRefuseRestartPinWrites(e.Value is true)" />
                                                 Writes of the restart pins refused
                                             </label>
                                         </div>
-                                        <span class="hint">The ICMP monitoring's restart pins, only on P5. The app reads them as the board's own rules and turns them off on a press. The simulator doesn't pulse them.</span>
+                                        <span class="hint">The ICMP monitoring's restart pins, only on P5. The app reads them as the board's own rules and turns them off on a press. The simulator doesn't pulse them ("Run now"): the manual doesn't say which level the pulse puts on a pin.</span>
                                     }
                                     @if (current.RunnableRules is { Count: > 0 } runnable)
                                     {
@@ -979,7 +979,7 @@
 
         if (board.Switches.RestartRelays is { } restart)
         {
-            return board.Switches.OldFirmware == true ? "firmware older than 4.097" : $"restart pins: {MaskText(restart, capabilities)}";
+            return board.Switches.OldFirmware == true ? "no restart pins (older firmware)" : $"restart pins: {MaskText(restart, capabilities)}";
         }
 
         if (board.Board is ISimulatedBoardRelayModes { Modes.Count: > 0 } modes)

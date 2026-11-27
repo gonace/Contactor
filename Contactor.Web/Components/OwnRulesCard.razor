@@ -61,7 +61,7 @@
                                 <button type="button" class="@(kept ? "secondary" : "primary")" aria-describedby="@id" disabled="@(_busy || !connected)" @onclick="() => TurnOffAsync(row)">@Texts[row.Kind == OwnRuleKind.InputLinkage ? "OwnRules.Reset" : "OwnRules.TurnOff"]</button>
                             }
                             @* Never "Keep" for a relay the board controls by itself: it stays unavailable until reset. Nor
-                               for the auto-on of a relay in a group: a line says why in its place. *@
+                               for the auto-on or the restart pulse of a relay in a group: a line says why in its place. *@
                             @if (!kept && OwnRulesHandler.CanKeep(row.Kind, _grouped.ContainsKey(row.Channel)))
                             {
                                 <button type="button" class="secondary" aria-describedby="@id" disabled="@(_busy || !connected)" @onclick="() => KeepAsync(row)">@Texts["OwnRules.Keep"]</button>

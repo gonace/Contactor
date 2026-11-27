@@ -37,8 +37,8 @@ public sealed class DaenetIp2ClientTests
         Assert.Equal(new DaenetIp2Status((1UL << 15) | 0b10, new AnalogReadings([0, 0, 0, 0, 0, 0, 0, 0]), RestartPins: 0), run.Client.State.Status);
         Assert.Equal(run.Time.GetUtcNow(), run.Client.State.LastContactUtc);
 
-        // The analog inputs first, then the ports, and on a new connection the firmware version and the restart pins.
-        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P3), Get(10, DaenetIp2Port.P5), VersionGet(11), RestartGet(12)], simulator.ReceivedRequests);
+        // The analog inputs first, then the ports, and on a new connection the restart pins.
+        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P3), Get(10, DaenetIp2Port.P5), RestartGet(11)], simulator.ReceivedRequests);
         Assert.Contains(run.Changes, s => s.IsConnected && s.Relays == ((1UL << 15) | 0b10));
         Assert.Contains(run.Traces, t => t.Text == "Ask for port P5" && t.Direction == BoardTraceDirection.Sent && t.IsRoutine && t.Bytes == Get(10, DaenetIp2Port.P5));
         Assert.Contains(run.Traces, t => t.Text == "Port P3: pin 2 high" && t.Direction == BoardTraceDirection.Received && t.Bytes == Answer(9, DaenetIp2Port.P3, 0b10));
@@ -56,7 +56,7 @@ public sealed class DaenetIp2ClientTests
 
         Assert.Equal(0b01UL, run.Client.State.Relays);
         Assert.Equal(0b0100_0000, simulator.P5);
-        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P5), VersionGet(10), RestartGet(11)], simulator.ReceivedRequests);
+        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P5), RestartGet(10)], simulator.ReceivedRequests);
     }
 
     [Fact]
@@ -80,15 +80,14 @@ public sealed class DaenetIp2ClientTests
                 .. AnalogGets(1),
                 Get(9, DaenetIp2Port.P3),
                 Get(10, DaenetIp2Port.P5),
-                VersionGet(11),
-                RestartGet(12),
-                Set(13, DaenetIp2Port.P3, 1, high: true),
-                Set(14, DaenetIp2Port.P5, 8, high: true),
-                Get(15, DaenetIp2Port.P3),
-                Get(16, DaenetIp2Port.P5),
-                Set(17, DaenetIp2Port.P3, 1, high: false),
-                Get(18, DaenetIp2Port.P3),
-                Get(19, DaenetIp2Port.P5),
+                RestartGet(11),
+                Set(12, DaenetIp2Port.P3, 1, high: true),
+                Set(13, DaenetIp2Port.P5, 8, high: true),
+                Get(14, DaenetIp2Port.P3),
+                Get(15, DaenetIp2Port.P5),
+                Set(16, DaenetIp2Port.P3, 1, high: false),
+                Get(17, DaenetIp2Port.P3),
+                Get(18, DaenetIp2Port.P5),
             ],
             simulator.ReceivedRequests);
         Assert.Contains(run.Traces, t => t.Text == "Turn on relay 16 (P5.8)" && t.Direction == BoardTraceDirection.Sent && !t.IsRoutine);
@@ -107,7 +106,7 @@ public sealed class DaenetIp2ClientTests
         Assert.Equal(0UL, await run.Client.TurnOffAsync(0, Cancel));
         Assert.Equal(0UL, await run.Client.TurnOnAsync(0, Cancel));
 
-        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P5), VersionGet(10), RestartGet(11)], simulator.ReceivedRequests);
+        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P5), RestartGet(10)], simulator.ReceivedRequests);
     }
 
     [Fact]
@@ -163,7 +162,7 @@ public sealed class DaenetIp2ClientTests
         await Wait.UntilAsync(() => run.Client.State.IsOn(4) && run.Time.WaitsOnly(run.PollInterval));
 
         // The lost request is the next poll's first, analog input 1's: asked again with the same id.
-        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P5), VersionGet(10), RestartGet(11), AnalogGets(12)[0], .. AnalogGets(12), Get(20, DaenetIp2Port.P5)], simulator.ReceivedRequests);
+        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P5), RestartGet(10), AnalogGets(11)[0], .. AnalogGets(11), Get(19, DaenetIp2Port.P5)], simulator.ReceivedRequests);
         Assert.Contains(run.Traces, t => t.Text == "No answer within 1 s: asking again" && t.IsError);
         Assert.DoesNotContain(run.Traces, t => t.Text.StartsWith("No answer: ", StringComparison.Ordinal));
         Assert.True(run.Client.State.IsConnected);
@@ -416,11 +415,10 @@ public sealed class DaenetIp2ClientTests
             return answer;
         }
 
-        // The analog inputs and the firmware version (0.000: no restart pins to read) are answered at once and not
-        // counted: only the ports' reads are.
+        // The analog inputs and the restart pins are answered at once and not counted: only the ports' reads are.
         await using var board = ScriptedBoard.Start(request => request.PduType == DaenetIp2Api.SetRequest
             ? [Echo(request)]
-            : IsAnalog(request) || IsVersion(request) ? [Reply(request, 0)]
+            : IsAnalog(request) || IsRestartPins(request) ? [Reply(request, 0)]
             : Interlocked.Increment(ref reads) is 2 or 3 ? [] : Held<IReadOnlyList<Datagram>>([Reply(request, 1)]));
         await using var run = ClientRun.Start(board.Port, DaenetIp2Models.Relays8, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
@@ -506,8 +504,7 @@ public sealed class DaenetIp2ClientTests
         await Wait.UntilAsync(() => run.Client.State.IsConnected
             && run.Traces.Any(t => t.Text == "Skipping more datagrams that aren't the answer" && t.IsError));
 
-        // At most that many for each request of the poll: the port's, the 8 analog inputs' and the firmware version's
-        // (0.005: no restart pins to read).
+        // At most that many for each request of the poll: the port's, the 8 analog inputs' and the restart pins'.
         Assert.Equal((2 + DaenetIp2Api.AnalogInputs) * DaenetIp2Client.MaxSkippedTraced, run.Traces.Count(t => t.Text.StartsWith("Skipped a datagram from ", StringComparison.Ordinal)));
         Assert.Equal(0b0101UL, run.Client.State.Relays);
     }
@@ -609,7 +606,7 @@ public sealed class DaenetIp2ClientTests
         // Only an analog value changes: AnalogChanged, never StateChanged, which would wake the safety services.
         await simulator.SetAnalogAsync(3, 100);
         run.Time.Advance(run.PollInterval);
-        await Wait.UntilAsync(() => simulator.ReceivedRequests.Count == 20 && run.Time.WaitsOnly(run.PollInterval));
+        await Wait.UntilAsync(() => simulator.ReceivedRequests.Count == 19 && run.Time.WaitsOnly(run.PollInterval));
         var analogChange = Assert.Single(run.AnalogChanges);
         Assert.Equal(100, analogChange.Status!.Analog!.Input(3));
         Assert.True(analogChange.IsOn(2));
@@ -617,7 +614,7 @@ public sealed class DaenetIp2ClientTests
 
         // A poll that changes nothing raises neither.
         run.Time.Advance(run.PollInterval);
-        await Wait.UntilAsync(() => simulator.ReceivedRequests.Count == 29 && run.Time.WaitsOnly(run.PollInterval));
+        await Wait.UntilAsync(() => simulator.ReceivedRequests.Count == 28 && run.Time.WaitsOnly(run.PollInterval));
         Assert.Single(run.AnalogChanges);
         Assert.Equal(changes, run.Changes.Count);
     }
@@ -660,7 +657,7 @@ public sealed class DaenetIp2ClientTests
 
         Assert.True(run.Client.State.IsOn(3));
         Assert.Equal(new AnalogReadings(new int?[8]), run.Client.State.Status!.Analog);
-        Assert.Equal([AnalogGets(1)[0], AnalogGets(1)[0], Get(2, DaenetIp2Port.P5), VersionGet(3), RestartGet(4)], simulator.ReceivedRequests);
+        Assert.Equal([AnalogGets(1)[0], AnalogGets(1)[0], Get(2, DaenetIp2Port.P5), RestartGet(3)], simulator.ReceivedRequests);
         const string Problem = "The board didn't answer for analog input 1.";
         Assert.Contains(run.Traces, t => t.Text == $"No analog readings: {Problem} The relays are read as usual; the analog inputs are asked for again in 1 min." && t.IsError);
         Assert.Contains(logger.Messages, m => m == $"The DAEnetIP2 v2 board's analog inputs couldn't be read; the relays are read as usual: {Problem}");
@@ -812,11 +809,10 @@ public sealed class DaenetIp2ClientTests
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
 
         Assert.Equal(0b1100_0000, run.Client.State.Status!.RestartPins);
-        Assert.Contains(run.Traces, t => t.Text == "Firmware 4.097" && t.Direction == BoardTraceDirection.Received);
         Assert.Contains(run.Traces, t => t.Text == "Restart pins: P5.7 (relay 1) and P5.8 (relay 2)" && t.Direction == BoardTraceDirection.Received);
         var changes = run.Changes.Count;
 
-        // Turned off on the board's own web page: the next poll a minute later reads it; the version isn't asked again.
+        // Turned off on the board's own web page: the next poll a minute later reads it.
         await simulator.SetRestartPinsAsync(0b1000_0000);
         var sent = simulator.ReceivedRequests.Count;
         run.Time.Advance(run.PollInterval);
@@ -828,26 +824,29 @@ public sealed class DaenetIp2ClientTests
         Assert.Empty(run.AnalogChanges);
     }
 
-    // Below 4.097 the board has no cfgP5DupRST: the app can't tell, asks only once for the version, and sends nothing for
-    // a turn-off.
+    // A board without cfgP5DupRST (a firmware older than 4.097) answers no such name: the rules are unknown (null), the
+    // app says so once in red and then as routine, the poll doesn't fail, and a turn-off sends nothing.
     [Fact]
-    public async Task Should_NeverAskForTheRestartPins_OnAFirmwareOlderThan4Point097()
+    public async Task Should_GiveUnknownRules_ForABoardWithoutTheRestartPins()
     {
         await using var simulator = Started(DaenetIp2Models.Relays8);
-        simulator.FirmwareVersion = 0x0460;
+        simulator.HasRestartPins = false;
         await using var run = ClientRun.Start(simulator.Port, DaenetIp2Models.Relays8, pollSeconds: 60);
         await Wait.UntilAsync(() => run.Client.State.IsConnected && run.Time.WaitsOnly(run.PollInterval));
         run.Time.Advance(run.PollInterval);
-        await Wait.UntilAsync(() => simulator.ReceivedRequests.Count == 19 && run.Time.WaitsOnly(run.PollInterval));
+        await Wait.UntilAsync(() => simulator.ReceivedRequests.Count == 20 && run.Time.WaitsOnly(run.PollInterval));
 
         Assert.Null(run.Client.State.Status!.RestartPins);
         Assert.Null(DaenetIp2Board.ToBoardState(DaenetIp2Models.Relays8, run.Client.State).OwnRules);
-        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P5), VersionGet(10), .. AnalogGets(11), Get(19, DaenetIp2Port.P5)], simulator.ReceivedRequests.Take(19));
-        Assert.Single(run.Traces, t => t.Text == "Firmware 4.096 is older than 4.097: the app can't read its restart pins");
+        Assert.Equal([.. AnalogGets(1), Get(9, DaenetIp2Port.P5), RestartGet(10), .. AnalogGets(11), Get(19, DaenetIp2Port.P5), RestartGet(20)], simulator.ReceivedRequests);
+        const string Failed = "Couldn't read the restart pins: The board refused it: no such name (error 2).";
+        Assert.Equal([false, true], run.Traces.Where(t => t.Text == Failed).Select(t => t.IsRoutine));
+        Assert.Equal([false, true], run.Traces.Where(t => t.Text == "Refused: no such name (error 2)").Select(t => t.IsRoutine));
+        Assert.All(run.Traces.Where(t => t.Text == Failed), t => Assert.True(t.IsError));
 
         var error = await Assert.ThrowsAsync<BoardNotConnectedException>(() => run.Client.TurnOffOwnRulesAsync([new OwnRule(1, OwnRuleKind.Restart)], Cancel));
-        Assert.Equal("The DAEnetIP2 v2 board's firmware isn't known to have restart pins (4.097 or later); nothing was sent.", error.Message);
-        Assert.Equal(19, simulator.ReceivedRequests.Count);
+        Assert.Equal("The DAEnetIP2 v2 board's restart pins aren't known; nothing was sent.", error.Message);
+        Assert.Equal(20, simulator.ReceivedRequests.Count);
         Assert.True(run.Client.State.IsConnected);
     }
 
@@ -962,12 +961,6 @@ public sealed class DaenetIp2ClientTests
         return DaenetIp2Snmp.Hex(DaenetIp2Snmp.GetPort(id, Community, port).Pdu);
     }
 
-    // The client's GetRequest of the firmware version, cfgVersion, with this request id, as its PDU.
-    private static string VersionGet(int id)
-    {
-        return DaenetIp2Snmp.Hex(DaenetIp2Snmp.GetFirmwareVersion(id, Community).Pdu);
-    }
-
     // The client's GetRequest of the restart pins, cfgP5DupRST, with this request id, as its PDU.
     private static string RestartGet(int id)
     {
@@ -980,10 +973,10 @@ public sealed class DaenetIp2ClientTests
         return DaenetIp2Snmp.Hex(DaenetIp2Snmp.SetRestartPins(id, Community, pins).Pdu);
     }
 
-    // Whether a request reads the firmware version.
-    private static bool IsVersion(DaenetIp2Message request)
+    // Whether a request reads the restart pins.
+    private static bool IsRestartPins(DaenetIp2Message request)
     {
-        return request.Oid.SequenceEqual(DaenetIp2Oid.FirmwareVersion.Arcs);
+        return request.Oid.SequenceEqual(DaenetIp2Oid.RestartPins.Arcs);
     }
 
     // The client's GetRequests of the 8 analog inputs, input 1 first, with request ids from this one up, as their PDUs.

@@ -395,16 +395,14 @@ public sealed class DaenetIp2SimulatedBoardTests
         Assert.Throws<ArgumentException>(() => new DaenetIp2Simulator(Vm201Model.Model));
     }
 
-    // Table 9.1: cfgVersion is read-only, cfgP5DupRST read-write, 0 to 255, from firmware 4.097.
+    // Table 9.1: cfgP5DupRST is read-write, 0 to 255, from firmware 4.097.
     [Fact]
-    public async Task Should_AnswerTheFirmwareVersionAndTheRestartPins_AsTable9Point1Says()
+    public async Task Should_AnswerTheRestartPins_AsTable9Point1Says()
     {
         await using var simulator = Started(DaenetIp2Models.Relays8);
         using var app = Client();
         await simulator.SetRestartPinsAsync(0b1000_0001);
 
-        var version = DaenetIp2Snmp.GetFirmwareVersion(1, ReadOnly);
-        Assert.Equal(Hex(DaenetIp2Snmp.Response(1, ReadOnly, version.Oid, 0x0461)), await AskAsync(app, simulator, Hex(version.Message)));
         var pins = DaenetIp2Snmp.GetRestartPins(2, ReadOnly);
         Assert.Equal(Hex(DaenetIp2Snmp.Response(2, ReadOnly, pins.Oid, 0b1000_0001)), await AskAsync(app, simulator, Hex(pins.Message)));
 
@@ -414,16 +412,14 @@ public sealed class DaenetIp2SimulatedBoardTests
         Assert.Equal(0b1000_0000, simulator.RestartPins);
         Assert.Equal(0UL, simulator.Relays);
 
-        // A set of the version: no such name, as for any read-only OID. Pins out of range: a bad value. Refused: genErr.
-        Assert.Equal(DaenetIp2Api.NoSuchName, ErrorOf(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.SetRequest, 4, ReadWrite, version.Oid, 0x0500)))));
+        // Pins out of range: a bad value. Refused: genErr.
         Assert.Equal(DaenetIp2Api.BadValue, ErrorOf(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.Encode(DaenetIp2Api.SetRequest, 5, ReadWrite, pins.Oid, 256)))));
         simulator.RefuseRestartPinWrites = true;
         Assert.Equal(DaenetIp2Api.GenErr, ErrorOf(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.SetRestartPins(6, ReadWrite, 0).Message))));
         Assert.Equal(0b1000_0000, simulator.RestartPins);
 
         // Before 4.097 the board has no cfgP5DupRST: no such name, for a get and a set.
-        simulator.FirmwareVersion = 0x0460;
-        Assert.Equal(0x0460, DaenetIp2Snmp.Decode(DaenetIp2SnmpTests.Bytes(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.GetFirmwareVersion(7, ReadOnly).Message)))).Value);
+        simulator.HasRestartPins = false;
         Assert.Equal(DaenetIp2Api.NoSuchName, ErrorOf(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.GetRestartPins(8, ReadOnly).Message))));
         Assert.Equal(DaenetIp2Api.NoSuchName, ErrorOf(await AskAsync(app, simulator, Hex(DaenetIp2Snmp.SetRestartPins(9, ReadWrite, 0).Message))));
         Assert.Equal(0b1000_0000, simulator.RestartPins);

@@ -14,15 +14,9 @@ namespace Contactor.Boards.Denkovi;
 public sealed class DaenetIp2Oid
 {
     /// <summary>
-    /// The firmware version, <c>cfgVersion</c>, x.9.1.8.0: read-only, INTEGER(0..65535), "LSB=VER_MINOR, MSB=VER_MAJOR"
-    /// (table 9.1; the MIB says the same).
-    /// </summary>
-    public static readonly DaenetIp2Oid FirmwareVersion = new("cfgVersion", Config(8), 65535, writable: false);
-
-    /// <summary>
     /// The ICMP monitoring's restart pins, <c>cfgP5DupRST</c>, x.9.1.29.0: read-write, INTEGER(0..255), "Bit mask showing
     /// on which P5 pins to duplicate TargetRST signal", bit 0 = P5.1, "Available from v.4.097" (table 9.1; section 6.10.2:
-    /// "Port P5 Restart Pins").
+    /// "Port P5 Restart Pins"). A board without it answers no such name.
     /// </summary>
     public static readonly DaenetIp2Oid RestartPins = new("cfgP5DupRST", Config(29), DaenetIp2Api.MaxPortValue, writable: true);
 
@@ -65,8 +59,8 @@ public sealed class DaenetIp2Oid
         Writable = writable;
     }
 
-    /// <summary>Every OID the app may send, each once: the pins and ports of P3 and P5, the analog inputs, the firmware version and the restart pins.</summary>
-    public static IReadOnlyList<DaenetIp2Oid> All { get; } = [.. PinOids, .. PortOids, .. AnalogOids, FirmwareVersion, RestartPins];
+    /// <summary>Every OID the app may send, each once: the pins and ports of P3 and P5, the analog inputs and the restart pins.</summary>
+    public static IReadOnlyList<DaenetIp2Oid> All { get; } = [.. PinOids, .. PortOids, .. AnalogOids, RestartPins];
 
     /// <summary>
     /// The OIDs whose read or write changes the board: <c>cfgReset</c> (x.9.1.10.0), <c>cfgDefault</c> (x.9.1.30.0) and
@@ -86,7 +80,7 @@ public sealed class DaenetIp2Oid
     /// <summary>Its arcs, e.g. 1.3.6.1.4.1.42505.9.1.29.0.</summary>
     public IReadOnlyList<int> Arcs => _arcs;
 
-    /// <summary>The largest value it holds: 1 for a pin, 255 for a port or the restart pins, 1023 for an analog input, 65535 for the version.</summary>
+    /// <summary>The largest value it holds: 1 for a pin, 255 for a port or the restart pins, 1023 for an analog input.</summary>
     public int MaxValue { get; }
 
     /// <summary>Whether the manual says it is read-write; only such an OID goes in a SetRequest.</summary>
