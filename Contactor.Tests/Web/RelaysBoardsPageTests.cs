@@ -264,6 +264,38 @@ public sealed partial class RelaysBoardsPageTests
         Assert.Contains(" · 2 of 5 on", Section(html, 1), StringComparison.Ordinal);
     }
 
+    // Issue #496: a board that has never answered shows its lamps as unknown, never off, and "All boards" leaves it out
+    // of its count until its first answer.
+    [Fact]
+    public async Task Should_LeaveABoardOutOfAllBoards_UntilItsFirstAnswer()
+    {
+        await using var boards = await TwoBoards.StartAsync(new FakeRelayBoard(relayCount: 4, connected: false, inputCount: 2));
+        boards.First.SetRelay(1, true);
+        boards.First.SetRelay(5, true);
+        using var http = boards.App.CreateClient();
+
+        var html = await PageAsync(http);
+
+        Assert.Equal(["lamp unknown", "lamp unknown", "lamp unknown", "lamp unknown"], BarnLamps(html));
+        Assert.Contains("2 of 8 on · 2 boards", html, StringComparison.Ordinal);
+
+        boards.Barn.SetConnected(true);
+        boards.Barn.SetRelay(2, true);
+
+        html = await PageAsync(http);
+
+        Assert.Equal(["lamp", "lamp on", "lamp", "lamp"], BarnLamps(html));
+        Assert.Contains("3 of 12 on · 2 boards", html, StringComparison.Ordinal);
+    }
+
+    // Barn's lamps in its box in the side menu.
+    private static IEnumerable<string> BarnLamps(string html)
+    {
+        var box = Regex.Matches(html, "<button[^>]*class=\"side-board [^\"]*\"[^>]*>(?:(?!</button>).)*</button>", RegexOptions.Singleline)
+            .Single(m => m.Value.Contains("Barn", StringComparison.Ordinal));
+        return Regex.Matches(box.Value, "class=\"(lamp(?: on| unknown)?) ?\"").Select(m => m.Groups[1].Value);
+    }
+
     [Theory]
     [InlineData(null, "")]
     [InlineData("", "")]
