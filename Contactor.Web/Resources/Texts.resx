@@ -1956,6 +1956,14 @@
     <value>Contactor couldn't read this board's own rules. Check its own web page.</value>
     <comment>A board that answers and reads its own rules, but couldn't read them this time, e.g. another firmware.</comment>
   </data>
+  <data name="OwnRules.Card.CouldntReadRelays_One" xml:space="preserve">
+    <value>Contactor couldn't read the own rules of this relay. Check the board's own web page.</value>
+    <comment>On the board's own-rules card, above the one relay whose own rules the board couldn't read while it read the others'.</comment>
+  </data>
+  <data name="OwnRules.Card.CouldntReadRelays_Other" xml:space="preserve">
+    <value>Contactor couldn't read the own rules of these relays. Check the board's own web page.</value>
+    <comment>As _One, above two or more relays.</comment>
+  </data>
   <data name="OwnRules.Card.Hint" xml:space="preserve">
     <value>They can turn relays on and off without Contactor.</value>
   </data>
@@ -2023,6 +2031,10 @@
     <value>Found yesterday at {0}</value>
     <comment>{0} is a time, e.g. 07:12.</comment>
   </data>
+  <data name="OwnRules.Group.CouldntRead" xml:space="preserve">
+    <value>Contactor couldn't read the own rules of {0}. Check the board's own web page.</value>
+    <comment>On a group with relays whose own rules the board couldn't read while it read the others'. {0} is their role names in the group, e.g. "Heat" or "Fan and Heat".</comment>
+  </data>
   <data name="OwnRules.GroupLine.AutoOn" xml:space="preserve">
     <value>The board turns {0} on again by itself</value>
     <comment>On a group's card on Relays: {0} is the relays' names in the group, e.g. "Fan and Heat".</comment>
@@ -2076,6 +2088,10 @@
   <data name="OwnRules.Relay" xml:space="preserve">
     <value>relay {0}</value>
     <comment>{0} is a relay's number.</comment>
+  </data>
+  <data name="OwnRules.Relay.CouldntRead" xml:space="preserve">
+    <value>Contactor couldn't read this relay's own rules. Check the board's own web page.</value>
+    <comment>On one relay of a board that read the other relays' own rules but not this one's, e.g. a VM208 schedule with a time such as 99:00.</comment>
   </data>
   <data name="OwnRules.Relays" xml:space="preserve">
     <value>relays {0}</value>

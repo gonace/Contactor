@@ -86,6 +86,31 @@ public sealed partial class OwnRulesHandler
     }
 
     /// <summary>
+    /// The relays whose own rules the board answers but couldn't read this time, while it read the others'
+    /// (<see cref="OwnRules.Unknown"/>, issue #554), e.g. a VM208 schedule with a time such as 99:00: each screen says so
+    /// on that relay, as <see cref="CouldntRead"/> does for the whole board, and never shows it as having none. None
+    /// without the board, while it doesn't answer, and while <see cref="CouldntRead"/> holds (the whole board says so).
+    /// </summary>
+    public static ChannelMask CouldntReadRelays(LiveBoard? board)
+    {
+        return board is { State: { IsConnected: true, OwnRules: { } rules } } && board.Capabilities.OwnRulesOrCantTell.Reads
+            ? rules.Unknown
+            : ChannelMask.None;
+    }
+
+    /// <summary>
+    /// Which of <paramref name="channels"/> (e.g. a group's relays) are among the board's relays whose rules it couldn't
+    /// read (<see cref="CouldntReadRelays"/>), in the order given: a group's card and page name them, since its relays
+    /// have no card of their own.
+    /// </summary>
+    public IReadOnlyList<int> CouldntRead(int boardId, IEnumerable<int> channels)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        var unknown = CouldntReadRelays(_registry.Find(boardId));
+        return unknown.IsEmpty ? [] : [.. channels.Where(unknown.Contains)];
+    }
+
+    /// <summary>
     /// The board's own rules the app warns about: those the board reports now that no person kept. None while the
     /// board's rules aren't known (it can't read them, or hasn't answered), until the app has read which rules people
     /// kept (just after the start), and for a board the app doesn't run.
@@ -122,13 +147,16 @@ public sealed partial class OwnRulesHandler
     /// Whether the app can turn off <paramref name="rule"/> now: the board turns its rules off
     /// (<see cref="OwnRulesAbility.TurnsOff"/>) and its state doesn't name the rule among those it can't
     /// (<see cref="OwnRules.CantTurnOff"/>, e.g. a timer started on the VM208's own page, which ends by itself). While the
-    /// board's rules aren't known, as the ability says. A screen offers "Turn off" only for such a rule.
+    /// board's rules aren't known, as the ability says. Never a rule on a relay whose rules the board couldn't read
+    /// (<see cref="OwnRules.Unknown"/>): it doesn't know what is there to turn off. A screen offers "Turn off" only for
+    /// such a rule.
     /// </summary>
     public bool CanTurnOff(int boardId, OwnRule rule)
     {
         return _registry.Find(boardId) is { } board
             && board.Capabilities.OwnRulesOrCantTell.TurnsOff
-            && board.State.OwnRules?.CanTurnOff(rule) != false;
+            && board.State.OwnRules?.CanTurnOff(rule) != false
+            && board.State.OwnRules?.Unknown.Contains(rule.Relay) != true;
     }
 
     /// <summary>
@@ -389,10 +417,11 @@ public sealed partial class OwnRulesHandler
         return _texts["OwnRules.Keep.InGroup", string.IsNullOrWhiteSpace(name) ? _texts["Relays.DefaultName", channel].Value : name];
     }
 
-    // Whether the board's state shows none of the rules any more: a state that knows its rules, without them.
+    // Whether the board's state shows none of the rules any more: a state that knows its rules, without them. A rule on a
+    // relay whose rules it couldn't read (OwnRules.Unknown) isn't known to be gone.
     private static bool AreGone(BoardState state, IReadOnlyCollection<OwnRule> rules)
     {
-        return state.OwnRules is { } now && !rules.Any(now.Contains);
+        return state.OwnRules is { } now && !rules.Any(r => now.Contains(r) || now.Unknown.Contains(r.Relay));
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The own rules of relay board {BoardId} weren't turned off: the board doesn't have them")]

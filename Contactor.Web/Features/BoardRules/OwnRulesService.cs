@@ -37,8 +37,10 @@ internal readonly record struct KeepOutcome(bool Kept, int? InGroup)
 /// </para>
 /// <list type="bullet">
 /// <item>a rule with no row gets one, and is logged as <c>board-own-rule-found</c> by "system", with <c>new</c> true
-/// when this run had already read the board's rules without it (it was turned on while the app watched);</item>
-/// <item>a row whose rule an actual reading no longer has is deleted, and its "Keep" with it, without logging;</item>
+/// when this run had already read the board's rules without it (it was turned on while the app watched), and its
+/// relay's rules weren't unknown then;</item>
+/// <item>a row whose rule an actual reading no longer has is deleted, and its "Keep" with it, without logging; not a
+/// row on a relay whose rules the reading couldn't read (<see cref="OwnRules.Unknown"/>), which stays as it was;</item>
 /// <item>no reading (null rules: the board can't read them, hasn't answered, or its state was forgotten) changes no row.</item>
 /// </list>
 /// <para>
@@ -340,7 +342,7 @@ public sealed partial class OwnRulesService : BackgroundService
                             RelayId = relayId,
                             Actor = EventActors.System,
                             Action = EventActions.BoardOwnRuleFound,
-                            Details = JsonSerializer.Serialize(new { kind, @new = _seen.GetValueOrDefault(boardId) is { } seen && !seen.Contains(rule), relay = rule.Relay }),
+                            Details = JsonSerializer.Serialize(new { kind, @new = IsNew(_seen.GetValueOrDefault(boardId), rule), relay = rule.Relay }),
                         });
                     }
                     else if (row.KeptUtc is not null)
@@ -642,6 +644,13 @@ public sealed partial class OwnRulesService : BackgroundService
         _seen[boardId] = rules;
     }
 
+    // Whether a rule found now came while the app watched: this run had read the board's rules without it, and its
+    // relay's rules weren't unknown then.
+    private static bool IsNew(OwnRules? seen, OwnRule rule)
+    {
+        return seen is not null && !seen.Contains(rule) && !seen.Unknown.Contains(rule.Relay);
+    }
+
     // The board read rules other than the last: a row for each new rule, logged, and none for a rule it no longer has.
     private async Task ActAsync(int boardId, OwnRules rules, OwnRules? seen, CancellationToken cancellationToken)
     {
@@ -667,13 +676,19 @@ public sealed partial class OwnRulesService : BackgroundService
                 RelayId = relays.TryGetValue(rule.Relay, out var relayId) ? relayId : null,
                 Actor = EventActors.System,
                 Action = EventActions.BoardOwnRuleFound,
-                Details = JsonSerializer.Serialize(new { kind, @new = seen is not null && !seen.Contains(rule), relay = rule.Relay }),
+                Details = JsonSerializer.Serialize(new { kind, @new = IsNew(seen, rule), relay = rule.Relay }),
             });
         }
 
-        // A rule the reading no longer has: its row, and its "Keep" with it, so it warns again if it comes back.
+        // A rule the reading no longer has: its row, and its "Keep" with it, so it warns again if it comes back. Not on a
+        // relay whose rules it couldn't read: they may still be there.
         foreach (var row in rows)
         {
+            if (rules.Unknown.Contains(row.Channel))
+            {
+                continue;
+            }
+
             if (!OwnRuleKinds.TryParse(row.Kind, out var kind) || !reported.Contains(new OwnRule(row.Channel, kind)))
             {
                 db.BoardOwnRules.Remove(row);

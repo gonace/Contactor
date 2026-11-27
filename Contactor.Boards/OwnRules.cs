@@ -5,9 +5,9 @@ namespace Contactor.Boards;
 /// <summary>
 /// The rules of its own a board reported (<see cref="BoardState.OwnRules"/>), in the order the board gave them, and
 /// what lies behind them on the board (<see cref="Units"/>), so the app can tell which rules a turn-off takes with it
-/// (<see cref="GoesWith(IEnumerable{OwnRule})"/>), and which of them the app can't turn off (<see cref="CantTurnOff"/>).
-/// Immutable; two are equal when they hold the same rules in the same order, the same units and the same rules the app
-/// can't turn off.
+/// (<see cref="GoesWith(IEnumerable{OwnRule})"/>), which of them the app can't turn off (<see cref="CantTurnOff"/>), and
+/// the relays whose rules the board couldn't read (<see cref="Unknown"/>). Immutable; two are equal when they hold the
+/// same rules in the same order, the same units, the same rules the app can't turn off and the same unknown relays.
 /// </summary>
 public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
 {
@@ -32,9 +32,10 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
     /// is off (<see cref="GoesWith(IEnumerable{OwnRule})"/>). A rule in no unit stands alone. Every rule a unit names must
     /// be one of <paramref name="rules"/>; an empty unit is left out, and a unit given twice counts once.
     /// <paramref name="cantTurnOff"/> are the rules the app can't turn off (<see cref="CantTurnOff"/>), each one of
-    /// <paramref name="rules"/>; none by default.
+    /// <paramref name="rules"/>; none by default. <paramref name="unknown"/> are the relays whose rules the board couldn't
+    /// read (<see cref="Unknown"/>); none by default.
     /// </summary>
-    public OwnRules(IEnumerable<OwnRule> rules, IEnumerable<IReadOnlyCollection<OwnRule>>? units, IEnumerable<OwnRule>? cantTurnOff = null)
+    public OwnRules(IEnumerable<OwnRule> rules, IEnumerable<IReadOnlyCollection<OwnRule>>? units, IEnumerable<OwnRule>? cantTurnOff = null, ChannelMask unknown = default)
     {
         ArgumentNullException.ThrowIfNull(rules);
         _rules = [.. rules];
@@ -73,6 +74,7 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
         _cantTurnOff = [.. _rules.Distinct().Where(fixedRules.Contains)];
         Relays = ChannelMask.Of(_rules.Select(r => r.Relay));
         Unavailable = ChannelMask.Of(_rules.Where(r => r.Kind == OwnRuleKind.InputLinkage).Select(r => r.Relay));
+        Unknown = unknown;
     }
 
     /// <summary>A board that has none.</summary>
@@ -90,6 +92,15 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
     /// the app doesn't switch them until a person resets them.
     /// </summary>
     public ChannelMask Unavailable { get; }
+
+    /// <summary>
+    /// The relays whose rules the board couldn't read this time, e.g. a VM208 schedule with a time such as 99:00: they may
+    /// have rules that aren't in the list, so the screens say so for each of them and never show them as having none. The
+    /// other relays' rules are known as usual. A rule in the list may still be on such a relay (e.g. a VM208 timer that
+    /// runs now). None by default; a board that couldn't read any of its rules reports null rules instead
+    /// (<see cref="BoardState.OwnRules"/>).
+    /// </summary>
+    public ChannelMask Unknown { get; }
 
     /// <summary>The rules that switch <paramref name="relay"/>, 1 being the first; none for a relay it doesn't have.</summary>
     public IReadOnlyList<OwnRule> For(int relay)
@@ -161,7 +172,8 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
             && _rules.AsSpan().SequenceEqual(other._rules)
             && _units.Length == other._units.Length
             && _units.All(u => Array.Exists(other._units, o => o.AsSpan().SequenceEqual(u)))
-            && _cantTurnOff.AsSpan().SequenceEqual(other._cantTurnOff);
+            && _cantTurnOff.AsSpan().SequenceEqual(other._cantTurnOff)
+            && Unknown == other.Unknown;
     }
 
     public override bool Equals(object? obj)
@@ -179,6 +191,7 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
 
         hash.Add(_units.Length);
         hash.Add(_cantTurnOff.Length);
+        hash.Add(Unknown);
         return hash.ToHashCode();
     }
 
@@ -191,7 +204,8 @@ public sealed class OwnRules : IReadOnlyList<OwnRule>, IEquatable<OwnRules>
 
         var units = _units.Select(u => $"; ({string.Join(", ", u.Select(Name))})");
         var fixedRules = _cantTurnOff.Length == 0 ? "" : $"; can't turn off: {string.Join(", ", _cantTurnOff.Select(Name))}";
-        return $"[{string.Join(", ", _rules.Select(Name))}{string.Concat(units)}{fixedRules}]";
+        var unknown = Unknown.IsEmpty ? "" : $"; unknown: {Unknown}";
+        return $"[{string.Join(", ", _rules.Select(Name))}{string.Concat(units)}{fixedRules}{unknown}]";
     }
 
     public static bool operator ==(OwnRules? left, OwnRules? right)

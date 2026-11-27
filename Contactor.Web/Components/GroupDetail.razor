@@ -77,6 +77,16 @@
                         </div>
                     </div>
                 }
+                @if (CouldntRead is { Count: > 0 } couldntRead)
+                {
+                    @* The board couldn't read the own rules of some of the group's relays (issue #554). *@
+                    <div class="offline group-unavailable" role="status">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+                        <div>
+                            <strong>@OwnRulesText.GroupCouldntRead(couldntRead.Select(m => m.RoleName))</strong>
+                        </div>
+                    </div>
+                }
                 @if (NotSafe is { Count: > 0 } notSafe)
                 {
                     @* The board turns some of the group's relays on by itself after a power cut, before Contactor runs and
@@ -342,6 +352,13 @@
     private BoardState State => Board?.State ?? BoardState.Initial;
 
     // The group's relays the board controls by itself now: the group doesn't start while there are any.
+    // The group's relays whose own rules the board couldn't read (OwnRulesHandler.CouldntRead), in start order.
+    private IReadOnlyList<GroupMemberView> CouldntRead => _group is null || BoardId is not { } boardId
+        ? []
+        : OwnRules.CouldntRead(boardId, _group.Members.Select(m => m.Channel)) is { Count: > 0 } channels
+            ? [.. _group.Members.Where(m => channels.Contains(m.Channel))]
+            : [];
+
     private IReadOnlyList<GroupMemberView> Unavailable => _group is null ? [] : [.. _group.Members.Where(m => State.Unavailable.Contains(m.Channel))];
 
     // "Reset" that went wrong.

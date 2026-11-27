@@ -1769,6 +1769,12 @@
   <data name="OwnRules.Card.CouldntRead" xml:space="preserve">
     <value>Contactor kunde inte läsa kortets egna regler. Titta på kortets egen webbsida.</value>
   </data>
+  <data name="OwnRules.Card.CouldntReadRelays_One" xml:space="preserve">
+    <value>Contactor kunde inte läsa reglerna för det här reläet. Titta på kortets egen webbsida.</value>
+  </data>
+  <data name="OwnRules.Card.CouldntReadRelays_Other" xml:space="preserve">
+    <value>Contactor kunde inte läsa reglerna för de här reläerna. Titta på kortets egen webbsida.</value>
+  </data>
   <data name="OwnRules.Card.Hint" xml:space="preserve">
     <value>De kan slå på och stänga av reläer utan Contactor.</value>
   </data>
@@ -1826,6 +1832,9 @@
   <data name="OwnRules.Found.Yesterday" xml:space="preserve">
     <value>Hittades i går {0}</value>
   </data>
+  <data name="OwnRules.Group.CouldntRead" xml:space="preserve">
+    <value>Contactor kunde inte läsa de egna reglerna för {0}. Titta på kortets egen webbsida.</value>
+  </data>
   <data name="OwnRules.GroupLine.AutoOn" xml:space="preserve">
     <value>Kortet slår på {0} igen av sig självt</value>
   </data>
@@ -1870,6 +1879,9 @@
   </data>
   <data name="OwnRules.Relay" xml:space="preserve">
     <value>relä {0}</value>
+  </data>
+  <data name="OwnRules.Relay.CouldntRead" xml:space="preserve">
+    <value>Contactor kunde inte läsa reläets egna regler. Titta på kortets egen webbsida.</value>
   </data>
   <data name="OwnRules.Relays" xml:space="preserve">
     <value>relä {0}</value>

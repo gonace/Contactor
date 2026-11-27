@@ -326,13 +326,16 @@
                                             <div class="schedule-list" role="group" aria-labelledby="alarms-head">
                                                 @for (var relay = 1; relay <= capabilities.RelayCount; relay++)
                                                 {
-                                                    <div class="rule-line" @key="relay">
-                                                        <span>Relay @relay</span>
-                                                        <span class="hint">@Vm208ScheduleText.Describe(vm208.Alarms(relay))</span>
+                                                    var number = relay;
+                                                    <div class="rule-line" @key="number">
+                                                        <span>Relay @number</span>
+                                                        <span class="hint">@Vm208ScheduleText.Describe(vm208.Alarms(number))</span>
+                                                        <button type="button" @onclick="() => current.SetVm208UnreadableScheduleAsync(number, reset: false)">Store 99:00</button>
+                                                        <button type="button" @onclick="() => current.SetVm208UnreadableScheduleAsync(number, reset: true)">Factory schedule</button>
                                                     </div>
                                                 }
                                             </div>
-                                            <span class="hint">A relay's checkbox turns all its alarms on or off, as the app's "Turn them off" does.</span>
+                                            <span class="hint">A relay's checkbox turns all its alarms on or off, as the app's "Turn them off" does. "Store 99:00" keeps a time the board never runs, as the firmware does: the app can't read that relay's schedule.</span>
                                             <h4 class="label" id="runs-head">PULSE AND TIMER, AS ON THE BOARD'S OWN PAGE</h4>
                                             <div class="schedule-list" role="group" aria-labelledby="runs-head">
                                                 @for (var relay = 1; relay <= capabilities.RelayCount; relay++)

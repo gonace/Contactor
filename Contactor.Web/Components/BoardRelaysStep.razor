@@ -53,6 +53,11 @@
             {
                 <p class="hint">@Texts["Boards.Relays.InGroup", relay.GroupName]</p>
             }
+            @if (OwnRulesHandler.CouldntReadRelays(Board).Contains(relay.Channel))
+            {
+                @* A relay whose own rules the board couldn't read while it read the others' (issue #554). *@
+                <p class="hint own-rules">@Texts["OwnRules.Relay.CouldntRead"]</p>
+            }
             @if (relay.Error is not null)
             {
                 <p class="error" role="alert">@relay.Error</p>
@@ -79,8 +84,10 @@
     private ElementReference _heading;
     private int _watched;
 
-    // The own-rules line drawn last: a change of the board's rules alone redraws the step only when it changes.
+    // The own-rules line and the relays whose rules couldn't be read, drawn last: a change of the board's rules alone
+    // redraws the step only when one of them changes.
     private string? _shownLine;
+    private ChannelMask _shownCouldntRead;
 
     /// <summary>Every relay the board has, by channel, for the step.</summary>
     public static async Task<List<Row>> LoadAsync(SetupHandler setup, int boardId, CancellationToken cancellationToken)
@@ -124,6 +131,7 @@
     protected override void OnAfterRender(bool firstRender)
     {
         _shownLine = OwnRulesLine(Board);
+        _shownCouldntRead = OwnRulesHandler.CouldntReadRelays(Board);
     }
 
     public void Dispose()
@@ -207,7 +215,8 @@
         _ = RefreshAsync();
     }
 
-    // From the board's read loop, when only its own rules changed: the line may change, nothing else on the step.
+    // From the board's read loop, when only its own rules changed: the line and the relays' "couldn't read" may change,
+    // nothing else on the step.
     private void OnOwnRulesChanged(object? sender, BoardStateChange change)
     {
         if (change.BoardId == _watched)
@@ -223,7 +232,7 @@
         {
             await InvokeAsync(() =>
             {
-                if (!onlyIfLineChanged || OwnRulesLine(Board) != _shownLine)
+                if (!onlyIfLineChanged || OwnRulesLine(Board) != _shownLine || OwnRulesHandler.CouldntReadRelays(Board) != _shownCouldntRead)
                 {
                     StateHasChanged();
                 }

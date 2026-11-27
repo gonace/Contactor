@@ -186,6 +186,24 @@ public sealed class RunningBoard : IAsyncDisposable
     }
 
     /// <summary>
+    /// Stores 99:00 in a VM208 relay's schedule, a time the firmware keeps but the app can't read, or with
+    /// <paramref name="reset"/> gives the relay the factory schedule back. Nothing for another board, a relay it doesn't
+    /// have, or while the power is cut.
+    /// </summary>
+    public Task SetVm208UnreadableScheduleAsync(int relay, bool reset)
+    {
+        if (Power?.IsPoweredOff == true || Board is not Vm208Simulator vm208 || relay < 1 || relay > Vm208Api.RelayCount)
+        {
+            return Task.CompletedTask;
+        }
+
+        Add(TrafficKind.AtBoard, string.Create(
+            CultureInfo.InvariantCulture,
+            $"{(reset ? "The factory schedule set" : "99:00 stored")} on relay {relay}'s schedule here"));
+        return reset ? vm208.SetAlarmsAsync(relay, Vm208Simulator.FactorySchedule) : vm208.StoreUnrunnableTimeAsync(relay);
+    }
+
+    /// <summary>
     /// Sets one relay's control mode, as the board's own tool or web page would; the others stay as they are. Nothing
     /// for a board without modes, or for a relay or mode it doesn't have: the page offers only those.
     /// </summary>

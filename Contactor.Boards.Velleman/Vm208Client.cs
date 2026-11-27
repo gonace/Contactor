@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -48,11 +49,13 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
     private Vm208Status? _lastReported;
     private int _wasConnected;
 
-    // Under the poller's lock: each relay's schedule as last read (null while unknown), whether it is read on this
-    // connection, when, and whether the last read failed.
-    private IReadOnlyList<Vm208Alarm>[]? _schedules;
+    // Under the poller's lock: each relay's schedule as last read (null while none was read; an entry null while that
+    // relay's answer couldn't be read), whether it is read on this connection, when, whether the last read failed, and
+    // the relays whose last answer couldn't be read (bit 0 = relay 1), so each shows a toast only once.
+    private IReadOnlyList<Vm208Alarm>?[]? _schedules;
     private bool _schedulesRead;
     private bool _schedulesFailed;
+    private byte _unreadableSchedules;
     private DateTimeOffset _schedulesReadUtc;
 
     // Under the poller's lock: the relays with a pulse or a timer running, as the last status said; null while unknown.
@@ -260,6 +263,7 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
         _schedules = null;
         _schedulesRead = false;
         _schedulesFailed = false;
+        _unreadableSchedules = 0;
         _running = null;
         return Task.CompletedTask;
     }
@@ -492,35 +496,56 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
         return status;
     }
 
-    // Under the poller's lock: every relay's schedule, one GET /getalarms each, relays 1–4 only. Never fails the poll:
-    // an answer that isn't 200 or can't be read, or no answer, makes the schedules unknown (and stops the read: the
-    // board wouldn't answer the next relay either), and the read is tried again after SchedulesInterval. Only a
-    // cancelled poll (a command takes its place, or the app stops) ends it without a result.
+    // Under the poller's lock: every relay's schedule, one GET /getalarms each, relays 1–4 only. Never fails the poll.
+    // A 200 whose schedule can't be read (e.g. a time such as 99:00 the board keeps) makes only that relay's schedule
+    // unknown, and the read goes on with the next relay. An answer that isn't 200, one too long, or no answer makes every
+    // schedule unknown and stops the read: the board is gone, or every relay would answer the same (a firmware without
+    // /getalarms answers 404). Either way the read is tried again after SchedulesInterval. Only a cancelled poll (a
+    // command takes its place, or the app stops) ends it without a result.
     private async Task ReadSchedulesAsync(BoardEndpoint target, CancellationToken cancellationToken)
     {
         var before = _schedules;
-        var schedules = new IReadOnlyList<Vm208Alarm>[Vm208Api.RelayCount];
+        var schedules = new IReadOnlyList<Vm208Alarm>?[Vm208Api.RelayCount];
         var failed = false;
+        byte unreadable = 0;
         for (var relay = 1; relay <= Vm208Api.RelayCount; relay++)
         {
+            var bit = (byte)(1 << (relay - 1));
+            var wasUnreadable = (_unreadableSchedules & bit) != 0;
             try
             {
                 // Never to another board: the poll that began it was for this address.
                 EnsureSameBoard(target, command: false);
-                schedules[relay - 1] = await GetScheduleAsync(relay, routine: true, before?[relay - 1], quietErrors: _schedulesFailed, cancellationToken).ConfigureAwait(false);
+                schedules[relay - 1] = await ReadScheduleAsync(relay, routine: true, before?[relay - 1], quietErrors: _schedulesFailed, quietUnreadable: wasUnreadable, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsNoAnswer(ex) || ex is Vm208ProtocolException or UriFormatException or BoardNotConnectedException)
             {
-                // Traced by SendAsync or GetScheduleAsync; this says what it means. A toast only the first time: while the
+                // Traced by SendAsync or ReadScheduleAsync; this says what it means. A toast only the first time: while the
                 // reads keep failing (a firmware without /getalarms answers 404 every minute), every trace is routine.
                 Trace(BoardTraceDirection.None, $"The board's schedules can't be read: {ex.Message}", isError: true, isRoutine: _schedulesFailed);
                 failed = true;
                 break;
             }
+
+            if (schedules[relay - 1] is null)
+            {
+                // Traced by ReadScheduleAsync with the answer. A toast only the first time, as above.
+                unreadable |= bit;
+                Trace(
+                    BoardTraceDirection.None,
+                    string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s schedule can't be read: its own rules are unknown"),
+                    isError: true,
+                    isRoutine: wasUnreadable);
+            }
         }
 
         _schedules = failed ? null : schedules;
         _schedulesFailed = failed;
+        if (!failed)
+        {
+            _unreadableSchedules = unreadable;
+        }
+
         _schedulesReadUtc = _timeProvider.GetUtcNow();
         _schedulesRead = true;
     }
@@ -533,6 +558,20 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
         bool routine,
         IReadOnlyList<Vm208Alarm>? before,
         bool quietErrors,
+        CancellationToken cancellationToken)
+    {
+        var alarms = await ReadScheduleAsync(relay, routine, before, quietErrors, quietUnreadable: null, cancellationToken).ConfigureAwait(false);
+        return alarms ?? throw new UnreachableException();
+    }
+
+    // GetScheduleAsync, but with quietUnreadable set a 200 whose schedule can't be read returns null instead of throwing:
+    // that relay's schedule alone is unknown. Traced with a toast unless quietUnreadable (one that already showed).
+    private async Task<IReadOnlyList<Vm208Alarm>?> ReadScheduleAsync(
+        int relay,
+        bool routine,
+        IReadOnlyList<Vm208Alarm>? before,
+        bool quietErrors,
+        bool? quietUnreadable,
         CancellationToken cancellationToken)
     {
         var answer = await SendAsync(HttpMethod.Get, $"{Vm208Api.AlarmsPath}?{Vm208Api.AlarmsQuery(relay)}", form: null, routine, quietErrors, cancellationToken).ConfigureAwait(false);
@@ -548,7 +587,12 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
         }
         catch (Vm208ProtocolException ex)
         {
-            Trace(BoardTraceDirection.Received, ex.Message, answer.Text, isError: true, isRoutine: quietErrors);
+            Trace(BoardTraceDirection.Received, ex.Message, answer.Text, isError: true, isRoutine: quietUnreadable ?? quietErrors);
+            if (quietUnreadable is not null)
+            {
+                return null;
+            }
+
             throw;
         }
 
@@ -560,7 +604,8 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
     // Under the poller's lock: the own rules, or null while the schedules or the running pulses and timers are unknown.
     // A Timer rule on each relay whose schedule has an enabled alarm or that has a pulse or a timer running, in relay
     // order; each relay is its own unit, so turning one off takes no other rule with it. A relay with a pulse or a timer
-    // running can't be turned off: the app never stops one, and turning its schedule off wouldn't remove the rule.
+    // running can't be turned off: the app never stops one, and turning its schedule off wouldn't remove the rule. A
+    // relay whose schedule couldn't be read is unknown (OwnRules.Unknown), with a rule only for a run.
     private OwnRules? CurrentOwnRules(byte? running)
     {
         if (_schedules is not { } schedules || running is not { } runs)
@@ -570,10 +615,16 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
 
         List<OwnRule> rules = [];
         List<OwnRule> cantTurnOff = [];
+        List<int> unknown = [];
         for (var relay = 1; relay <= schedules.Length; relay++)
         {
             var isRunning = (runs & (1 << (relay - 1))) != 0;
-            if (schedules[relay - 1].Any(a => a.Enabled) || isRunning)
+            if (schedules[relay - 1] is null)
+            {
+                unknown.Add(relay);
+            }
+
+            if (schedules[relay - 1]?.Any(a => a.Enabled) == true || isRunning)
             {
                 var rule = new OwnRule(relay, OwnRuleKind.Timer);
                 rules.Add(rule);
@@ -584,9 +635,9 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
             }
         }
 
-        return rules.Count == 0
+        return rules.Count == 0 && unknown.Count == 0
             ? Contactor.Boards.OwnRules.Empty
-            : new OwnRules(rules, rules.Select(r => (IReadOnlyCollection<OwnRule>)[r]), cantTurnOff);
+            : new OwnRules(rules, rules.Select(r => (IReadOnlyCollection<OwnRule>)[r]), cantTurnOff, ChannelMask.Of(unknown));
     }
 
     // Under the poller's lock: the status first, for the pulses and timers running now (one started since the last
@@ -678,9 +729,10 @@ public sealed class Vm208Client : IPolledBoard<Vm208Status>, IDisposable, IAsync
                 var after = await GetScheduleAsync(relay, routine: false, before: null, quietErrors: false, cancellationToken).ConfigureAwait(false);
                 if (_schedules is { } known)
                 {
-                    var schedules = (IReadOnlyList<Vm208Alarm>[])known.Clone();
+                    var schedules = (IReadOnlyList<Vm208Alarm>?[])known.Clone();
                     schedules[relay - 1] = after;
                     _schedules = schedules;
+                    _unreadableSchedules &= (byte)~(1 << (relay - 1));
                 }
             }
             catch (Exception ex) when (ex is Vm208ProtocolException or BoardNotConnectedException || IsNoAnswer(ex) || ex is UriFormatException)

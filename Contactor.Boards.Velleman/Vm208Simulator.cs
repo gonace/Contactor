@@ -176,6 +176,25 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Stores a time the firmware keeps but never runs, 99:00, in the relay's Monday "on" alarm, enabled, as
+    /// <c>POST /shedule_set</c> takes it (<see cref="Vm208Alarm.IsStored"/>); <c>GET /getalarms</c> then answers it so.
+    /// The other alarms stay. The relay's whole schedule is set again with <see cref="SetAlarmsAsync"/>. Throws
+    /// <see cref="ArgumentOutOfRangeException"/> for a relay the board doesn't have.
+    /// </summary>
+    public Task StoreUnrunnableTimeAsync(int relay)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(relay, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(relay, Vm208Api.RelayCount);
+        ChangeSchedule(() =>
+        {
+            var index = Vm208Alarm.IndexOf(1, turnsOn: true);
+            IReadOnlyList<Vm208Alarm> alarms = [.. _alarms[relay - 1].Select((a, i) => i == index ? a with { Hour = 99, Minute = 0, Enabled = true } : a)];
+            _alarms[relay - 1] = alarms;
+        });
+        return Task.CompletedTask;
+    }
+
     /// <summary>Enables every alarm of the relays in <paramref name="timers"/> and disables the others' alarms, at their times.</summary>
     public Task SetTimersAsync(ChannelMask timers)
     {
@@ -380,7 +399,8 @@ public sealed class Vm208Simulator : ISimulatedBoard, ISimulatedBoardRejectConne
                 var alarms = Alarms(relay);
                 foreach (var on in OnThenOff)
                 {
-                    if (alarms.Any(a => a.Enabled && a.TurnsOn == on))
+                    // The board never runs an alarm at a time such as 99:00, which it keeps all the same.
+                    if (alarms.Any(a => a.Enabled && a.TurnsOn == on && a.Hour <= 23 && a.Minute <= 59))
                     {
                         rules.Add(new SimulatedRule(
                             string.Create(CultureInfo.InvariantCulture, $"alarm-{relay}-{(on ? "on" : "off")}"),

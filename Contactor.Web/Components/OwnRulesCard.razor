@@ -21,14 +21,15 @@
    right now in a group of its own, issue #552), or a line for a board that may have rules the app can't see. None for a board that has
    none. A rule whose turn-off takes other relays' rules with it says so under it ("Also turns off the board's timer
    for Heat."). A board that answers but couldn't read its rules (issue #551) gets a line saying so, under any rows
-   from before. *@
-@if (Board is { } board && (_rows.Count > 0 || Ability(board).MayHaveUnseen || OwnRulesHandler.CouldntRead(board)))
+   from before; one that couldn't read only some relays' rules (issue #554) gets a line saying so and a row for each of them. *@
+@if (Board is { } board && (_rows.Count > 0 || Ability(board).MayHaveUnseen || OwnRulesHandler.CouldntRead(board) || !OwnRulesHandler.CouldntReadRelays(board).IsEmpty))
 {
     var ability = Ability(board);
     var connected = board.State.IsConnected;
     var couldntRead = OwnRulesHandler.CouldntRead(board);
+    var unknownRelays = OwnRulesHandler.CouldntReadRelays(board);
     <section class="card own-rules-card" aria-labelledby="own-rules-@BoardId">
-        <h2 id="own-rules-@BoardId">@(_rows.Count == 0 && couldntRead ? Texts["OwnRules.Card.Title.Rule"] : Words.CardTitle(_rows.Select(r => r.Kind)))</h2>
+        <h2 id="own-rules-@BoardId">@(_rows.Count == 0 && (couldntRead || !unknownRelays.IsEmpty) ? Texts["OwnRules.Card.Title.Rule"] : Words.CardTitle(_rows.Select(r => r.Kind)))</h2>
         @if (_rows.Count > 0)
         {
             <p class="hint">@Texts["OwnRules.Card.Hint"]</p>
@@ -74,6 +75,25 @@
                 }
             </ul>
         }
+        @if (!unknownRelays.IsEmpty)
+        {
+            @* The relays whose rules the board couldn't read: never shown as having none. The message once, then a row
+               per relay. *@
+            <p class="hint">@Texts["OwnRules.Card.CouldntReadRelays" + Plurals.Form(unknownRelays.Count)]</p>
+            <ul class="rules">
+                @foreach (var channel in unknownRelays.Channels)
+                {
+                    var id = $"own-rules-unknown-{BoardId}-{channel}";
+                    <li class="rule" @key="id">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+                        <span class="text" id="@id">
+                            <span class="label">@Texts["Relays.RelayLabel", channel]</span>
+                            <span class="name">@(_names.GetValueOrDefault(channel) ?? Texts["Relays.DefaultName", channel])</span>
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
         @* A rule that runs on the board right now, in a group of its own: no "Turn off", "Keep" once it has ended. *@
         <OwnRulesRunning BoardId="BoardId" Channels="@([.. _rows.Where(Running).Select(r => r.Channel).Distinct()])" Names="_names" />
         @if (couldntRead)
@@ -109,6 +129,7 @@
     // goes with its rules changes.
     private bool? _shownConnected;
     private bool _shownCouldntRead;
+    private ChannelMask _shownCouldntReadRelays;
     private string _shownAlso = "";
 
     // Set when the card closes, on the page's own thread: an event already on its way doesn't load or draw it.
@@ -149,6 +170,7 @@
     {
         _shownConnected = Board?.State.IsConnected;
         _shownCouldntRead = OwnRulesHandler.CouldntRead(Board);
+        _shownCouldntReadRelays = OwnRulesHandler.CouldntReadRelays(Board);
         _shownAlso = AlsoShown();
     }
 
@@ -189,7 +211,9 @@
         var load = ++_loads;
         var boardId = BoardId;
         var rows = Rows.Rows(boardId);
-        if (rows.Count == 0)
+
+        // The names also without rows while a relay's rules couldn't be read: it is named too.
+        if (rows.Count == 0 && OwnRulesHandler.CouldntReadRelays(Board).IsEmpty)
         {
             _rows = [];
             return;
@@ -244,8 +268,8 @@
         }
     }
 
-    // From a board's read loop: the buttons follow the board's contact, the "couldn't read" line and the "also" words its
-    // rules.
+    // From a board's read loop: the buttons follow the board's contact, the "couldn't read" line and rows and the "also"
+    // words its rules.
     private void OnBoardChanged(object? sender, BoardStateChange change)
     {
         if (change.BoardId == BoardId)
@@ -275,8 +299,9 @@
                     return;
                 }
 
-                if (reload)
+                if (reload || OwnRulesHandler.CouldntReadRelays(Board) != _shownCouldntReadRelays)
                 {
+                    // Also when the relays whose rules couldn't be read change: their names are loaded with the rows.
                     await LoadAsync();
                     StateHasChanged();
                 }
