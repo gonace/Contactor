@@ -406,7 +406,7 @@ public sealed class OwnRulesHandlerTests
         var refused = await rig.Handler.KeepAsync(rig.BoardId, 2, OwnRuleKind.AutoOn, Erik, Cancel);
 
         Assert.Equal(1, join.Joined);
-        Assert.Equal("Can't be kept: Relay 2 is in a group, and the board would turn it on again without the group's order.", refused);
+        Assert.Equal("Can't be kept: Relay 2 is in a group, and the board would switch it by itself without the group's order.", refused);
         Assert.Null(await rig.Handler.KeepAsync(rig.BoardId, 2, OwnRuleKind.Timer, Erik, Cancel));
         Assert.Null(await rig.Handler.KeepAsync(rig.BoardId, 5, OwnRuleKind.AutoOn, Erik, Cancel));
 

@@ -97,7 +97,7 @@ public sealed class SimulatorCatalogueTests
     [InlineData("waveshare-8", "Modbus RTU over TCP, polled every 2 s", "4196", "No own rules. Pulse 0.1 s – 3,276.7 s.")]
     [InlineData("waveshare-8b", "Modbus RTU over TCP, polled every 2 s", "4196", "Own rules: relay modes that follow the inputs (the app reads them and can turn them off). Pulse 0.1 s – 3,276.7 s.")]
     [InlineData("devantech-eth008", "TCP commands, polled every 2 s", "17494", "Own rules: the app can't tell whether it has any. Pulse 0.1 s – 25.5 s.")]
-    [InlineData("denkovi-daenetip2-v2-8", "SNMP over UDP, polled every 2 s", "161 → 8161", "Own rules: the app can't tell whether it has any. No pulse.")]
+    [InlineData("denkovi-daenetip2-v2-8", "SNMP over UDP, polled every 2 s", "161 → 8161", "Own rules: the ICMP monitoring's restart pins (the app reads them and can turn them off; there may be others it can't see). No pulse.")]
     [InlineData("advantech-adam-6060", "Modbus TCP, polled every 2 s", "502 → 8502", "Own rules: the app can't tell whether it has any. No pulse.")]
     [InlineData(
         "shelly-2",

@@ -344,6 +344,33 @@ public sealed class PersistenceTests
         Assert.Equal(Earlier, rows[1].FoundUtc);
     }
 
+    // Issue #515: the version before the restart kind refuses it: going back removes those rows and keeps the others.
+    [Fact]
+    public async Task Should_RemoveRestartRules_WhenMigratedBackBeforeTheKind()
+    {
+        await using var database = TestDatabase.Create();
+        await database.Services.InitializeDatabaseAsync(relayCount: 8, Cancel);
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 2, Kind = OwnRuleKinds.Restart, FoundUtc = Earlier });
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 3, Kind = OwnRuleKinds.AutoOn, FoundUtc = Earlier });
+            await db.SaveChangesAsync(Cancel);
+            await db.GetService<IMigrator>().MigrateAsync("20261118200121_AddOwnRuleKindAutoOn", cancellationToken: Cancel);
+        }
+
+        await using (var db = await database.Factory.CreateDbContextAsync(Cancel))
+        {
+            Assert.Equal([3], await db.Database.SqlQueryRaw<int>("SELECT \"Channel\" AS \"Value\" FROM \"BoardOwnRule\"").ToListAsync(Cancel));
+            await db.Database.MigrateAsync(Cancel);
+            db.BoardOwnRules.Add(new BoardOwnRule { BoardId = 1, Channel = 2, Kind = OwnRuleKinds.Restart, FoundUtc = Earlier });
+            await db.SaveChangesAsync(Cancel);
+        }
+
+        await using var check = await database.Factory.CreateDbContextAsync(Cancel);
+        var rows = await check.BoardOwnRules.AsNoTracking().OrderBy(r => r.Channel).ToListAsync(Cancel);
+        Assert.Equal([(2, OwnRuleKinds.Restart), (3, OwnRuleKinds.AutoOn)], rows.Select(r => (r.Channel, r.Kind)));
+    }
+
     [Fact]
     public void Should_SaveEveryKindOfOwnRule_AndReadItBack()
     {

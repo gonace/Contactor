@@ -62,6 +62,65 @@ public sealed class BoardSwitches
     /// <summary>Whether a get of an analog input goes unanswered; null for a board other than the DAEnetIP2.</summary>
     public bool? NoAnalogAnswer => (_board as DaenetIp2Simulator)?.NoAnalogAnswer;
 
+    /// <summary>
+    /// The relays whose pin is among the DAEnetIP2's restart pins (<c>cfgP5DupRST</c>); null for a board other than the
+    /// DAEnetIP2.
+    /// </summary>
+    public ChannelMask? RestartRelays => _board is DaenetIp2Simulator daenet ? DaenetIp2Models.Layout(_board.Model).RestartRules(daenet.RestartPins).Relays : null;
+
+    /// <summary>Whether the DAEnetIP2's firmware is older than 4.097, without restart pins; null for any other board.</summary>
+    public bool? OldFirmware => _board is DaenetIp2Simulator daenet ? !daenet.HasRestartPins : null;
+
+    /// <summary>Whether the DAEnetIP2 refuses a write of its restart pins; null for any other board.</summary>
+    public bool? RefuseRestartPinWrites => (_board as DaenetIp2Simulator)?.RefuseRestartPinWrites;
+
+    /// <summary>Whether a relay of the board can be a restart pin: one on P5 of a DAEnetIP2 kit.</summary>
+    public bool CanRestart(int relay)
+    {
+        return _board is DaenetIp2Simulator && DaenetIp2Models.Layout(_board.Model).CanRestart(relay);
+    }
+
+    /// <summary>Makes one relay's pin a restart pin of the DAEnetIP2's ICMP monitoring, or not, as its own web page would.</summary>
+    public async Task SetRestartRelayAsync(int relay, bool restart)
+    {
+        if (_board is not DaenetIp2Simulator daenet || !CanRestart(relay))
+        {
+            return;
+        }
+
+        var bit = DaenetIp2Models.Layout(_board.Model).PinOf(relay).Bit;
+        var pins = daenet.RestartPins;
+        var next = restart ? pins | bit : pins & ~bit;
+        if (next == pins)
+        {
+            return;
+        }
+
+        await daenet.SetRestartPinsAsync(next);
+        _log(string.Create(CultureInfo.InvariantCulture, $"Relay {relay}'s pin {(restart ? "made" : "no longer")} a restart pin here"));
+    }
+
+    /// <summary>Makes the DAEnetIP2 answer as a firmware older than 4.097, without restart pins, or with them again.</summary>
+    public void SetOldFirmware(bool old)
+    {
+        if (_board is not DaenetIp2Simulator daenet || !Change(() => daenet.HasRestartPins, v => daenet.HasRestartPins = v, !old))
+        {
+            return;
+        }
+
+        _log(old ? "No restart pins here (a firmware older than 4.097)" : "Restart pins here again");
+    }
+
+    public void SetRefuseRestartPinWrites(bool refuse)
+    {
+        if (_board is not DaenetIp2Simulator daenet || !Change(() => daenet.RefuseRestartPinWrites, v => daenet.RefuseRestartPinWrites = v, refuse))
+        {
+            return;
+        }
+
+        _log(refuse ? "Writes of the restart pins refused here" : "Writes of the restart pins taken again here");
+    }
+
     /// <summary>Whether reads of the relay modes are refused; null for a board without relay modes.</summary>
     public bool? RefuseModeReads => HasModes(out var waveshare) ? waveshare.RefuseModeReads : null;
 

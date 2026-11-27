@@ -21,7 +21,7 @@ public sealed class DaenetIp2BoardTests
         var model = Assert.Single(DaenetIp2Models.All, m => m.Id == id);
 
         Assert.Equal(("Denkovi", name, $"Denkovi {name}"), (model.Brand, model.ModelName, model.Name));
-        Assert.Equal(new BoardCapabilities(relays, 0, ReportsChanges: false, Analog: new AnalogAbility(8, 1023, 3.3m), OwnRules: OwnRulesAbility.CantTell), model.Capabilities);
+        Assert.Equal(new BoardCapabilities(relays, 0, ReportsChanges: false, Analog: new AnalogAbility(8, 1023, 3.3m), OwnRules: new OwnRulesAbility(Reads: true, TurnsOff: true, MayHaveUnseen: true)), model.Capabilities);
         Assert.Equal(3.3m, model.Capabilities.Analog!.Volts(1023));
         Assert.Null(model.Capabilities.Pulse);
         Assert.Equal(161, model.DefaultPort);
@@ -78,15 +78,37 @@ public sealed class DaenetIp2BoardTests
     {
         var at = new DateTimeOffset(2026, 11, 16, 8, 0, 0, TimeSpan.Zero);
 
-        var state = DaenetIp2Board.ToBoardState(new DaenetIp2State(true, new DaenetIp2Status((1UL << 15) | 1UL), at));
+        var state = DaenetIp2Board.ToBoardState(DaenetIp2Models.Relays16, new DaenetIp2State(true, new DaenetIp2Status((1UL << 15) | 1UL), at));
 
         Assert.Equal(new BoardState(true, ChannelMask.Of([1, 16]), ChannelMask.None, at), state);
-        Assert.Equal(BoardState.Initial, DaenetIp2Board.ToBoardState(DaenetIp2State.Initial));
+        Assert.Equal(BoardState.Initial, DaenetIp2Board.ToBoardState(DaenetIp2Models.Relays16, DaenetIp2State.Initial));
 
         // The analog readings go with it, "no reading" as null.
         var analog = new AnalogReadings([0, 512, null, 1023, 1, 2, 3, 4]);
-        var withAnalog = DaenetIp2Board.ToBoardState(new DaenetIp2State(true, new DaenetIp2Status(1UL, analog), at));
+        var withAnalog = DaenetIp2Board.ToBoardState(DaenetIp2Models.Relays16, new DaenetIp2State(true, new DaenetIp2Status(1UL, analog), at));
         Assert.Equal(analog, withAnalog.Analog);
+    }
+
+    // cfgP5DupRST, bit 0 = P5.1: a Restart rule on the relay of each pin set, through each kit's layout (section 12).
+    [Theory]
+    [InlineData("denkovi-daenetip2-v2-16", 0b1000_0001, new[] { 9, 16 })]
+    [InlineData("denkovi-daenetip2-v2-16", 0xFF, new[] { 9, 10, 11, 12, 13, 14, 15, 16 })]
+    [InlineData("denkovi-daenetip2-v2-8", 0b0000_0101, new[] { 1, 3 })]
+    [InlineData("denkovi-daenetip2-v2-2", 0b1100_0000, new[] { 1, 2 })]
+    [InlineData("denkovi-daenetip2-v2-2", 0b0011_1111, new int[0])]
+    [InlineData("denkovi-daenetip2-v2-8", 0, new int[0])]
+    public void Should_ReadTheRestartPins_AsARestartRuleOnEachPinsRelay(string id, int pins, int[] relays)
+    {
+        var model = Assert.Single(DaenetIp2Models.All, m => m.Id == id);
+        var at = new DateTimeOffset(2026, 11, 27, 8, 0, 0, TimeSpan.Zero);
+
+        var state = DaenetIp2Board.ToBoardState(model, new DaenetIp2State(true, new DaenetIp2Status(0, RestartPins: pins), at));
+
+        Assert.Equal(new OwnRules(relays.Select(r => new OwnRule(r, OwnRuleKind.Restart))), state.OwnRules);
+        Assert.Empty(state.OwnRules!.Units);
+
+        // Unknown (not read, an older firmware, a read that failed): null, never "none".
+        Assert.Null(DaenetIp2Board.ToBoardState(model, new DaenetIp2State(true, new DaenetIp2Status(0), at)).OwnRules);
     }
 
     [Fact]

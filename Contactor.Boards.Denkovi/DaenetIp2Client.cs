@@ -20,6 +20,11 @@ namespace Contactor.Boards.Denkovi;
 /// Commands are never queued: without an answer to a poll they fail at once with <see cref="BoardNotConnectedException"/>,
 /// a poll under way gives way to them, and the board's state right after them is reported at once. The community, a
 /// secret, is never logged or traced: the trace shows the PDU only.
+/// It also reads the board's own rules, the ICMP monitoring's restart pins (<c>cfgP5DupRST</c>), at the first poll on each
+/// connection and then every <see cref="RulesInterval"/>, after the ports; a board without them (no such name), a refusal
+/// or no answer leaves them unknown. It never writes them on its own: only
+/// <see cref="TurnOffOwnRulesAsync"/>, on a person's press. Every request is for an OID of the closed list
+/// (<see cref="DaenetIp2Oid"/>).
 /// </summary>
 public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable, IAsyncDisposable
 {
@@ -46,6 +51,9 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     /// <summary>How many skipped datagrams one try traces; a flood of them would bury the rest of the trace.</summary>
     public const int MaxSkippedTraced = 8;
 
+    /// <summary>How often the restart pins are read again, after the read at the first poll on a connection.</summary>
+    public static readonly TimeSpan RulesInterval = TimeSpan.FromSeconds(60);
+
     private readonly BoardModel _model;
     private readonly DaenetIp2Layout _layout;
     private readonly TimeProvider _timeProvider;
@@ -64,6 +72,17 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     // which a command's read takes over, and until when they are left alone after a failed answer.
     private AnalogReadings? _lastAnalog;
     private DateTimeOffset? _analogRetryAt;
+
+    // Only used under the poller's lock. The restart pins as last read on this connection (null: unknown), when they
+    // were last asked for (null: not yet on this connection, or asked for again at the next read), and whether a read of
+    // them already failed in a row, so a board that never answers them is said once in red, then as routine.
+    private int? _restartPins;
+    private DateTimeOffset? _rulesReadUtc;
+    private bool _rulesFailed;
+
+    // What the last StateChanged, AnalogChanged or OwnRulesChanged carried, to tell which of the last two a change of
+    // the reading alone is. Only on the poller's loop.
+    private DaenetIp2Status? _reported;
     private int _wasConnected;
     private int _disposed;
     private int _requestId;
@@ -114,6 +133,13 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     /// <see cref="StateChanged"/> isn't raised. On the poller's loop: handlers must be quick.
     /// </summary>
     public event EventHandler<DaenetIp2State>? AnalogChanged;
+
+    /// <summary>
+    /// Raised when a poll finds only the restart pins changed (<see cref="DaenetIp2Status.RestartPins"/>): the relays and
+    /// the connection are as before, so <see cref="StateChanged"/> isn't raised. On the poller's loop: handlers must be
+    /// quick.
+    /// </summary>
+    public event EventHandler<DaenetIp2State>? OwnRulesChanged;
 
     /// <summary>Every request and answer and every step, in plain words, without the community. Handlers must be quick.</summary>
     public event EventHandler<BoardTraceEntry>? Traced;
@@ -193,6 +219,80 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         return CommandAsync(mask, on: false, cancellationToken);
     }
 
+    /// <summary>
+    /// Turns off the board's own <paramref name="rules"/>, as a person asked: the ICMP monitoring's restart pins of their
+    /// relays. Reads <c>cfgP5DupRST</c> again first, in the same command, then writes it once without the pins asked (0
+    /// when every pin set is asked), so a pin set at the board since the last read stays as the board has it, and reads it
+    /// back. Never writes <c>cfgMode</c> or <c>cfgNewMode</c>. Each pin is a rule of its own, so nothing else goes with a
+    /// rule. A rule given twice is taken once. Returns as taken the rules asked whose pin the read-back shows clear,
+    /// in relay order, also one whose pin was clear already (nothing is written for it); when the read-back fails, those
+    /// the board's echo confirmed. Returns nothing, and sends nothing, for none asked. The next state confirms what is
+    /// gone.
+    /// Throws <see cref="ArgumentOutOfRangeException"/> for another kind of rule, a relay the kit doesn't have or one on
+    /// P3, which has no restart pins, and <see cref="BoardNotConnectedException"/> without a connection, both before
+    /// anything is sent; and <see cref="BoardNotConnectedException"/> when the firmware isn't known to have the restart
+    /// pins (nothing sent), when they can't be read again (nothing written), when the board refuses the write or keeps
+    /// every pin asked, or when it doesn't answer.
+    /// </summary>
+    public async Task<OwnRulesTurnOff> TurnOffOwnRulesAsync(IReadOnlyCollection<OwnRule> rules, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        List<OwnRule> asked = [];
+        foreach (var rule in rules)
+        {
+            if (rule is null)
+            {
+                throw new ArgumentException("A rule can't be null.", nameof(rules));
+            }
+
+            if (rule.Kind != OwnRuleKind.Restart)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Kind, "The DAEnetIP2 v2's own rules are its ICMP monitoring's restart pins.");
+            }
+
+            if (rule.Relay > _model.Capabilities.RelayCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Relay, $"The {_model.Name} has relays 1–{_model.Capabilities.RelayCount} only.");
+            }
+
+            if (!_layout.CanRestart(rule.Relay))
+            {
+                throw new ArgumentOutOfRangeException(nameof(rules), rule.Relay, $"Relay {rule.Relay} is on P3, which has no restart pins.");
+            }
+
+            if (!asked.Contains(rule))
+            {
+                asked.Add(rule);
+            }
+        }
+
+        if (asked.Count == 0)
+        {
+            return OwnRulesTurnOff.None;
+        }
+
+        if (!State.IsConnected)
+        {
+            throw new BoardNotConnectedException();
+        }
+
+        try
+        {
+            var taken = new StrongBox<OwnRulesTurnOff>(OwnRulesTurnOff.None);
+            await _poller.RunSwitchesAsync(token => TurnOffRestartPinsAndReadAsync([.. asked.OrderBy(r => r.Relay)], taken, token), cancellationToken).ConfigureAwait(false);
+            return taken.Value ?? OwnRulesTurnOff.None;
+        }
+        catch (Exception ex) when (IsNoAnswer(ex))
+        {
+            // The poller counted it as a failed poll and reads the board at once.
+            throw new BoardNotConnectedException("The DAEnetIP2 v2 board didn't answer; its restart pins may not have been turned off.", ex);
+        }
+        catch (Exception ex) when (ex is DaenetIp2ProtocolException or BoardRefusedException)
+        {
+            throw new BoardNotConnectedException($"The DAEnetIP2 v2 board didn't turn its restart pins off: {ex.Message}", ex);
+        }
+    }
+
     /// <summary>Polls at once; the answer comes as <see cref="StateChanged"/> if anything changed.</summary>
     public void Refresh()
     {
@@ -226,15 +326,19 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
 
     Task IPolledBoard<DaenetIp2Status>.ConnectAsync(CancellationToken cancellationToken)
     {
-        // A new connection, maybe to another board or with another community: the analog inputs are read again at once.
+        // A new connection, maybe to another board or with another community: the analog inputs are read again at once,
+        // and so are the restart pins, at the first poll. Nothing is written.
         _lastAnalog = null;
         _analogRetryAt = null;
+        _restartPins = null;
+        _rulesReadUtc = null;
+        _rulesFailed = false;
         return OpenAsync(cancellationToken);
     }
 
     Task<DaenetIp2Status> IPolledBoard<DaenetIp2Status>.ReadAsync(CancellationToken cancellationToken)
     {
-        return ReadStatusAsync(readAnalog: true, cancellationToken);
+        return ReadStatusAsync(readAnalog: true, RulesRead.IfDue, cancellationToken);
     }
 
     void IPolledBoard<DaenetIp2Status>.OnStateChanged(PolledState<DaenetIp2Status> state)
@@ -246,13 +350,26 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
             DaenetIp2Log.Connected(_logger, endpoint.Host, endpoint.Port);
         }
 
+        _reported = state.Reading;
         Raise(StateChanged, new DaenetIp2State(state.IsConnected, state.Reading, state.LastContactUtc));
     }
 
     void IPolledBoard<DaenetIp2Status>.OnReadingChanged(PolledState<DaenetIp2Status> state)
     {
-        // The comparer leaves out only the analog values: that is what changed.
-        Raise(AnalogChanged, new DaenetIp2State(state.IsConnected, state.Reading, state.LastContactUtc));
+        // The comparer leaves out the analog values and the restart pins: one of them changed, or both.
+        var before = _reported;
+        _reported = state.Reading;
+        var changed = new DaenetIp2State(state.IsConnected, state.Reading, state.LastContactUtc);
+        var rulesChanged = before?.RestartPins != state.Reading?.RestartPins;
+        if (rulesChanged)
+        {
+            Raise(OwnRulesChanged, changed);
+        }
+
+        if (!rulesChanged || before?.Analog != state.Reading?.Analog)
+        {
+            Raise(AnalogChanged, changed);
+        }
     }
 
     void IPolledBoard<DaenetIp2Status>.OnStep(BoardPollStep kind, string? detail)
@@ -433,7 +550,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
 
         try
         {
-            return new CommandReading<DaenetIp2Status>(await ReadStatusAsync(readAnalog: false, cancellationToken).ConfigureAwait(false));
+            return new CommandReading<DaenetIp2Status>(await ReadStatusAsync(readAnalog: false, RulesRead.Never, cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is DaenetIp2RefusedException or DaenetIp2ProtocolException || IsNoAnswer(ex))
         {
@@ -445,11 +562,87 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         }
     }
 
+    // Under the poller's lock: cfgP5DupRST read again, then written once without the pins asked, then the board's state
+    // read back with it. Puts what went off in taken.
+    private async Task<CommandReading<DaenetIp2Status>> TurnOffRestartPinsAndReadAsync(IReadOnlyList<OwnRule> asked, StrongBox<OwnRulesTurnOff> taken, CancellationToken cancellationToken)
+    {
+        // Only pins read on this connection: nothing goes out while they are unknown (not read yet, or a board without
+        // them). Not an answer, and not a failure of the board.
+        if (_restartPins is null)
+        {
+            throw new BoardNotConnectedException("The DAEnetIP2 v2 board's restart pins aren't known; nothing was sent.");
+        }
+
+        // Whatever comes of it, the next read reads the pins again.
+        _rulesReadUtc = null;
+        var community = Community;
+        var askedPins = asked.Aggregate(0, (mask, rule) => mask | _layout.PinOf(rule.Relay).Bit);
+
+        // Read again right before the write, so a pin set at the board since the last read is written as the board has it.
+        // A pin that no relay is on, or another relay's, is never cleared here. No answer to both tries, or an answer that
+        // can't be read, is thrown as it is: the poller counts it as a failed poll, and nothing was written. A refusal is
+        // an answer: the board is there.
+        int now;
+        try
+        {
+            now = await ReadRestartPinsAsync(community, cancellationToken).ConfigureAwait(false);
+        }
+        catch (DaenetIp2RefusedException ex)
+        {
+            _restartPins = null;
+            throw new BoardRefusedException($"{ex.Message} Nothing was written.");
+        }
+
+        _restartPins = now;
+        var echoed = now;
+        var write = now & ~askedPins;
+        if (write != now)
+        {
+            // An answer that can't be read (the board may or may not have taken it) goes as it is: the poller counts it
+            // and reads at once, the pins included.
+            var request = DaenetIp2Snmp.SetRestartPins(NextRequestId(), community, write);
+            try
+            {
+                var (value, pdu) = await ExchangeAsync(request, routine: false, cancellationToken).ConfigureAwait(false);
+                Trace(BoardTraceDirection.Received, DaenetIp2TraceText.Confirmed(request.Oid, value, _layout), pdu);
+                echoed = value;
+            }
+            catch (DaenetIp2RefusedException ex)
+            {
+                throw new BoardRefusedException(ex.Message);
+            }
+        }
+
+        // The read-back: the state, with the pins read again. A pin the read-back shows clear went off; without a
+        // read-back, the board's echo of the write says it.
+        DaenetIp2Status? status = null;
+        try
+        {
+            status = await ReadStatusAsync(readAnalog: false, RulesRead.Now, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is DaenetIp2RefusedException or DaenetIp2ProtocolException || IsNoAnswer(ex))
+        {
+            // The write went out; the poller keeps the last state and reads again at once, the pins included.
+        }
+
+        var after = status?.RestartPins ?? echoed;
+        List<OwnRule> done = [.. asked.Where(r => (after & _layout.PinOf(r.Relay).Bit) == 0)];
+        if (done.Count == 0)
+        {
+            throw new BoardRefusedException("The board kept the restart pins it was asked to turn off.");
+        }
+
+        taken.Value = OwnRulesTurnOff.Of(done);
+        return status is null ? default : new CommandReading<DaenetIp2Status>(status);
+    }
+
     // Only in a poll (readAnalog), the analog inputs first, so a command's confirmation never waits on them: a command's
-    // read keeps what the last poll read of them. Then a GetRequest of each port the relays are on, P3 before P5, last of
-    // all, so the relays the poll reports are as fresh as they can be, however long the analog inputs took. A pin that is
-    // High is a relay that is on.
-    private async Task<DaenetIp2Status> ReadStatusAsync(bool readAnalog, CancellationToken cancellationToken)
+    // read keeps what the last poll read of them. Then a GetRequest of each port the relays are on, P3 before P5, so the
+    // relays the poll reports are as fresh as they can be, however long the analog inputs took. A pin that is High is a
+    // relay that is on. Last, when they are asked for or due, the restart pins: after the ports, so their read never
+    // delays the relays' read. A board that doesn't answer them delays the poll's report by up to 2 s (two tries of 1 s)
+    // once a minute.
+    private async Task<DaenetIp2Status> ReadStatusAsync(bool readAnalog, RulesRead rules, CancellationToken cancellationToken)
     {
         var last = Volatile.Read(ref _lastTraced);
         var community = Community;
@@ -478,9 +671,45 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
         var relays = _layout.RelaysOf(p3, p5);
         Trace(BoardTraceDirection.Received, DaenetIp2TraceText.Relays(relays, _model.Capabilities.RelayCount), isRoutine: last?.Relays == relays);
         _lastAnalog = analog;
-        var status = new DaenetIp2Status(relays, analog);
+        if (rules == RulesRead.Now
+            || (rules == RulesRead.IfDue && (_rulesReadUtc is not { } readUtc || _timeProvider.GetUtcNow() - readUtc >= RulesInterval)))
+        {
+            _restartPins = await ReadRulesAsync(community, cancellationToken).ConfigureAwait(false);
+            _rulesReadUtc = _timeProvider.GetUtcNow();
+        }
+
+        var status = new DaenetIp2Status(relays, analog, _restartPins);
         Volatile.Write(ref _lastTraced, status);
         return status;
+    }
+
+    // The restart pins; null when the board doesn't have them (no such name, as a firmware older than 4.097 may answer),
+    // refuses them, gives an answer that can't be read or none: unknown, never a guess. Never fails the poll; only a
+    // cancelled read (a command takes the poll's place, or the app stops) is thrown. A failure is said in red the first
+    // time, then as routine while it lasts, so a board that never answers them doesn't give a toast every minute.
+    private async Task<int?> ReadRulesAsync(string community, CancellationToken cancellationToken)
+    {
+        var quiet = _rulesFailed;
+        try
+        {
+            var pins = await ReadRestartPinsAsync(community, cancellationToken, quiet).ConfigureAwait(false);
+            _rulesFailed = false;
+            return pins;
+        }
+        catch (Exception ex) when (ex is DaenetIp2RefusedException or DaenetIp2ProtocolException || IsNoAnswer(ex))
+        {
+            _rulesFailed = true;
+            Trace(BoardTraceDirection.None, $"Couldn't read the restart pins: {ex.Message}", isError: true, isRoutine: quiet);
+            return null;
+        }
+    }
+
+    // cfgP5DupRST, 0 to 255. Throws as ExchangeAsync does.
+    private async Task<int> ReadRestartPinsAsync(string community, CancellationToken cancellationToken, bool quietErrors = false)
+    {
+        var (value, pdu) = await ExchangeAsync(DaenetIp2Snmp.GetRestartPins(NextRequestId(), community), routine: true, cancellationToken, quietErrors).ConfigureAwait(false);
+        Trace(BoardTraceDirection.Received, DaenetIp2TraceText.RestartPins(value, _layout), pdu, isRoutine: _restartPins == value);
+        return value;
     }
 
     // The analog inputs, one GetRequest each (the board takes one OID per request, section 9), or "no reading" for each
@@ -543,9 +772,10 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     /// <see cref="DaenetIp2Snmp.Value"/> has checked it, with its PDU for the caller's trace. Traces the request,
     /// what was skipped and anything but a good answer. Throws <see cref="TimeoutException"/> when no answer came,
     /// <see cref="DaenetIp2RefusedException"/> for an error-status and <see cref="DaenetIp2ProtocolException"/> for an
-    /// answer that isn't one to it.
+    /// answer that isn't one to it. With <paramref name="quietErrors"/>, its failures are traced as routine, for a read
+    /// that failed before and is only tried again.
     /// </summary>
-    private async Task<(int Value, string Pdu)> ExchangeAsync(DaenetIp2Request request, bool routine, CancellationToken cancellationToken)
+    private async Task<(int Value, string Pdu)> ExchangeAsync(DaenetIp2Request request, bool routine, CancellationToken cancellationToken, bool quietErrors = false)
     {
         try
         {
@@ -591,7 +821,7 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
                 }
 
                 var message = DaenetIp2Api.AnalogInputOf(request.Oid) is null ? NoAnswerMessage : AnalogNoAnswerMessage;
-                Trace(BoardTraceDirection.None, $"No answer: {message}", isError: true);
+                Trace(BoardTraceDirection.None, $"No answer: {message}", isError: true, isRoutine: quietErrors);
                 throw new TimeoutException(message);
             }
             catch (SocketException ex)
@@ -609,12 +839,12 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
             }
             catch (DaenetIp2RefusedException ex)
             {
-                Trace(BoardTraceDirection.Received, DaenetIp2TraceText.Refused(ex.ErrorStatus), answerPdu, isError: true);
+                Trace(BoardTraceDirection.Received, DaenetIp2TraceText.Refused(ex.ErrorStatus), answerPdu, isError: true, isRoutine: quietErrors);
                 throw;
             }
             catch (DaenetIp2ProtocolException ex)
             {
-                Trace(BoardTraceDirection.Received, $"Unreadable answer: {ex.Message}", answerPdu, isError: true);
+                Trace(BoardTraceDirection.Received, $"Unreadable answer: {ex.Message}", answerPdu, isError: true, isRoutine: quietErrors);
                 throw;
             }
         }
@@ -780,6 +1010,14 @@ public sealed class DaenetIp2Client : IPolledBoard<DaenetIp2Status>, IDisposable
     private void Trace(BoardTraceDirection direction, string text, string? bytes = null, bool isError = false, bool isRoutine = false)
     {
         Raise(Traced, new BoardTraceEntry(_timeProvider.GetUtcNow(), direction, text, bytes, isError, isRoutine));
+    }
+
+    // Which reads read the restart pins: a poll when they are due, a turn-off's read-back always, a switch's never.
+    private enum RulesRead
+    {
+        IfDue,
+        Now,
+        Never,
     }
 
     // Each subscriber on its own: one that fails must not take down the poller or keep the news from the others.

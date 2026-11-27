@@ -1984,6 +1984,10 @@
   <data name="OwnRules.Card.Title.Linkage" xml:space="preserve">
     <value>Relays the board controls itself</value>
   </data>
+  <data name="OwnRules.Card.Title.Restart" xml:space="preserve">
+    <value>Relays the board restarts</value>
+    <comment>The card on the board's page, for relays the board gives a restart pulse by itself, e.g. the DAEnetIP2 v2's ICMP monitoring.</comment>
+  </data>
   <data name="OwnRules.Card.Title.Rule" xml:space="preserve">
     <value>The board's own rules</value>
     <comment>The card on the board's page, for rules other than timers.</comment>
@@ -2007,6 +2011,10 @@
   </data>
   <data name="OwnRules.CardLine.Linkage" xml:space="preserve">
     <value>The board controls it itself</value>
+  </data>
+  <data name="OwnRules.CardLine.Restart" xml:space="preserve">
+    <value>The board can give the relay a restart pulse</value>
+    <comment>On a relay's card on Relays.</comment>
   </data>
   <data name="OwnRules.CardLine.Rule" xml:space="preserve">
     <value>The board's own rule can switch it</value>
@@ -2067,8 +2075,8 @@
     <value>The board no longer has that rule.</value>
   </data>
   <data name="OwnRules.Keep.InGroup" xml:space="preserve">
-    <value>Can't be kept: {0} is in a group, and the board would turn it on again without the group's order.</value>
-    <comment>In place of "Keep" for the board's auto-on of a relay in a group: {0} is the relay's name, e.g. "Heat".</comment>
+    <value>Can't be kept: {0} is in a group, and the board would switch it by itself without the group's order.</value>
+    <comment>In place of "Keep" for a rule that switches a relay in a group by itself, the board's auto-on or restart pulse: {0} is the relay's name, e.g. "Heat".</comment>
   </data>
   <data name="OwnRules.Keep.Unavailable" xml:space="preserve">
     <value>The board controls this relay itself, so it can't be kept. Reset it instead.</value>

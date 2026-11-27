@@ -20,4 +20,10 @@ public enum OwnRuleKind
     /// the app or a person doesn't last.
     /// </summary>
     AutoOn,
+
+    /// <summary>
+    /// The board gives the relay a restart pulse by itself when a device it watches stops answering, e.g. the DAEnetIP2
+    /// v2's ICMP monitoring with the relay's pin among its restart pins.
+    /// </summary>
+    Restart,
 }

@@ -80,6 +80,14 @@ public static class DaenetIp2Api
     /// <summary>Denkovi's prefix, "x" in the manual's tables: .1.3.6.1.4.1.42505.</summary>
     public static IReadOnlyList<int> Enterprise { get; } = [1, 3, 6, 1, 4, 1, 42505];
 
+    /// <summary>
+    /// What the app can know and do about the kits' own rules: it reads the ICMP monitoring's restart pins on P5
+    /// (<c>cfgP5DupRST</c>, section 6.10.2, table 9.1) and turns them off on a person's press, but can't see the analog
+    /// events (section 6.9, table 9.3), which also switch P5 pins. A board without <c>cfgP5DupRST</c> (older than 4.097)
+    /// gives unknown rules.
+    /// </summary>
+    public static OwnRulesAbility OwnRules { get; } = new(Reads: true, TurnsOff: true, MayHaveUnseen: true);
+
     /// <summary>The pins of a port: 1 to 8.</summary>
     public const int PinsPerPort = 8;
 
@@ -113,9 +121,7 @@ public static class DaenetIp2Api
     /// </summary>
     public static int[] AnalogOid(int input)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(input, 1);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(input, AnalogInputs);
-        return [.. Enterprise, 9, 2, AnalogPortArc, input, 0];
+        return [.. DaenetIp2Oid.Analog(input).Arcs];
     }
 
     /// <summary>The analog input an OID of table 9.6 reads, 1 to 8; null for any other OID.</summary>
@@ -140,13 +146,13 @@ public static class DaenetIp2Api
     /// </summary>
     public static int[] PinOid(DaenetIp2Pin pin)
     {
-        return [.. Enterprise, 9, 2, (int)pin.Port, pin.Number, 0];
+        return [.. DaenetIp2Oid.Pin(pin).Arcs];
     }
 
     /// <summary>A port's 8 pins as one byte, bit 0 = pin 1: x.9.2.1.33.0 (<c>pctrlP3byte</c>) or x.9.2.2.33.0 (<c>pctrlP5byte</c>).</summary>
     public static int[] PortOid(DaenetIp2Port port)
     {
-        return [.. Enterprise, 9, 2, (int)port, PortByteArc, 0];
+        return [.. DaenetIp2Oid.Port(port).Arcs];
     }
 }
 

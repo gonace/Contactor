@@ -37,12 +37,20 @@ The sections under "smartDEN IP-16R-MT" are about the smartDEN IP-16R-MT.
     is "used in read/write operations";
   - sections 6.7, 6.9 and 6.10: the direction of each pin, the analog events and the ICMP monitoring, which can set P5's
     pins;
-  - section 7: which of these wins over a set from the app;
+  - section 6.10 (pp. 22 and 23), and in it 6.10.2: the ICMP monitoring "performs also restart pulse if there is not
+    answer", and "Port P5 Restart Pins - bit mask to select some of P5 pins as external device restart pins. Pins must
+    be outputs in cfgP5Dir" (`cfgP5DupRST.0`);
+  - section 7: which of these wins over a set from the app. The ICMP monitoring has the highest priority;
   - section 8: the HTTP API, which writes a whole port at once (`iochange.cgi?…&01=00&02=FF`). The app doesn't use it;
   - section 9: SNMPv1, `snmpget` and `snmpset` of one OID at a time, no `snmpwalk`. The read-only community is for
     reading, the read-write community for changing;
   - tables 9.4 and 9.5: the OIDs of P3 and P5;
   - table 9.1 (p. 29): the analog inputs' filter, `cfgAnalogInputsFilter`, 0 to 30 s;
+  - table 9.1 (pp. 27 to 29): `cfgP5DupRST` (x.9.1.29.0, read-write, `INTEGER(0..255)`, "Bit mask showing on which P5
+    pins to duplicate TargetRST signal … Available from v.4.097"), and the two OIDs whose read changes the board:
+    `cfgReset` (x.9.1.10.0, "Read of this OID causes reset") and `cfgDefault` (x.9.1.30.0, "Reading this OID will load
+    factory default settings … and restart"). `cfgMode` (x.9.1.9.0) and `cfgNewMode` (x.9.1.11.0) hold the ICMP
+    monitoring's flags with other settings ("Restart External Device" is `cfgMode` bit 6); the app never writes them;
   - table 9.6 (p. 32): the OIDs of the analog inputs of P6, `INTEGER(0..1023)`, read-only;
   - section 12 (appendix 3), steps 3.1 to 3.3: which ports each relay board is on;
   - section 14.2.3 (pp. 46 and 47): the example `snmpget` and `snmpset` commands, among them "Get P6.1" and "Get the
@@ -52,7 +60,12 @@ The sections under "smartDEN IP-16R-MT" are about the smartDEN IP-16R-MT.
   - section 16 (appendix 10, p. 51) and section 17 (appendix 11, p. 52): a resistor in front of each analog input, and
     "ADC works in range of 0-3.3V".
 - Denkovi's MIB, https://denkovi.com/Firmware/DAEnetIP2v2/Current-Version/DAEnetIP2v2.mib (LAST-UPDATED
-  202210050000Z): `pctrlP6pin1` to `pctrlP6pin8`, `Integer32(0..1023)`.
+  202210050000Z): `pctrlP6pin1` to `pctrlP6pin8`, `Integer32(0..1023)`; `cfgP5DupRST` as in table 9.1;
+  `pctrlRestart` (x.9.2.4.0, read-only, "Restart target device trough 'TargetRST' pin"), which the manual's tables
+  don't list. Read 2026-11-27.
+- Denkovi's firmware notes, https://denkovi.com/Firmware/DAEnetIP2v2/Firmware-version.txt (read 2026-11-27): v1.25 of
+  19 November 2022 and v1.26 of 23 February 2024. They number the firmware otherwise than the manual's "v.4.097", so
+  the app doesn't compare versions: it asks for `cfgP5DupRST` on every board.
 - SNMPv1 itself: RFC 1157 (the messages and the 484-byte limit) and its BER encoding.
 
 ## smartDEN IP-16R-MT
@@ -326,6 +339,16 @@ SNMPv1 over UDP, port 161 (table 4.1). Each request has one OID (section 9).
 | Switch one pin of P3 | `SetRequest` | x.9.2.1.n.0 (`pctrlP3pin`n) | `INTEGER` 1 (High) or 0 (Low) | the value, echoed | table 9.4 |
 | Switch one pin of P5 | `SetRequest` | x.9.2.2.n.0 (`pctrlP5pin`n) | `INTEGER` 1 (High) or 0 (Low) | the value, echoed | table 9.5 |
 | Read analog input n of P6, n = 1 to 8 | `GetRequest` | x.9.2.3.n.0 (`pctrlP6pin`n) | `NULL` | `INTEGER` 0 to 1023 | table 9.6, p. 32 |
+| Read the restart pins | `GetRequest` | x.9.1.29.0 (`cfgP5DupRST`) | `NULL` | `INTEGER` 0 to 255, bit 0 = P5.1 | table 9.1, p. 29; section 6.10.2 |
+| Turn restart pins off | `SetRequest` | x.9.1.29.0 (`cfgP5DupRST`) | `INTEGER` 0 to 255: the pins that stay | the value, echoed | table 9.1, p. 29 |
+
+**A closed list of OIDs.** Some reads change the board: a read of `cfgReset` (x.9.1.10.0) restarts it, one of
+`cfgDefault` (x.9.1.30.0) loads its factory settings and restarts it (table 9.1), and `pctrlRestart` (x.9.2.4.0, from
+the MIB) pulses the restart pin. So `DaenetIp2Oid` is the one place the app's OIDs come from: the pins and ports of P3
+and P5, the analog inputs and `cfgP5DupRST`, each made once from the manual's tables. A
+`DaenetIp2Request` is only made from one of them, a set only for a read-write one, and only as a `GetRequest` or a
+`SetRequest`. The client never walks the tree (`GetNextRequest`) and never builds an OID from data.
+`DaenetIp2SnmpTests` proves that none of these three OIDs, nor anything under x.9.2.4, can be sent.
 
 The app reads the ports that the kit's relays are on, P3 before P5. It switches one relay with one `SetRequest` of its
 pin, so it never writes a whole port: a change at the board in between is never written over. The board also takes a
@@ -479,9 +502,34 @@ A command (ON or OFF) switches the relays in the mask one at a time, as on the s
   reads again at once. An echo is not proof that a relay switched: the board answers a set that its ICMP monitoring or
   an analog event then overrides (section 7).
 
+The board's own rules, the ICMP monitoring's restart pins (issue #515):
+
+- The client reads `cfgP5DupRST` at the first poll on each connection and then every `DaenetIp2Client.RulesInterval`
+  (1 min), after the ports, so their read never delays the relays' read. A board that doesn't answer them makes the
+  poll's report of the relays up to about 2 s late (two tries of 1 s), once a minute. A failed read never fails the
+  poll. It doesn't read the firmware version: the manual's "Available from v.4.097" and the firmware notes' v1.25
+  and v1.26 don't say how a board's `cfgVersion` compares, so the answer to `cfgP5DupRST` itself decides.
+- Each pin set is a `Restart` rule on that pin's relay, whatever `cfgMode` holds: the app reports every pin set, also
+  while "Restart External Device" (`cfgMode` bit 6) or both ping modes are off, because the board's manual restart
+  still pulses them ("Restart External Device … Does not affect to the manual restart", section 6.10.2) (`DaenetIp2Layout.RestartRules`), each on its own: P5.1 to P5.8
+  are relays 9 to 16 on the 16-relay kit, relays 1 to 8 on the 8-relay kit, and P5.7 and P5.8 relays 1 and 2 on the
+  2-relay kit, where P5.1 to P5.6 switch no relay and so are no rule. P3 has no restart pins.
+- A board without `cfgP5DupRST` (no such name, as a firmware older than 4.097 answers), a refusal, an answer it can't
+  read or no answer makes the rules unknown (null), as before they are read: the app can't tell, and the screens say
+  to check the board's own web page. The first failure in a row shows in red on the Debug screen (a toast), the next
+  ones as routine. The ability is `Reads`, `TurnsOff` and
+  `MayHaveUnseen` (`DaenetIp2Api.OwnRules`): the analog events also switch P5 pins, and the app doesn't read them.
+- A change in the pins alone raises `OwnRulesChanged`, never `StateChanged`.
+- `TurnOffOwnRulesAsync`, only on a person's press: it reads `cfgP5DupRST` again, writes it once without the pins
+  asked (0 when all are asked), so a pin set at the board in between stays, and reads it back with the ports. A rule
+  is taken when the read-back shows its pin clear (or, when the read-back fails, the echo of the write), also a pin
+  already clear, for which nothing is written. Each pin is its own rule, so nothing goes with it. A refused write
+  throws `BoardNotConnectedException` with a `BoardRefusedException` inside; nothing is sent while the pins are unknown. The client
+  never writes `cfgMode` or `cfgNewMode`.
+
 The analog inputs are read in polls only, one `GetRequest` per input, input 1 first, and before the ports. The ports
-are the last requests of a poll, so the relays that the poll reports are as fresh as they can be, also when the
-analog inputs answer slowly. The interlock checks the relays of each poll.
+come after them, so the relays that the poll reports are as fresh as they can be, also when the analog inputs answer
+slowly; only the restart pins, once a minute, come after the ports. The interlock checks the relays of each poll.
 
 - A command's read after the switches reads the ports only. It keeps the analog values of the last poll, so a command
   never waits on an analog input.
@@ -498,7 +546,8 @@ analog inputs answer slowly. The interlock checks the relays of each poll.
   client skips any other (see above). It also checks the OID.
 - A change in the analog values alone raises `AnalogChanged`, never `StateChanged` (`DaenetIp2Status.SwitchesComparer`
   compares the relays only), so the safety services aren't woken by a value that moves a little on every reading.
-- **The poll's cost:** 8 more requests per poll, so 9 on the 8- and 2-relay kits and 10 on the 16-relay kit, every 2 s.
+- **The poll's cost:** 8 more requests per poll, so 9 on the 8- and 2-relay kits and 10 on the 16-relay kit, every 2 s,
+  and one more a minute for the restart pins.
   Each answer is a datagram of about 50 bytes. A kit that never answers its analog inputs costs one poll 2 s (two tries
   of 1 s) once a minute; the other polls ask for the ports only. A board that is gone answers neither: the first poll
   after it went waits 2 s on analog input 1 before the ports, so the board counts as lost 2 s later than without the
@@ -554,6 +603,14 @@ rights that a developer doesn't have.
 - Its trace shows the PDU of each message, never the community.
 - A power cut (`ISimulatedBoardPower`): no request gets an answer while the power is cut. With "Save Outputs" on (`SaveOutputs`, section 6.3) the relays come back as they were, off they all come back off; "Reset I/O Ports on Restart" isn't simulated. The simulator has "Save Outputs" off at start; the manual gives no factory value.
 - A new read-write community while it runs (`ChangeLogin`, the user name ignored): from then on a set with the old one gets no answer, as with any wrong community.
+- `cfgP5DupRST` (`RestartPins`), as table 9.1 says: the pins take 0 to 255. Without them (`HasRestartPins` false, as a
+  firmware older than 4.097) a get or a set gets error-status 2, as an OID it doesn't have. `RefuseRestartPinWrites`
+  refuses a set with error-status 5. Its page has a checkbox per P5 relay, "No cfgP5DupRST (a firmware older than
+  4.097)" and "Writes of the restart pins refused".
+- It doesn't pulse the restart pins, and they have no "Run now": the manual doesn't say which level the restart pulse
+  puts on a pin (on or off), so a simulated pulse would be a guess.
+- Any request for `cfgReset`, `cfgDefault` or `pctrlRestart`, whatever its type or community, is kept in
+  `ForbiddenRequests` and never answered, so a test fails on it.
 
 ### Settings on the board that switch relays without the app
 
@@ -563,13 +620,15 @@ the app. The app sees each switch only as a change from outside:
 - "Save Outputs" (section 6.3, `cfgNewMode` bit 0): the board sets the pins again after a restart.
 - "Reset I/O Ports on Restart" (section 6.10.2): the board sets every pin of P3 and P5 to "0" at a restart.
 - The ICMP monitoring (section 6.10): it pulses the P5 pins in `cfgP5DupRST` to restart another device. It wins over a
-  set from the app (section 7).
+  set from the app (section 7). **The app reads these pins and turns them off on a person's press** (see "The app's
+  client"), on a board that has `cfgP5DupRST`.
 - The analog events (section 6.9): they set a P5 pin by an analog input's level. They also win over a set from the app
   (section 7). The app reads the analog inputs but never sets these.
 - The direction of each pin (section 6.7, `cfgP3Dir` and `cfgP5Dir`): a pin set as an input switches no relay.
 
-The app doesn't read or change these settings. Set them on the board's web page: P3 and P5 as outputs, the ICMP
-monitoring off or without P5 restart pins, and no analog events on the pins that the app switches.
+Apart from the restart pins, the app doesn't read or change these settings. Set them on the board's web page: P3 and
+P5 as outputs, the ICMP monitoring off or without P5 restart pins, and no analog events on the pins that the app
+switches.
 
 ## To check on a real board
 
@@ -632,7 +691,15 @@ The other points:
   app takes both.
 - That the board answers from UDP port 161 (or the port set), the one the app sent to: an answer from another port is
   skipped.
-- The firmware version (`cfgVersion`, x.9.1.8.0) of the kits that Denkovi sells now.
+- The firmware version (`cfgVersion`, x.9.1.8.0) of the kits that Denkovi sells now, and whether they have
+  `cfgP5DupRST` (the manual says from v.4.097; the firmware notes name v1.25 and v1.26).
+- That `cfgP5DupRST` reads as the web page's "Port P5 Restart Pins", bit 0 = P5.1; that a set of it is echoed, takes
+  effect at once without a restart, and stays after one; and which error-status a firmware without it gives.
+- Which level the restart pulse puts on a pin (on or off) and for how long (`cfgResetPulse`).
+- Whether the board ignores a set from the app of a restart pin even when no pulse runs. Section 7 says the ICMP
+  monitoring "has the highest priority", so a set of such a pin may never take.
+- Whether a restart pin should only count as a rule while "Restart External Device" (`cfgMode` bit 6) and a ping mode
+  are on. The app reports every pin set, because the board's manual restart still pulses them (section 6.10.2).
 - That the board answers within 1 s, every time, to a poll every 2 s for days: with the analog inputs that is 9 gets
   per poll, or 10 on the 16-relay kit.
 - That the answer carries the request's community, and that it is a `GetResponse` with the request's OID. The manual's

@@ -182,7 +182,7 @@ public sealed class DaenetIp2SnmpTests
     [InlineData(int.MinValue, "02 04 80 00 00 00")]
     public void Should_WriteAndReadARequestId_InTheFewestBytes(int id, string tlv)
     {
-        var message = DaenetIp2Snmp.Get(id, "", DaenetIp2Api.PortOid(DaenetIp2Port.P3), 255).Message;
+        var message = DaenetIp2Snmp.Get(id, "", DaenetIp2Oid.Port(DaenetIp2Port.P3)).Message;
 
         Assert.Equal("A0", DaenetIp2Snmp.Hex(message.AsSpan(4 + 3, 1)));
         Assert.StartsWith(tlv, DaenetIp2Snmp.Hex(message.AsSpan(9)), StringComparison.Ordinal);
@@ -231,7 +231,7 @@ public sealed class DaenetIp2SnmpTests
     [Fact]
     public void Should_StillRefuseAPinOfOneByteAbove1()
     {
-        var request = DaenetIp2Snmp.Get(1, ReadOnly, DaenetIp2Api.PinOid(new DaenetIp2Pin(DaenetIp2Port.P5, 1)), 1);
+        var request = DaenetIp2Snmp.Get(1, ReadOnly, DaenetIp2Oid.Pin(new DaenetIp2Pin(DaenetIp2Port.P5, 1)));
         var low = Hex(DaenetIp2Snmp.Response(1, ReadOnly, request.Oid, 0));
         var answer = DaenetIp2Snmp.Decode(Bytes(low[..^"02 01 00".Length] + "02 01 FF"));
 
@@ -435,6 +435,69 @@ public sealed class DaenetIp2SnmpTests
         Assert.DoesNotContain("s3cret", message.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain(DaenetIp2Snmp.Hex("s3cret"u8), DaenetIp2Snmp.Hex(request.Pdu), StringComparison.Ordinal);
         Assert.DoesNotContain(DaenetIp2Snmp.Hex("s3cret"u8), DaenetIp2Snmp.Hex(message.Pdu), StringComparison.Ordinal);
+    }
+
+    // Issue #515: a read of cfgReset restarts the board, one of cfgDefault loads its factory settings, and pctrlRestart
+    // pulses the restart pin. The client's requests are built only from the closed list, which holds none of them, and
+    // nothing can build a request from an OID given as data.
+    [Fact]
+    public void Should_NeverLetTheClientSend_cfgReset_cfgDefault_OrPctrlRestart()
+    {
+        int[] prefix = [1, 3, 6, 1, 4, 1, 42505];
+        int[][] forbidden = [[.. prefix, 9, 1, 10, 0], [.. prefix, 9, 1, 30, 0], [.. prefix, 9, 2, 4], [.. prefix, 9, 2, 4, 0]];
+
+        // The closed list: each OID once, none of these, nothing under them.
+        Assert.Equal(DaenetIp2Oid.All.Count, DaenetIp2Oid.All.Select(o => DaenetIp2Snmp.OidText(o.Arcs)).Distinct().Count());
+        Assert.All(forbidden, f => Assert.True(DaenetIp2Oid.IsForbidden(f)));
+        Assert.All(DaenetIp2Oid.All, oid => Assert.False(DaenetIp2Oid.IsForbidden(oid.Arcs), oid.ToString()));
+        Assert.All(DaenetIp2Oid.All, oid => Assert.DoesNotContain(forbidden, f => oid.Arcs.Take(f.Length).SequenceEqual(f)));
+
+        // No way to make a request or a closed-list OID from data: no public constructor, and nothing that makes a
+        // request takes an OID's arcs. Every request is a get or a set.
+        var assembly = typeof(DaenetIp2Request).Assembly;
+        const System.Reflection.BindingFlags Any = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly;
+        Assert.All(typeof(DaenetIp2Request).GetConstructors(Any), c => Assert.False(c.IsPublic));
+        Assert.All(typeof(DaenetIp2Oid).GetConstructors(Any), c => Assert.True(c.IsPrivate));
+        var makers = assembly.GetTypes().SelectMany(t => t.GetMethods(Any)).Where(m => m.ReturnType == typeof(DaenetIp2Request))
+            .Concat<System.Reflection.MethodBase>(typeof(DaenetIp2Request).GetConstructors(Any)).ToList();
+        Assert.NotEmpty(makers);
+        Assert.All(makers, m => Assert.DoesNotContain(m.GetParameters(), p => typeof(IEnumerable<int>).IsAssignableFrom(p.ParameterType)));
+
+        // Every request the codec makes, for every OID on the list, is a GetRequest or a SetRequest of that OID.
+        foreach (var oid in DaenetIp2Oid.All)
+        {
+            var get = DaenetIp2Snmp.Decode(DaenetIp2Snmp.Get(1, ReadOnly, oid).Message);
+            Assert.Equal(DaenetIp2Api.GetRequest, get.PduType);
+            Assert.Equal(oid.Arcs, get.Oid);
+            if (oid.Writable)
+            {
+                Assert.Equal(DaenetIp2Api.SetRequest, DaenetIp2Snmp.Decode(DaenetIp2Snmp.Set(1, "private", oid, 0).Message).PduType);
+            }
+            else
+            {
+                Assert.Throws<ArgumentException>(() => DaenetIp2Snmp.Set(1, "private", oid, 0));
+            }
+        }
+    }
+
+    // Table 9.1: cfgP5DupRST x.9.1.29.0 INTEGER(0..255), read-write.
+    [Fact]
+    public void Should_AskForTheRestartPins_AsTable9Point1Says()
+    {
+        Assert.Equal(".1.3.6.1.4.1.42505.9.1.29.0", DaenetIp2Snmp.OidText(DaenetIp2Oid.RestartPins.Arcs));
+        Assert.Equal((255, true), (DaenetIp2Oid.RestartPins.MaxValue, DaenetIp2Oid.RestartPins.Writable));
+
+        // snmpset -v1 -c private … .1.3.6.1.4.1.42505.9.1.29.0 i 192 (P5.7 and P5.8), request id 7, and its echo.
+        var set = DaenetIp2Snmp.SetRestartPins(7, "private", 0b1100_0000);
+        Assert.Equal(
+            "30 2D 02 01 00 04 07 70 72 69 76 61 74 65 A3 1F 02 01 07 02 01 00 02 01 00 30 14 30 12 06 0C 2B 06 01 04 01 82 CC 09 09 01 1D 00 02 02 00 C0",
+            Hex(set.Message));
+        var echo = DaenetIp2Snmp.Decode(DaenetIp2Snmp.Response(7, "private", DaenetIp2Oid.RestartPins.Arcs, 0b1100_0000));
+        Assert.Equal(0b1100_0000, DaenetIp2Snmp.Value(echo, set));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => DaenetIp2Snmp.SetRestartPins(1, "private", 256));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DaenetIp2Snmp.SetRestartPins(1, "private", -1));
     }
 
     internal static byte[] Bytes(string hex)

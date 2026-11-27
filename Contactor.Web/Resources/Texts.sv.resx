@@ -1793,6 +1793,9 @@
   <data name="OwnRules.Card.Title.Linkage" xml:space="preserve">
     <value>Reläer som kortet styr självt</value>
   </data>
+  <data name="OwnRules.Card.Title.Restart" xml:space="preserve">
+    <value>Reläer som kortet startar om</value>
+  </data>
   <data name="OwnRules.Card.Title.Rule" xml:space="preserve">
     <value>Kortets egna regler</value>
   </data>
@@ -1813,6 +1816,9 @@
   </data>
   <data name="OwnRules.CardLine.Linkage" xml:space="preserve">
     <value>Kortet styr det självt</value>
+  </data>
+  <data name="OwnRules.CardLine.Restart" xml:space="preserve">
+    <value>Kortet kan ge reläet en omstartspuls</value>
   </data>
   <data name="OwnRules.CardLine.Rule" xml:space="preserve">
     <value>Kortets egen regel kan slå om det</value>
@@ -1863,7 +1869,7 @@
     <value>Kortet har inte längre den regeln.</value>
   </data>
   <data name="OwnRules.Keep.InGroup" xml:space="preserve">
-    <value>Kan inte behållas: {0} ingår i en grupp, och kortet skulle slå på det igen utan gruppens ordning.</value>
+    <value>Kan inte behållas: {0} ingår i en grupp, och kortet skulle slå om det självt utan gruppens ordning.</value>
   </data>
   <data name="OwnRules.Keep.Unavailable" xml:space="preserve">
     <value>Kortet styr reläet självt, så det kan inte behållas. Återställ det i stället.</value>

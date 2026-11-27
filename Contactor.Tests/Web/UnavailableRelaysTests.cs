@@ -514,6 +514,12 @@ public sealed partial class UnavailableRelaysTests
 
         Assert.False(OwnRulesHandler.CanKeep(OwnRuleKind.InputLinkage, inGroup: false));
         Assert.True(OwnRulesHandler.CanKeep(OwnRuleKind.InputToggle, inGroup: false) && OwnRulesHandler.CanKeep(OwnRuleKind.InputEdge, inGroup: false));
+
+        // Issue #515: a restart pulse, as an auto-on, may be kept only on a relay in no group: the board would switch a
+        // group's relay without the group's order.
+        Assert.True(OwnRulesHandler.CanKeep(OwnRuleKind.Restart, inGroup: false));
+        Assert.False(OwnRulesHandler.CanKeep(OwnRuleKind.Restart, inGroup: true));
+        Assert.Equal([OwnRuleKind.AutoOn, OwnRuleKind.Restart], OwnRulesHandler.KeptOnlyOutsideGroups);
         Assert.Equal("The board controls this relay itself, so it can't be kept. Reset it instead.", await rules.KeepAsync(BoardId, 3, OwnRuleKind.InputLinkage, John, Cancel));
         Assert.Null(await rules.KeepAsync(BoardId, 5, OwnRuleKind.InputToggle, John, Cancel));
 

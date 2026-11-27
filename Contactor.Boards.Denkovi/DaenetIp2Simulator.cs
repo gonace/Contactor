@@ -16,9 +16,13 @@ namespace Contactor.Boards.Denkovi;
 /// no answer, as SNMPv1 (RFC 1157) drops a message that isn't authentic. Any other OID gets the error-status
 /// noSuchName, a value out of range badValue. Only GetRequest and SetRequest are answered (section 9:
 /// snmpwalk isn't supported). A datagram it can't read is skipped, and the next one served. Its relays are the kit's
-/// pins: a pin that is High is a relay that is on. It never tells the app anything by itself, as the real board. Used
-/// by the tests and, in development, by Contactor.Simulator. It listens on the loopback interface only. Its traces show
-/// the PDU only, never a community.
+/// pins: a pin that is High is a relay that is on. It never tells the app anything by itself, as the real board. It
+/// holds the ICMP monitoring's restart pins (<c>cfgP5DupRST</c>, <see cref="RestartPins"/>), which a get and a set reach
+/// (table 9.1), or, as a firmware older than 4.097, doesn't have them (<see cref="HasRestartPins"/>). It doesn't pulse
+/// them: the manual doesn't say which level the restart pulse puts on a pin. It records every request for an OID whose read changes the real board (<c>cfgReset</c>,
+/// <c>cfgDefault</c>, <c>pctrlRestart</c>, <see cref="DaenetIp2Oid.Forbidden"/>) in <see cref="ForbiddenRequests"/>, so
+/// a test fails on one, and answers it nothing. Used by the tests and, in development, by Contactor.Simulator. It
+/// listens on the loopback interface only. Its traces show the PDU only, never a community.
 /// </summary>
 public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswer, ISimulatedBoardFailRelays, ISimulatedBoardPower, ISimulatedBoardSlowAnswers, ISimulatedBoardLogin
 {
@@ -33,6 +37,7 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
     private volatile string _community;
     private readonly CancellationTokenSource _stopping = new();
     private readonly ConcurrentQueue<string> _receivedRequests = new();
+    private readonly ConcurrentQueue<string> _forbiddenRequests = new();
     private readonly Lock _lock = new();
     private readonly List<string> _clients = [];
     private Socket? _socket;
@@ -52,6 +57,9 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
     private int _unansweredCount;
     private int _dropRequests;
     private bool _noAnalogAnswer;
+    private bool _hasRestartPins = true;
+    private int _restartPins;
+    private bool _refuseRestartPinWrites;
 
     /// <summary>A kit with the factory communities.</summary>
     public DaenetIp2Simulator(BoardModel model)
@@ -207,6 +215,45 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
     /// <summary>The PDU of each request received, as hex, without the version and the community. The newest 1,000.</summary>
     public IReadOnlyList<string> ReceivedRequests => [.. _receivedRequests];
 
+    /// <summary>
+    /// The PDU of each request for an OID whose read or write changes the real board (<see cref="DaenetIp2Oid.Forbidden"/>),
+    /// whatever its type or community, as hex: the app must never send one, so a test fails on any. Never answered.
+    /// </summary>
+    public IReadOnlyList<string> ForbiddenRequests => [.. _forbiddenRequests];
+
+    /// <summary>
+    /// Whether its firmware has <c>cfgP5DupRST</c> ("Available from v.4.097", table 9.1): true by default. Without it, a
+    /// get or a set of it gets no such name, as an OID it doesn't have.
+    /// </summary>
+    public bool HasRestartPins
+    {
+        get => Volatile.Read(ref _hasRestartPins);
+        set
+        {
+            Volatile.Write(ref _hasRestartPins, value);
+            RaiseChanged();
+        }
+    }
+
+    /// <summary>The ICMP monitoring's restart pins, <c>cfgP5DupRST</c>: bit 0 = P5.1. None by default.</summary>
+    public int RestartPins
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _restartPins;
+            }
+        }
+    }
+
+    /// <summary>When true, a set of <c>cfgP5DupRST</c> gets the error-status genErr and isn't carried out.</summary>
+    public bool RefuseRestartPinWrites
+    {
+        get => Volatile.Read(ref _refuseRestartPinWrites);
+        set => Volatile.Write(ref _refuseRestartPinWrites, value);
+    }
+
     private ulong RelaysUnlocked => _layout.RelaysOf(_p3, _p5);
 
     public void Start(int port = 0)
@@ -253,6 +300,29 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         {
             changed = _analog[input - 1] != counts;
             _analog[input - 1] = counts;
+        }
+
+        if (changed)
+        {
+            RaiseChanged();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Sets the restart pins (<c>cfgP5DupRST</c>, 0 to 255, bit 0 = P5.1) as the board's own web page would ("Port P5
+    /// Restart Pins", section 6.10.2), and tells the app's page if anything changed.
+    /// </summary>
+    public Task SetRestartPinsAsync(int pins)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(pins);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(pins, DaenetIp2Api.MaxPortValue);
+        bool changed;
+        lock (_lock)
+        {
+            changed = _restartPins != pins;
+            _restartPins = pins;
         }
 
         if (changed)
@@ -487,6 +557,14 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         Remember(hex);
         var routine = request.PduType == DaenetIp2Api.GetRequest;
         Trace(BoardTraceDirection.Sent, DaenetIp2TraceText.Request(request.PduType, request.Oid, request.Value, _layout), hex, isRoutine: routine);
+
+        // A read of one of these restarts the real board or loads its factory settings: kept for the tests, whatever the
+        // rest of the message, and never answered.
+        if (DaenetIp2Oid.IsForbidden(request.Oid))
+        {
+            _forbiddenRequests.Enqueue(hex);
+            return Unanswered($"No answer: {DaenetIp2Snmp.OidText(request.Oid)} would restart the real board or load its factory settings");
+        }
         if (request.Version != DaenetIp2Api.Version1)
         {
             return Unanswered(string.Create(CultureInfo.InvariantCulture, $"No answer: version field {request.Version} isn't SNMPv1"));
@@ -536,6 +614,17 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         }
 
         Remember(from);
+        if (request.Oid.SequenceEqual(DaenetIp2Oid.RestartPins.Arcs))
+        {
+            // From firmware 4.097 only (table 9.1): before that, an OID it doesn't have.
+            if (!HasRestartPins)
+            {
+                return Refuse(request, community, DaenetIp2Api.NoSuchName);
+            }
+
+            return request.PduType == DaenetIp2Api.GetRequest ? GetRestartPins(request, community) : SetRestartPins(request, community);
+        }
+
         var (port, pin) = DaenetIp2TraceText.Target(request.Oid);
         if (port is not { } p)
         {
@@ -578,6 +667,30 @@ public sealed class DaenetIp2Simulator : ISimulatedBoard, ISimulatedBoardNoAnswe
         }
 
         return Answer(request, community, counts, DaenetIp2TraceText.Analog(input, counts, DaenetIp2Models.Analog), routine);
+    }
+
+    // cfgP5DupRST, 0 to 255.
+    private byte[] GetRestartPins(DaenetIp2Message request, string community)
+    {
+        var pins = RestartPins;
+        return Answer(request, community, pins, DaenetIp2TraceText.RestartPins(pins, _layout), routine: true);
+    }
+
+    // cfgP5DupRST to 0..255; the answer echoes the value. The pins aren't pulsed here.
+    private byte[] SetRestartPins(DaenetIp2Message request, string community)
+    {
+        if (request.ValueType != DaenetIp2Api.IntegerTag || request.Value is not { } value || value < 0 || value > DaenetIp2Api.MaxPortValue)
+        {
+            return Refuse(request, community, DaenetIp2Api.BadValue);
+        }
+
+        if (RefuseRestartPinWrites)
+        {
+            return Refuse(request, community, DaenetIp2Api.GenErr);
+        }
+
+        _ = SetRestartPinsAsync(value);
+        return Answer(request, community, value, DaenetIp2TraceText.Confirmed(request.Oid, value, _layout), routine: false);
     }
 
     // A pin to High(1) or Low(0), or the port's whole byte to 0..255; the answer echoes the value.

@@ -205,6 +205,7 @@ public static class SimulatorCatalogue
         {
             Protocol = "SNMP over UDP",
             PollSeconds = new DaenetIp2Options().PollSeconds,
+            OwnRulesName = "the ICMP monitoring's restart pins",
         }),
         .. DevantechModels.All.Select(model => new SimulatorModel(
             model,

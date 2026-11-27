@@ -54,14 +54,16 @@ public sealed partial class OwnRulesHandler
     /// a person resets it. Never the board's auto-on (<see cref="OwnRuleKind.AutoOn"/>) on a relay in a group
     /// (<paramref name="inGroup"/>): the board would turn it on again without the group's order, so its warning stays
     /// until it is turned off, and a "Keep" from before the relay joined the group is forgotten then
-    /// (<see cref="OwnRulesService.ForgetKeepsInGroupsAsync"/>). Every other rule may be kept.
+    /// (<see cref="OwnRulesService.ForgetKeepsInGroupsAsync"/>). The same for the board's restart pulse
+    /// (<see cref="OwnRuleKind.Restart"/>, issue #515): it would switch the relay without the group's order. Every other
+    /// rule may be kept.
     /// </summary>
     public static bool CanKeep(OwnRuleKind kind, bool inGroup)
     {
         return kind switch
         {
             OwnRuleKind.InputLinkage => false,
-            OwnRuleKind.AutoOn => !inGroup,
+            OwnRuleKind.AutoOn or OwnRuleKind.Restart => !inGroup,
             _ => true,
         };
     }
@@ -409,8 +411,8 @@ public sealed partial class OwnRulesHandler
 
     /// <summary>
     /// Why a rule on a relay in a group can't be kept (<see cref="CanKeep"/>), shown where "Keep" would be: "Can't be
-    /// kept: Heat is in a group, and the board would turn it on again without the group's order." The relay by its name,
-    /// or "Relay 3" without one.
+    /// kept: Heat is in a group, and the board would switch it by itself without the group's order." The relay by its
+    /// name, or "Relay 3" without one.
     /// </summary>
     public string InGroup(int channel, string? name)
     {
