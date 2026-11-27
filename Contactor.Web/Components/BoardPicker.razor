@@ -123,10 +123,6 @@ else if (!Side && Several)
     [EditorRequired]
     public BoardFilter Filter { get; set; } = BoardFilter.All;
 
-    /// <summary>Not read: every count here comes from the boards' own state. Issue #503 removes it.</summary>
-    [Parameter]
-    public BoardCounts Counts { get; set; } = BoardCounts.None;
-
     /// <summary>The desktop's side menu list; otherwise the chips, with the form the buttons post.</summary>
     [Parameter]
     public bool Side { get; set; }

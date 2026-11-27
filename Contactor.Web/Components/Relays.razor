@@ -91,7 +91,7 @@
                 <p class="error" role="alert">@_allBoardsMessage</p>
             }
             @* The board filter is this browser's: a tap posts the new choice, which comes back as a cookie (RelaysEndpoints). *@
-            <BoardPicker Screen="BoardFilterScreen.Relays" Boards="Boards" Filter="Filter" Counts="_counts" Showing="@ShowingText" />
+            <BoardPicker Screen="BoardFilterScreen.Relays" Boards="Boards" Filter="Filter" Showing="@ShowingText" />
             @* A board out of contact is never out of sight: a line for each one the filter hides. *@
             @foreach (var board in Boards.Where(b => !Filter.Shows(b.BoardId) && !b.State.IsConnected))
             {
@@ -744,7 +744,7 @@
     // The desktop's side menu: every board, to pick which to show.
     private RenderFragment BoardList => __builder =>
     {
-        <BoardPicker Side="true" Screen="BoardFilterScreen.Relays" Boards="Boards" Filter="Filter" Counts="_counts" />
+        <BoardPicker Side="true" Screen="BoardFilterScreen.Relays" Boards="Boards" Filter="Filter" />
     };
 
     private RenderFragment GroupCard(GroupView group) => __builder =>
