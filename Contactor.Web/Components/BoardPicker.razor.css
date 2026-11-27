@@ -102,7 +102,7 @@
     cursor: pointer;
 }
 
-/* One small bar per relay: orange when on. */
+/* One small bar per relay: orange when on, dashed while unknown. */
 .lamps {
     display: flex;
     flex-wrap: wrap;
@@ -119,6 +119,12 @@
 
 .lamp.on {
     background: var(--accent);
+}
+
+/* Before the board's first answer nothing is known: an empty dashed bar, as a relay card's button shows it. */
+.lamp.unknown {
+    background: transparent;
+    border: 1px dashed var(--inactive-border);
 }
 
 /* The desktop's side menu: the boards, to pick which to show (in TabBar's list, which only shows on a desktop). */

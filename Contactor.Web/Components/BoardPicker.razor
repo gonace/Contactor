@@ -143,10 +143,11 @@ else if (!Side && Several)
 
     private bool AnyAnswered => Boards.Any(b => b.State.HasAnswered);
 
-    // "16 of 74 on" under "All boards": the boards' own counts added up, as the boards below it show them.
+    // "16 of 74 on" under "All boards": the boards' own counts added up, as the boards below it show them. A board that
+    // has never answered is left out until its first answer: nothing is known of its relays, not even that they are off.
     private static (int On, int Active) CountOf(IEnumerable<LiveBoard> boards)
     {
-        var counts = boards.Select(RelaysOn).ToList();
+        var counts = boards.Where(b => b.State.HasAnswered).Select(RelaysOn).ToList();
         return (counts.Sum(c => c.On), counts.Sum(c => c.Active));
     }
 
@@ -178,14 +179,14 @@ else if (!Side && Several)
         return next.IsAll ? BoardFilter.AllValue : next.Format();
     }
 
-    // One small bar per relay: orange when on.
+    // One small bar per relay: orange when on. Before the board's first answer each is unknown, never off.
     private RenderFragment Lamps(LiveBoard board) => __builder =>
     {
         var state = board.State;
         <span class="lamps" aria-hidden="true">
             @for (var channel = 1; channel <= board.Capabilities.RelayCount; channel++)
             {
-                <span class="lamp @(state.IsOn(channel) ? "on" : null)"></span>
+                <span class="lamp @(!state.HasAnswered ? "unknown" : state.IsOn(channel) ? "on" : null)"></span>
             }
         </span>
     };
